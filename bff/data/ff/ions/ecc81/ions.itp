@@ -1,0 +1,560 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Topology of ions for gromacs using ;
+; sigma (nm) and epsilon (kJ/mol)    ;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;###        CALCIUM               ###;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+CA_d          1
+; DOI: 10.1021/jp064661f ; Dang2006
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Ca_d      1       CA      CA       1           2.0      40.07800
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+[ moleculetype ]
+; Name   nrexcl
+CA_m          1
+; DOI: 10.1021/ct400146w ; Mertz2013 ; CM set for SPCE
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Ca_m      1       CA      CA       1           2.0      40.07800
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+[ moleculetype ]
+; Name   nrexcl
+CA_mt         1
+; DOI: 10.1021/ct400146w ; Mertz2013 ; CM set for TIP3P
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Ca_mt     1       CA      CA       1           2.0      40.07800
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+[ moleculetype ]
+; Name   nrexcl
+CA_n          1
+; DOI: 10.1063/1.4772808 ; Netz2013
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Ca_n      1       CA      CA       1           2.0      40.07800
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+[ moleculetype ]
+; Name   nrexcl
+CA_a          1
+; DOI: 10.1021/j100384a009; Aqvist 1990
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Ca_a      1       CA      CA       1           2.0      40.07800
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+[ moleculetype ]
+; Name   nrexcl
+CA_g0         1
+; DOI: 10.1002/jcc.20090 ; Gromos 53a6 FF, exact conversion from C6,C12 to sigma,epsilon
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Ca_g0      1       CA      CA       1           2.0        40.078
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+CA_g          1
+; DOI: 10.1021/jp5005693, minor modification from Ca_g0
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Ca_g      1       CA      CA       1           2.0        40.078
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+CA_s          1
+; DOI: 10.1021/jp5005693 ; Jungwirth2014 ; scaled ; ECCR (Note: Based on Ca_g)
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Ca_s       1      CA      CA       1           1.5      40.07800
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+CA_2s         1
+; DOI: 10.1063/1.5006779 Jungwirth2018 ; scaled ; ECCR+~5% sigma ; (Note: Based on Ca_g); (preferred parameters)
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Ca_2s      1      CA      CA       1           1.5      40.07800
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+CA_3s         1
+; DOI: unpublished based on Ca_2s but charge 1.6 
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Ca_3s      1      CAL      CAL       1           1.6      40.07800
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;###        CHLORINE              ###;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+CL_d          1
+; DOI: 10.1063/1.466363 ; Dang1994
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Cl_d       1      CL      CL       1          -1.0      35.45300
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+CL_jc         1
+; DOI: 10.1021/jp8001614; JoungCheatham 2008 for SPC/E
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Cl_jc      1      CL      CL       1          -1.0      35.45300
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+CL_js         1
+; Cl ecc0.8 scaled+sigma5% based on JoungCheatham 2008 for SPC/E
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Cl_js      1      CL      CL       1          -0.80     35.45300
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+CL_jt         1
+; DOI: 10.1021/jp8001614; JoungCheatham 2008 for TIP3P
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Cl_jt      1      CL      CL       1          -1.0      35.45300
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+[ moleculetype ]
+; Name   nrexcl
+CL_m          1
+; DOI: 10.1021/ct500918t; LiMerz 2015; HFE for SPC/E    
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Cl_m       1      CL      CL       1          -1.0      35.45300
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+[ moleculetype ]
+; Name   nrexcl
+CL_2d          1
+; DOI: 10.1021/jp064661f ; Dang2006
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1   Cl_2d       1      CL      CL       1          -1.0      35.45300
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+[ moleculetype ]
+; Name   nrexcl
+CL_o           1
+; DOI: 10.1021/ja00316a012 ; OPLSAA FF 
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1   Cl_o        1      CL      CL       1          -1.0      35.45300
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+CL_r          1
+; DOI: 10.1016/S0006-3495(96)79511-5  ; Roux1996
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Cl_r       1      CL      CL       1          -1.0      35.45300
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+CL_s          1
+; DOI: 10.1021/jp5005693 ; Jungwirth2014a ; scaled
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Cl_s       1      CL      CL       1         -0.75      35.45300
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+CL_2s          1
+; DOI: 10.1080/00268976.2013.875231 ; Jungwirth2014b ; scaled (Note: Based on Cl_o)
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1   Cl_2s       1      CL      CL       1         -0.75      35.45300
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;###        POTASSIUM              ###;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+K_d          1
+; DOI: 10.1021/jp064661f ; Dang2006
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1     K_d       1       K       K       1           1.0      39.09830
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+K_r          1
+; DOI: 10.1063/1.466711 ; Roux1994
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1     K_r       1       K       K       1           1.0      39.09830
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+K_jc         1
+; DOI: 10.1021/jp8001614; JoungCheatham 2008 ; for SPC/E
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    K_jc       1       K       K       1           1.0      39.09830
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+K_js         1
+; K ECC0.8+sigma scaled5% based on  JoungCheatham 2008 ; for SPC/E
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    K_js       1       K       K       1           0.80     39.09830
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+K_jt         1
+; DOI: 10.1021/jp8001614; JoungCheatham 2008 ; for TIP3P
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    K_jt       1       K       K       1           1.0      39.09830
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+K_m          1
+; DOI: 10.1021/ct500918t; LiMerz 2015; HFE for SPC/E
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    K_m        1       K       K       1           1.0      39.09830
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+K_s           1
+; DOI: 10.1021/jp3008267 ; Mason2012 ; scaled
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1     K_s       1       K       K       1         0.750      39.09830
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;###        LITHIUM               ###;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+LI_s           1
+; DOI: 10.1080/00268976.2013.875231 ; Pluharova2014; scaled
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Li_s       1      LI      LI       1         0.750       6.94100
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;###        MAGNESIUM             ###;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+MG_c         1
+; DOI: 10.1021/jp909132a; Callahan2010; full charges 
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Mg_c      1      MG      MG       1           2.00       24.305
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+MG_m         1
+; DOI: 10.1021/ct400146w ; Mertz2013 exact conversion from rmin/2, epsilon, CM set for SPC/E
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Mg_m      1      MG      MG       1           2.00       24.305
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+MG_mt        1
+; DOI: 10.1021/ct400146w ; Mertz2013 exact conversion from rmin/2, epsilon, CM set for TIP3P
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Mg_mt     1      MG      MG       1           2.00       24.305
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+MG_v         1
+; DOI: 10.1021/ct3000734 |Allner Vila JCTC 2012 for TIP3P
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Mg_v     1      MG      MG       1           2.00       24.305
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+MG_ss        1
+; DOI:10.1021/acs.jpcb.7b09612; Duboué-Dijon2017; MG_scaled charge "small" version
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Mg_ss     1      MG      MG       1           1.50       24.305
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+MG_sb        1
+; DOI:10.1021/acs.jpcb.7b09612; Duboué-Dijon2017; MG_scaled charge "big" version
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Mg_sb     1      MG      MG       1           1.50       24.305
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+MG_s3        1
+; unpublished ; based on Mg_ss with charge 1.6 
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Mg_s3     1      MG      MG       1           1.60       24.305
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;###        SODIUM                ###;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+NA_d          1
+; DOI: 10.1063/1.466363 ; Dang1994
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Na_d       1      NA      NA       1           1.0      22.98977
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+NA_r          1
+; DOI: 10.1063/1.466711 ; Roux1994
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Na_r       1      NA      NA       1           1.0      22.98977
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+[ moleculetype ]
+; Name   nrexcl
+NA_jc          1
+; DOI: 10.1021/jp8001614; JoungCheatham 2008 ; for SPC/E
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Na_jc      1      NA      NA       1           1.0      22.98977
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+[ moleculetype ]
+; Name   nrexcl
+NA_jt          1
+; DOI: 10.1021/jp8001614; JoungCheatham 2008 ; for TIP4P_Ew
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Na_jt      1      NA      NA       1           1.0      22.98977
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+[ moleculetype ]
+; Name   nrexcl
+NA_j3          1
+; DOI: 10.1021/jp8001614; JoungCheatham 2008 ; for TIP3P   
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Na_j3      1      NA      NA       1           1.0      22.98977
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+NA_s          1
+; DOI: DOI: 10.1021/acs.jpcb.5b05221 ; Jungwirth2015 ; scaled
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Na_s       1      NA      NA       1          0.75      22.98977
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+NAdes         1
+; 10.1021/acs.jctc.9b0025 ; Piana2020 DES-Amber SF1.0
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Nades      1      NA      NA       1           1.0      22.98977
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl  
+ZN_k          1      
+; DOI: 10.1002/prot.340230104; Stote&Karplus 1995
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Zn_k       1      ZN      ZN       1           2.0        65.409
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+[ moleculetype ]
+; Name   nrexcl  
+ZN_s          1      
+; DOI: 10.1002/prot.340230104; scaled charge+VDW version of Stote&Karplus 1995
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Zn_s       1      ZN      ZN       1           1.5        65.409
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+[ moleculetype ]
+; Name   nrexcl
+NA_m           1
+; DOI: 10.1021/ct500918t; LiMerz 2015; HFE for SPC/E 
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Na_m       1      NA      NA       1           1.0      22.98977
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+Br_m          1
+; DOI: 10.1021/ct500918t; LiMerz 2015; HFE for SPC/E    
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Br_m       1      BR      BR       1          -1.0      79.90400
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+Br_s          1
+; guillaume and damien paper 2019 JPCB 123 3312
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Br_s       1      BR      BR       1          -0.75     79.90400
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name   nrexcl
+Br_jc         1
+; DOI: 10.1021/jp8001614; JoungCheatham 2008 for SPC/E
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    Br_jc      1      BR      BR       1          -1.0      79.90400
+
+
+;;;;;;;;;;;
+;pair specific LJ ff for Mg2+ and Ca2+ by the Schwierz group
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ moleculetype ]
+; Name            nrexcl
+Mg2     3
+;Cruz-Leon, Schwierz, JCP2021; DOI:10.1063/5.0048113
+[ atoms ]
+;   nr       type  resnr residue  atom   cgnr     charge       mass  typeB    chargeB      massB
+1       Mg2     1       Mg      Mg      1       2       24.305
+
+
+[ moleculetype ]
+; Name            nrexcl
+Ca2     3
+;Cruz-Leon, Schwierz, JCP2021; DOI:10.1063/5.0048113
+[ atoms ]
+;   nr       type  resnr residue  atom   cgnr     charge       mass  typeB    chargeB      massB
+1       Ca2     1       Ca      Ca      1       2       40.078
+
+
+[ moleculetype ]
+; Name            nrexcl
+mMg     3
+;;;Grotz, Schwierz JCTC 2021 DOI: 10.1021/acs.jctc.0c01281
+[ atoms ]
+;   nr       type  resnr residue  atom   cgnr     charge       mass  typeB    chargeB      massB
+1       mMg     1       MG      MG      1       2       24.305
+
+[ moleculetype ]
+; Name            nrexcl
+nMg     3
+;;;Grotz, Schwierz JCTC 2021 DOI: 10.1021/acs.jctc.0c01281
+[ atoms ]
+;   nr       type  resnr residue  atom   cgnr     charge       mass  typeB    chargeB      massB
+1       nMg     1       nMg     nMg     1       2       24.305
+
+

@@ -1,0 +1,60 @@
+mol_resname: MOL
+data_dir: ./train-sets/train-set-00
+
+# The following files are created by the `create_system.py` script
+gromacs:
+  fn_mdp_em:
+    - ./train/em.mdp
+    - ./train/em.mdp
+    - ./train/em.mdp
+  fn_mdp_prod:
+    - ./train/nvt-000.mdp
+    - ./train/nvt-001.mdp
+    - ./train/nvt-002.mdp
+  fn_coordinates:
+    - ./train/win-000.gro
+    - ./train/win-001.gro
+    - ./train/win-002.gro
+  fn_topol:
+    - ./train/topol-000.top
+    - ./train/topol-001.top
+    - ./train/topol-002.top
+  fn_ndx:
+    - ./train/index-000.ndx
+    - ./train/index-001.ndx
+    - ./train/index-002.ndx
+  n_steps:
+    - 500000
+    - 500000
+    - 500000
+bounds:
+  charge c3: [-0.8, 0.0]
+  charge c: [0.1, 1.0]
+  charge o: [-0.8, -0.3]
+  charge hc: [-0.2, 0.2]
+implicit_atomtype: c
+total_charge: -0.80
+n_samples: 1000
+max_slurm: 100
+compress: false
+cleanup: true
+slurm:
+  sbatch:
+    job-name: mol-train
+    nodes: 1
+    ntasks-per-node: 1
+    cpus-per-task: 1
+    mem: 1G
+    time: 00:40:00
+    partition: a36_any
+  commands:
+    - source /uochb/soft/a/spack/20221129-git/share/spack/setup-env.sh
+    - spack load gromacs@2022.4 ~mpi
+    - export WORKDIR=/dev/shm/$USER/$SLURM_JOB_ID
+    - mkdir -p $WORKDIR || exit 1
+    - cd $WORKDIR
+    - RUN MD
+    - rm -rf $WORKDIR
+    - sleep 2
+    - exit
+  python: python3.10

@@ -1,0 +1,96 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Topology of ions for gromacs using ;
+; sigma (nm) and epsilon (kJ/mol)    ;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[ atomtypes ]
+;name  at.num    mass      charge   ptype   sigma     epsilon
+  Ca_d  20      40.07800    2.000     A     0.291320  0.41840000 ; DOI: 10.1021/jp064661f ; Dang2006
+  Ca_m  20      40.07800    2.000     A     0.291324  0.40953100 ; DOI: 10.1021/ct400146w ; Mertz2013 exact conversion from rmin/2, epsilon
+  Ca_mt  20      40.07800    2.000     A     0.293818  0.44320568 ; DOI: 10.1021/ct400146w ; Mertz2013 exact conversion from rmin/2, epsilon ; CM set for TIP3P
+  Ca_n  20      40.07800    2.000     A     0.241000  0.94000000 ; DOI: 10.1063/1.4772808 ; Netz2013
+  Ca_a  20      40.07800    2.000     A     0.241203  0.50690000 ; DOI: 10.1021/j100384a009 ; Aqvist 1990
+  Ca_g0 20      40.078      2.00      A     0.281311  0.50691700 ; DOI: 10.1002/jcc.20090 ; GROMOS53a6, exact conversion from C6,C12 to sigma,epsilon
+  Ca_g  20      40.078      2.00      A     0.281960  0.50725000 ; DOI: 10.1021/jp5005693, minor modification from Ca_g0
+  Ca_s  20      40.07800    1.500     A     0.253800  0.50725000 ; DOI: 10.1021/jp5005693 ; Jungwirth2014 ; scaled ; ECCR (Note: Based on Ca_g)
+  Ca_2s 20      40.07800    1.500     A     0.266558  0.50725000 ; DOI: 10.1063/1.5006779 ; Jungwirth2016 ; scaled ; ECCR+~5% sigma ; (Note: Based on Ca_g); (preferred parameters)
+  Ca_3s 20      40.07800    1.600     A     0.266558  0.50725000 ; DOI: unpublished ; based on Ca_2s but charge 1.6 (scaling 0.8)
+  Cl_d  17      35.45300   -1.000     A     0.440000  0.41840000 ; DOI: 10.1063/1.466363  ; Dang1994 ; (Default amber)
+  Cl_jc 17      35.45300   -1.000     A     0.483045  0.05349200 ; DOI: 10.1021/jp8001614 ; JoungCheatham2018 ; for SPC/E
+  Cl_js 17      35.45300   -0.800     A     0.458893  0.05349200 ; ECC0.8+sigma5% based on JoungCheatham2018 ; for SPC/E
+  Cl_jt 17      35.45300   -1.000     A     0.447766  0.14891270 ; DOI: 10.1021/jp8001614 ; JoungCheatham2018 ; for TIP3P
+  Cl_m  17      35.45300   -1.000     A     0.411239  2.69312000 ; DOI: 10.1021/ct500918t; LiMerz 2015; HFE for SPC/E    
+  Cl_2d 17      35.45300   -1.000     A     0.433870  0.41840000 ; DOI: 10.1021/jp064661f ; Dang2006
+  Cl_o  17      35.45300   -1.00      A     0.441700  0.49280000 ; DOI: 10.1021/ja00316a012 ; OPLSAA FF 
+  Cl_r  17      35.45300   -1.000     A     0.454000  0.62802000 ; DOI: 10.1016/S0006-3495(96)79511-5  ; Roux1996
+  Cldes 17      35.45300   -1.000     A     0.471800  0.04895280 ; DOI: 10.1021/acs.jctc.9b00251/ Piana2020; Des-AmberSF1.0
+  Cl_s  17      35.45300   -0.750     A     0.378240  0.41840000 ; DOI: 10.1021/jp5005693 ; Jungwirth2014a ; scaled
+  Cl_2s 17      35.45300   -0.750     A     0.410000  0.49280000 ; DOI: 10.1080/00268976.2013.875231 ; Jungwirth2014b ; scaled (Note: Based on Cl_o)
+  Br_jc 35      79.90400   -1.000     A     0.490173  0.11279480 ; DOI: 10.1021/jp8001614 ; JoungCheatham2008 ; for SPC/E
+  Br_j3 35      79.90400   -1.000     A     0.464693  0.24541419 ; DOI: 10.1021/jp8001614 ; JoungCheatham2008 ; for TIP3P
+  Br_m  35      79.90400   -1.000     A     0.440104  3.11439400 ; DOI: 10.1021/ct500918t; LiMerz 2015; HFE for SPC/E    
+  Br_s  35      79.90400   -0.750     A     0.473300  0.20999500 ; guillaume and damien paper 2019 JPCB 123 3312SPC/E    
+  K_d   19      39.09830    1.000     A     0.304700  0.41840000 ; DOI: 10.1021/jp064661f ; Dang2006
+  K_r   19      39.09830    1.000     A     0.352750  0.36425160 ; DOI: 10.1063/1.466711 ; Roux1994
+  K_jc  19      39.09830    1.000     A     0.283840  1.79789000 ; DOI: 10.1021/jp8001614; JoungCheatham 2008 ; for SPC/E
+  K_js  19      39.09830    0.800     A     0.269648  1.79789000 ; ECC0.8+sigma5% based on JoungCheatham 2008 ; for SPC/E
+  K_jt  19      39.09830    1.000     A     0.303797  0.81036930 ; DOI: 10.1021/jp8001614; JoungCheatham 2008 ; for TIP3P
+  K_m   19      39.09830    1.000     A     0.299877  0.53109400 ; DOI: 10.1021/ct500918t; LiMerz 2015; HFE for SPC/E    
+  Kdes  19      39.09830    1.000     A     0.278300  1.16942800 ; DOI: 10.1021/acs.jctc.9b00251 ; Piana2020; DES-Amber SF1.0
+  K_s   19      39.09830    0.750     A     0.315400  0.41868000 ; DOI: 10.1021/jp3008267 ; Mason2012
+  Li_s   3       6.94100    0.750     A     0.180000  0.07647000 ; DOI: 10.1080/00268976.2013.875231 ; Pluharova2014; scaled
+  Mg_c  12      24.305      2.000     A     0.189000  3.66100000 ; DOI: 10.1021/jp909132a; Callahan2010; full charges
+  Mg_m  12      24.305      2.000     A     0.242324  0.04268700 ; DOI: 10.1021/ct400146w ; Mertz2013 exact conversion from rmin/2, epsilon; CM set for SPC/E
+  Mg_mt  12      24.305      2.000     A     0.242324  0.04268672 ; DOI: 10.1021/ct400146w ; Mertz2013 exact conversion from rmin/2, epsilon; CM set for TIP3P
+  Mg_v   12      24.305      2.000     A     0.277000  0.012343   ; DOI: 10.1021/ct3000734 |Allner Vila JCTC 2012 for TIP3P 
+  Mg_ss 12      24.305      1.500     A     0.13600   3.661000   ; DOI:10.1021/acs.jpcb.7b09612; Duboué-Dijon2017; MG_scaled charge "small" version
+  Mg_sb 12      24.305      1.500     A     0.15500   3.661000   ; DOI:10.1021/acs.jpcb.7b09612; Duboué-Dijon2017; MG_scaled charge "big" version
+  Mg_s3 12      24.305      1.600     A     0.13600   3.661000   ; DOI: unpublished ; based on Mg_ss with charge 1.6 
+  Na_d  11      22.98977    1.000     A     0.235000  0.54390000 ; DOI: 10.1063/1.466363  ; Dang1994
+  Nades 11      22.98977    1.000     A     0.208400  0.7045856 ; DOI: 10.1021/acs.jctc.9b00251 ; Piana 2020 DES-AmberSF1.0
+  Na_r  11      22.98977    1.000     A     0.272750  0.19636092 ; DOI: 10.1063/1.466711 ; Roux1994
+  Na_jc 11      22.98977    1.000     A     0.215954  1.47545000 ; DOI: 10.1021/jp8001614; JoungCheatham 2008 ; for SPC/E
+  Na_jt 11      22.98977    1.000     A     0.218448  0.70474300 ; DOI: 10.1021/jp8001614; JoungCheatham 2008 ; for TIP4P_Ew
+  Na_j3 11      22.98977    1.000     A     0.2439280 0.36584603 ; DOI: 10.1021/jp8001614; JoungCheatham 2008 ; for TIP3P   
+  Na_m  11      22.98977    1.000     A     0.259073  0.11041600 ; DOI: 10.1021/ct500918t; LiMerz 2015; HFE for SPC/E    
+  Na_s  11      22.98977    0.750     A     0.211500  0.54428400 ; DOI: 10.1021/acs.jpcb.5b05221 ; Jungwirth2015 ; scaled
+ Zn_k  30      65.409      2.000     A     0.19500   1.04600  ; DOI: 10.1002/prot.340230104; Stote,Karplus1995
+  Zn_s  30      65.409      1.500     A     0.17500   1.04600  ; DOI: 10.1002/prot.340230104; scaled charge based on Zn_k
+  Mg2   12      24.305      2.000     A     0.161939  0.604036   ; DOI: 10.1063/5.0048113 ; Schwierz2021, for TIP3P 
+  Ca2   20      40.078      2.000     A     0.226453  2.33883    ; DOI: 10.1063/5.0048113 ; Schwierz2021, for TIP3P
+  mMg   12      24.305      2.000     A     0.101934  235.804213166223  ; DOI: 10.1021/acs.jctc.0c01281 ; Schwierz2021 for TIP3P used with DMP_n by Scwierz et al
+  nMg   12      24.305      2.000     A     0.102534  389.798801356    ; DOI: 10.1021/acs.jctc.0c01281 ; Schwierz2021 for TIP3P used with DMP_n by Scwierz et al
+
+
+
+[ nonbond_params ]
+; i    j func        sigma epsilon
+; for use with Amber RNA phosphate
+;Mg2     Mg2     1.000   0.161939        0.604036
+;Ca2     Ca2     1.000   0.226453        2.33883
+;mMg     mMg     1.000   0.101934              235.804213166
+;Mg2     O2      1.000   0.248427        0.728512
+;Ca2     O2      1.000   0.268668        1.433523
+;mMg      O2     1.000   0.2263204125          4.60607753071
+;nMg      O2     1.000   0.2278572405          4.62664037682
+;mMg      O3     1.000   0.2263204125          4.60607753071 ; for ATP
+
+;with DMP_n atomtypes
+;Mg2     o       1.000   0.248427        0.728512
+;Ca2     o       1.000   0.268668        1.433523
+;mMg      p5     1.000   0.27078813125         4.49507139822
+;mMg       o     1.000   0.2263204125          4.60607753071
+;mMg      os     1.000   0.22860053125         4.14425105946
+;mMg      c3     1.000   0.25133119375         3.32453146161
+;mMg      h1     1.000   0.19853299375         1.25942242703
+;nMg     nMg     1.000   0.102534              389.798801356
+;nMg      p5     1.000   0.27255951425         4.51513868125
+;nMg       o     1.000   0.2278572405          4.62664037682
+;nMg      os     1.000   0.23014938625         4.16275218026
+;nMg      c3     1.000   0.25299994675         3.33937311992
+;nMg      h1     1.000   0.19992325075         1.26504484858
+
+
+
+
+

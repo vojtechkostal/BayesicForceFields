@@ -1,0 +1,24 @@
+[moleculetype]
+; name nrexcl
+SOL  1
+
+[atoms]
+;nr      type   resnr residu atom cgnr   charge     mass
+1        OWT4   1     SOL  OW1  1    0          15.9994
+2        HWT4   1     SOL  HW2  1    0.605689    1.0079
+3        HWT4   1     SOL  HW3  1    0.605689    1.0079
+4        IWT4   1     SOL  MW4  1   -1.211378    0.0
+
+[ settles ]
+; OW    funct   doh     dhh
+    1   1       0.092084 0.14969
+
+[exclusions]
+1       2       3       4
+2       1       3       4
+3       1       2       4
+4       1       2       3
+
+[ virtual_sites3 ]
+; Dummy from            funct   a       b
+4       1       2       3       1       0.15274801 0.15274801

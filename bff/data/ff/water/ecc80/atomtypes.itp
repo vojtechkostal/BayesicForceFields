@@ -1,0 +1,6 @@
+[atomtypes]
+; 39e539b6d321
+; name     mass      charge   ptype    sigma        epsion
+IW     0             0.000       D   0.0           0.0
+OW4   15.99940      0.000       A   0.315545   0.764029
+HW4   1.007900      0.000       A   0.00000E+00   0.00000E+00

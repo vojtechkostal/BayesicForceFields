@@ -1,0 +1,63 @@
+[ moleculetype ]
+; Name   nrexcl
+BR          1
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    BR      1      BR      BR       1          -0.80     79.90400
+
+[ moleculetype ]
+; Name   nrexcl
+CAL         1
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    CA       1      CAL     CAL      1           1.60      40.07800
+
+[ moleculetype ]
+; Name   nrexcl
+CL          1
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    CL       1      CL      CL       1         -0.80      35.45300
+
+[ moleculetype ]
+; Name   nrexcl
+I          1
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1     I       1       I       I       1         -0.80      126.9045
+
+[ moleculetype ]
+; Name   nrexcl
+K           1
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1     K       1       K       K       1         0.80      39.09830
+
+[ moleculetype ]
+; Name   nrexcl
+LI          1
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    LI       1      LI      LI       1         0.80       6.94100
+
+[ moleculetype ]
+; Name   nrexcl
+NA          1
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    NA       1      NA      NA       1         0.80      22.98977
+
+[ moleculetype ]
+; Name   nrexcl
+MG          1
+
+[ atoms ]
+;   nr    type   resnr  residu    atom    cgnr        charge          mass
+     1    MG       1      MG      MG       1         1.60      24.3050
