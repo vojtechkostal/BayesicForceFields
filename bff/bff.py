@@ -232,7 +232,7 @@ class Optimizer:
         fn_hyper: dict[str | Path] = None,
         max_iter: int = 20000,
         means: dict = {'rdf': 'sigmoid'},
-        comittee: int = 1,
+        committee: int = 1,
         device: str = 'cuda:0',
         **kwargs
     ) -> None:
@@ -285,7 +285,7 @@ class Optimizer:
                 fn_hyperparams=fn_hyper.get(q, None),
                 test_fraction=0.2,
                 n_hyper=n_hyper,
-                comittee=comittee,
+                committee=committee,
                 fn_backend=f'./mcmc_hyper_{q}.h5',
                 device=device,
                 mcmc_kwargs=mcmc_kwargs
