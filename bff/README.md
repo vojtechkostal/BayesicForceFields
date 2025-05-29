@@ -36,3 +36,5 @@ LGP's hyperparameters can be also infered and their uncertainty propagated into 
 * [emcee](https://emcee.readthedocs.io/en/stable/#) (MCMC sampling within the Bayesian inference)
 * [ParmEd](https://parmed.github.io/ParmEd/html/index.html) (topology handling)
 * [PyTorch](https://pytorch.org/get-started/locally/) (Efficient surrogate evaluation using GPU and CUDA)
+* [PyYAML](https://pypi.org/project/PyYAML/) (handling .yaml files)
+* [Matplotlib](https://matplotlib.org/) (Plotting)
