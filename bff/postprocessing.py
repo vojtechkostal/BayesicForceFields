@@ -1,6 +1,6 @@
 import corner
 import matplotlib.pyplot as plt
-from matplotlib.colors import ListedColormap, to_rgba
+from matplotlib.colors import to_rgba
 import numpy as np
 
 from .structures import Specs, OptimizationResults
@@ -146,19 +146,20 @@ def plot_confidence_intervals(
 
 def plot_corner(
     results: OptimizationResults,
-    quantiles: list[float]=[0.025, 0.5, 0.975],
+    quantiles: list[float] = [0.025, 0.5, 0.975],
     cmap=None,
     fn_out: str = None
 ):
 
-    
     contour_levels = [0.3, 0.5, 0.7, 0.9]
+    if cmap is None:
+        cmap = plt.get_cmap('Reds')(np.linspace(0, 1, len(contour_levels)))
     fill_colors_rgb = [i for i in cmap]
     alpha_fill = 1.0
-    transparent_white = (1, 1, 1, 0) # RGBA
-    colors_for_map = [transparent_white] + [to_rgba(c, alpha=alpha_fill) for c in fill_colors_rgb]
+    transparent_white = (1, 1, 1, 0)  # RGBA
+    colors_for_map = [transparent_white]
+    colors_for_map += [to_rgba(c, alpha=alpha_fill) for c in fill_colors_rgb]
 
-    custom_cmap = ListedColormap(colors_for_map)
     results.get_chain()
     fig = corner.corner(
         results.chain_implicit_,
@@ -167,7 +168,7 @@ def plot_corner(
         title_fmt=".2f",
         hist_bin_factor=1.0,  # Increase the number of histogram bins
         hist_kwargs={"color": colors_for_map[-1], "linewidth": 3},  # Red histograms
-        contourf_kwargs={"cmap": None, 'colors': colors_for_map},  # Red gradient colormap
+        contourf_kwargs={"cmap": None, 'colors': colors_for_map},
         contour_kwargs={"colors": "k", "linewidths": 2},  # Black contour lines
         smooth=0.5,
         levels=contour_levels,  # Contour levels

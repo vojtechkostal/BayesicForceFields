@@ -10,7 +10,7 @@ from .scoring.trajectory import (
     analyze_trajectories_wrapper,
 )
 
-from .structures import TrainData, MCMCResults, OptimizationResults
+from .structures import TrainData, OptimizationResults
 from .topology import check_topols
 from .io.logs import Logger, print_progress, print_progress_mcmc, format_time
 

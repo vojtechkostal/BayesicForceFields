@@ -716,7 +716,7 @@ class OptimizationResults(MCMCResults, Specs):
             param_labels = self.bounds_explicit.params.tolist()
         else:
             raise ValueError(f"Unknown kind '{kind}'. Use 'implicit' or 'explicit'.")
-        
+
         nuisance_labels = [
             f'$\\sigma_{{\\mathrm{{{q.split()[0]}}}}}$'
             for q in list(self.priors.keys())[n_params:]
@@ -756,7 +756,7 @@ class OptimizationResults(MCMCResults, Specs):
         """
         Compute the explicit parameters from the implicit parameters.
         """
-        
+
         params = self.chain_implicit_[:, :self.n_params_implicit]
         q_explicit = np.sum(params * self.constraint_matrix, axis=1)
         q_implicit = (
