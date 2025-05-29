@@ -8,6 +8,7 @@ from pathlib import Path
 from ..scoring.metrics import mape_fn
 from .gaussian_process import LocalGaussianProcess
 from .likelihood import loo_log_likelihood, gaussian_log_likelihood
+from ..structures import MCMCResults
 from ..io.logs import print_progress_mcmc
 from ..io.utils import load_yaml, save_yaml
 from .utils import (
@@ -17,14 +18,16 @@ from .utils import (
 )
 
 
-def define_param_priors(param_bounds: list, QoI: dict, dist_type: str) -> list:
+def define_param_priors(
+    param_bounds: dict[list], QoI: dict, dist_type: str
+) -> dict[list]:
     """
     Define priors for the model parameters and nuisance parameters.
 
     Parameters
     ----------
-    param_bounds : list
-        List of tuples defining the bounds for each parameter.
+    param_bounds : dict[list]
+        Dict of tuples defining the bounds for each parameter.
     QoI : dict
         Dictionary of quantities of interest (QoI).
     dist_type : str
@@ -32,27 +35,29 @@ def define_param_priors(param_bounds: list, QoI: dict, dist_type: str) -> list:
 
     Returns
     -------
-    list
-        List of prior distributions for the parameters and nuisance parameters.
+    dict
+        Dict of prior distributions for the parameters and nuisance parameters.
     """
 
     if dist_type == 'normal':
-        param_priors = [
-            Normal(np.mean(b), 1 / 5 * np.diff(b)[0]) for b in param_bounds
-        ]
+        param_priors = {
+            param: Normal(np.mean(bound), 1 / 5 * np.diff(bound)[0])
+            for param, bound in param_bounds.bounds.items()
+        }
     elif dist_type == 'uniform':
-        param_priors = [
-            Uniform(b[0], b[1]) for b in param_bounds
-        ]
+        param_priors = {
+            param: Uniform(bound[0], bound[1])
+            for param, bound in param_bounds.bounds.items()
+        }
     else:
         raise ValueError(
             f'Unknown prior type "{dist_type}". '
             'Options are "normal" or "uniform".'
         )
 
-    priors_nuisance = [Normal(-2, 2)] * len(QoI)
+    nuisance_priors = {q: Normal(-2, 2) for q in QoI}
 
-    return param_priors + priors_nuisance
+    return param_priors | nuisance_priors
 
 
 def define_hyper_priors(n_params) -> list[Normal]:
@@ -73,10 +78,10 @@ def define_hyper_priors(n_params) -> list[Normal]:
             List of Normal distributions representing the priors.
     """
 
-    lengths_priors = [Normal(-2, 2) for _ in range(n_params)]
-    width_prior = Normal(-2, 2)
-    noise_prior = Normal(-2, 3)
-    return lengths_priors + [width_prior, noise_prior]
+    lengths_priors = {f'length {i}': Normal(-2, 2) for i in range(n_params)}
+    width_prior = {'width': Normal(-2, 2)}
+    sigma_prior = {'sigma': Normal(-2, 3)}
+    return lengths_priors | width_prior | sigma_prior
 
 
 def log_prior(
@@ -190,12 +195,12 @@ def initialize_hyper_sampler(
     log_likelihood = partial(loo_log_likelihood, X=X, y=y-y_mean)
     log_probability = partial(
         log_posterior,
-        priors=priors,
+        priors=list(priors.values()),
         log_likelihood_fn=log_likelihood,
         device=device)
 
     # Initialize the sampler with a Gaussian move (stability purpose)
-    cov = 0.05 * np.diag(np.array([p.scale for p in priors]))
+    cov = 0.05 * np.diag(np.array([p.scale for p in priors.values()]))
     sampler = emcee.EnsembleSampler(
         n_walkers, n_dim, log_probability,
         backend=backend, vectorize=True, moves=[emcee.moves.GaussianMove(cov)])
@@ -253,8 +258,7 @@ def initialize_mcmc_sampler(
     """
 
     # Define priors based on the implicit parameter bounds
-    bounds = specs.bounds_implicit.values
-    priors = define_param_priors(bounds, QoI, priors_disttype)
+    priors = define_param_priors(specs.bounds_implicit, QoI, priors_disttype)
 
     # Initialize backend
     n_dim = len(priors)
@@ -278,7 +282,7 @@ def initialize_mcmc_sampler(
 
     log_probability = partial(
         log_posterior,
-        priors=priors,
+        priors=list(priors.values()),
         log_likelihood_fn=log_likelihood,
         device=device
     )
@@ -364,8 +368,12 @@ def optimize_lgp(
         y_train_hyper = y_train[:n_hyper]
         p0, priors, sampler = initialize_hyper_sampler(
             X_train_hyper, y_train_hyper, y_mean, fn_backend, device)
+
         print_progress_mcmc(sampler, p0, **mcmc_kwargs)
-        lengths, widths, sigmas = get_hyperparameters(sampler, comittee)
+
+        mcmc_results = MCMCResults(sampler, priors)
+        chain = mcmc_results.chain_samples()
+        lengths, widths, sigmas = get_hyperparameters(chain, comittee)
 
     # Create a committee of Local Gaussian Process models
     lgps = [
@@ -390,7 +398,7 @@ def optimize_lgp(
     return lgps, mape
 
 
-def get_hyperparameters(sampler, comittee_size: int):
+def get_hyperparameters(chain, comittee_size: int):
     """
     Extract hyperparameters from the sampler.
     Assumes the last two parameters are width and noise.
@@ -403,26 +411,17 @@ def get_hyperparameters(sampler, comittee_size: int):
         Number of Local Gaussian Process models in the committee.
     """
 
-    # Get the autocorrelation time to determine burn-in and thinning
-    tau = sampler.get_autocorr_time(tol=0)
-    if np.any(np.isnan(tau)):
-        tau = [100] * sampler.ndim
-    burnin = int(2 * np.max(tau))
-    thin = int(0.5 * np.min(tau))
-
-    # Extract the samples from the chain
     # Due to the log-normal distribution sampled as normal distribution,
     # we exponentiate the samples to get the hyperparameters
-    flat_samples = sampler.get_chain(discard=burnin, flat=True, thin=thin)
-    flat_samples = np.exp(flat_samples)
+    samples = np.exp(chain)
 
     if comittee_size > 1:
-        mean = np.mean(flat_samples, axis=0)
-        cov = np.cov(flat_samples, rowvar=False)
-        hyperparams = np.random.multivariate_normal(mean, cov, size=comittee_size)
+        median = np.median(samples, axis=0)
+        cov = np.cov(samples, rowvar=False)
+        hyperparams = np.random.multivariate_normal(median, cov, size=comittee_size)
 
     else:
-        hyperparams = np.median(flat_samples, axis=0).reshape(1, -1)
+        hyperparams = np.median(samples, axis=0).reshape(1, -1)
 
     # Assuming the last two parameters are width and noise
     lengths = hyperparams[:, :-2]
