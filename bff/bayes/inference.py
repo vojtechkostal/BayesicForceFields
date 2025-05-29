@@ -302,7 +302,7 @@ def optimize_lgp(
     fn_hyperparams: str | Path,
     test_fraction: float,
     n_hyper: int,
-    comittee: int,
+    committee: int,
     fn_backend: str,
     device: str,
     mcmc_kwargs: dict = None
@@ -363,13 +363,13 @@ def optimize_lgp(
 
         # Ensure that the hyperparameters from the file match the committee size
         if (
-            len(lengths) != comittee or
-            len(widths) != comittee or
-            len(sigmas) != comittee
+            len(lengths) != committee or
+            len(widths) != committee or
+            len(sigmas) != committee
         ):
             raise ValueError(
                 f"Number of hyperparameters in {fn_hyperparams}"
-                f" does not match the committee size {comittee}."
+                f" does not match the committee size {committee}."
             )
     else:
         # Bayesian optimization for hyperparameters
@@ -384,7 +384,7 @@ def optimize_lgp(
 
         mcmc_results = MCMCResults(sampler, priors)
         chain = mcmc_results.chain_samples()
-        lengths, widths, sigmas = get_hyperparameters(chain, comittee)
+        lengths, widths, sigmas = get_hyperparameters(chain, committee)
 
     # Create a committee of Local Gaussian Process models
     lgps = [
@@ -409,7 +409,7 @@ def optimize_lgp(
     return lgps, mape
 
 
-def get_hyperparameters(chain, comittee_size: int):
+def get_hyperparameters(chain, committee_size: int):
     """
     Extract hyperparameters from the sampler.
     Assumes the last two parameters are width and noise.
@@ -426,10 +426,10 @@ def get_hyperparameters(chain, comittee_size: int):
     # we exponentiate the samples to get the hyperparameters
     samples = np.exp(chain)
 
-    if comittee_size > 1:
+    if committee_size > 1:
         median = np.median(samples, axis=0)
         cov = np.cov(samples, rowvar=False)
-        hyperparams = np.random.multivariate_normal(median, cov, size=comittee_size)
+        hyperparams = np.random.multivariate_normal(median, cov, size=committee_size)
 
     else:
         hyperparams = np.median(samples, axis=0).reshape(1, -1)
