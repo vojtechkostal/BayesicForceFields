@@ -360,6 +360,17 @@ def optimize_lgp(
         lengths = hyperparams['lengths']
         widths = hyperparams['widths']
         sigmas = hyperparams['sigmas']
+
+        # Ensure that the hyperparameters from the file match the committee size
+        if (
+            len(lengths) != comittee or
+            len(widths) != comittee or
+            len(sigmas) != comittee
+        ):
+            raise ValueError(
+                f"Number of hyperparameters in {fn_hyperparams}"
+                f" does not match the committee size {comittee}."
+            )
     else:
         # Bayesian optimization for hyperparameters
         n_hyper = min(n_hyper, len(X_train))
