@@ -109,13 +109,13 @@ class LGPCommittee:
 
     @property
     def committee_size(self) -> int:
-        return len(self.lgps)
+        return len(self.lgps[0])
 
     def predict(self, X: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """Predict using all LGP models and return stacked means and stds."""
 
         # select a random models
-        idx = torch.randint(0, self.committee_size, (self.committee_size, ))
+        idx = torch.randint(0, self.committee_size, (len(self.lgps), ))
         results = [com[i].predict(X) for com, i in zip(self.lgps, idx)]
         mean, var = zip(*results)
 
