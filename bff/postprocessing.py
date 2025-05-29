@@ -3,14 +3,14 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap, to_rgba
 import numpy as np
 
-from .structures import Specs, InferenceResults
+from .structures import Specs, OptimizationResults
 from .bayes.utils import valid_bounds
 
 __all__ = ['draw_samples', 'plot_confidence_intervals']
 
 
 def draw_samples(
-    results: InferenceResults,
+    results: OptimizationResults,
     n_samples: int = 10,
     distribution: str = 'normal',
     confidence: float = 0.9,
@@ -21,7 +21,7 @@ def draw_samples(
     either uniform or Laplace distribution.
     """
     lower, upper = (1 - confidence) / 2, 1 - (1 - confidence) / 2
-    samples = results.chain_implicit_[:, :results.n_params]
+    samples = results.chain_implicit_[:, :results.n_params_implicit]
     confint = np.quantile(samples, [lower, upper], axis=0)
 
     if distribution == 'normal':
@@ -72,8 +72,8 @@ def draw_samples(
 
 
 def plot_confidence_intervals(
-        results: InferenceResults,
-        confidence: float = 0.9,
+        results: OptimizationResults,
+        confidence: float = 0.95,
         fn_out: str = None
 ) -> None:
 
@@ -101,7 +101,7 @@ def plot_confidence_intervals(
             'label': 'bounds'
         }
         ax.bar(x, bound_ranges, bottom=bound_bottoms, **bar_kws)
-        upper, median, lower = results.get_quantiles(confidence)
+        lower, median, upper = results.quantiles(confidence)[:, :len(bounds)]
         errobar_kws = {
             'color': 'tab:red',
             'elinewidth': 2,
@@ -145,7 +145,7 @@ def plot_confidence_intervals(
 
 
 def plot_corner(
-    results: InferenceResults,
+    results: OptimizationResults,
     quantiles: list[float]=[0.025, 0.5, 0.975],
     cmap=None,
     fn_out: str = None
@@ -162,7 +162,7 @@ def plot_corner(
     results.get_chain()
     fig = corner.corner(
         results.chain_implicit_,
-        labels=results.labels_,
+        labels=results.labels_implicit_,
         show_titles=True,
         title_fmt=".2f",
         hist_bin_factor=1.0,  # Increase the number of histogram bins

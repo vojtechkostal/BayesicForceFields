@@ -8,7 +8,7 @@ def initialize_backend(fn_backend: str):
 
 
 def initialize_walkers(
-    priors: list, n_walkers: int, specs: object = None
+    priors: dict, n_walkers: int, specs: object = None
 ) -> torch.Tensor:
 
     """
@@ -16,8 +16,8 @@ def initialize_walkers(
 
     Parameters
     ----------
-    priors : list
-        List of prior distributions for each parameter.
+    priors : dict
+        Dict of prior distributions for each parameter.
     n_walkers : int
         Number of walkers to initialize.
     specs : object, optional
@@ -32,8 +32,8 @@ def initialize_walkers(
     """
 
     if not specs:
-        means = torch.tensor([p.mean for p in priors])
-        stds = torch.tensor([p.scale for p in priors])
+        means = torch.tensor([p.mean for p in priors.values()])
+        stds = torch.tensor([p.scale for p in priors.values()])
         p0 = torch.normal(means.expand(n_walkers, -1), stds.expand(n_walkers, -1))
     else:
         n_params = len(specs.bounds_implicit.bounds)
@@ -42,7 +42,7 @@ def initialize_walkers(
         p0 = torch.empty((n_walkers, n_dim))
         count = 0
         while count < n_walkers:
-            p0_trial = torch.tensor([p.sample().item() for p in priors])
+            p0_trial = torch.tensor([p.sample().item() for p in priors.values()])
             if valid_bounds(p0_trial[:n_params].unsqueeze(0), specs):
                 p0[count] = p0_trial
                 count += 1
@@ -57,7 +57,7 @@ def valid_bounds(params: torch.Tensor, specs: object) -> torch.Tensor:
     lbe, ube = torch.tensor(specs.bounds_implicit.values).T
     lbi, ubi = torch.tensor(specs.implicit_param_bounds)
 
-    params = params.to(dtype=torch.float32, device=lbe.device)
+    params = check_tensor(params, device=lbe.device)
 
     valid_explicit = ((params > lbe) & (params < ube)).all(dim=1)
 

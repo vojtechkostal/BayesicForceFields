@@ -10,7 +10,7 @@ from .scoring.trajectory import (
     analyze_trajectories_wrapper,
 )
 
-from .structures import TrainData, InferenceResults
+from .structures import TrainData, MCMCResults, OptimizationResults
 from .topology import check_topols
 from .io.logs import Logger, print_progress, print_progress_mcmc, format_time
 
@@ -86,7 +86,7 @@ class Optimizer:
         stop: int = None,
         step: int = 1,
         **kwargs
-    ) -> InferenceResults:
+    ) -> None:
         """
         fn_topol : List[Union[str, Path]]
             Paths to the .itp topology files.
@@ -312,7 +312,7 @@ class Optimizer:
         restart: bool = True,
         device: str = 'cuda:0',
         **kwargs
-    ) -> InferenceResults:
+    ) -> OptimizationResults:
 
         """
         Run the Bayesian inference to optimize the force field parameters.
@@ -355,10 +355,8 @@ class Optimizer:
 
         # Run the MCMC sampler
         print_progress_mcmc(sampler, p0, n_max, logger=self.logger, **kwargs)
-        autocorr_time = sampler.get_autocorr_time(tol=0)
-        results = InferenceResults(
-            sampler, priors, self.specs.data, autocorr_time
-        )
+        tau = sampler.get_autocorr_time(tol=0)
+        results = OptimizationResults(sampler, priors, tau, self.specs.data)
 
         # Save the results
         if fn_priors:
