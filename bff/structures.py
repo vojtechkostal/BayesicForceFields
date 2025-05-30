@@ -421,180 +421,6 @@ class Specs:
         )
 
 
-# class InferenceResults(Specs):
-#     def __init__(self, chain, priors, specs, tau):
-#         """Store and process Bayesian inference results."""
-#         super().__init__(specs)
-#         self.chain = self._initialize_chain(chain)
-#         self.samples = None
-#         self._initialize_tau(tau)
-#         self.priors_specs = self._initialize_priors(priors)
-#         self.n_params = len(self.bounds_implicit.bounds)
-#         self.n_nuisance = self.chain.get_chain().shape[-1] - self.n_params
-
-#     def _initialize_chain(self, chain):
-#         """Initialize the chain, handling HDF5 backend if necessary."""
-#         if isinstance(chain, (str, Path)):
-#             return initialize_backend(chain)
-#         else:
-#             return chain
-
-#     def _initialize_priors(self, priors):
-#         """
-#         Load priors from YAML if given as a file, otherwise construct
-#         dictionary.
-#         """
-
-#         if isinstance(priors, (str, Path)):
-#             return load_yaml(str(priors))
-#         if isinstance(priors, list):
-#             return {
-#                 f"{i:02d} {type(p).__name__}": [float(p.mean), float(p.scale)]
-#                 for i, p in enumerate(priors, start=1)
-#             }
-#         if not priors:
-#             return None
-#         raise TypeError(
-#             "Invalid priors type. Must be str, Path, dict, or None."
-#         )
-
-#     def _initialize_tau(self, tau):
-#         """Load tau from a file if given as a file,
-#         otherwise return the value."""
-#         if isinstance(tau, (str, Path)):
-#             tau = np.load(str(tau))
-#         elif isinstance(tau, (list, np.ndarray)):
-#             tau = np.asarray(tau)
-#         elif not tau:
-#             tau = np.ones(self.chain.shape[1])
-#         self.set_tau(tau)
-
-#     def set_tau(self, tau):
-#         """Update the tau value."""
-#         self.tau = np.atleast_1d(tau)
-
-#     @property
-#     def priors(self):
-#         """Reconstruct distributions from stored prior specs."""
-
-#         priors_ = []
-#         for name, (arg1, arg2) in self.priors_specs.items():
-#             dist_name = name.split()[1]
-#             if dist_name == 'Normal':
-#                 priors_.append(norm(arg1, arg2))
-#             elif dist_name == 'Uniform':
-#                 priors_.append(uniform(arg1, arg2))
-#             else:
-#                 raise ValueError(
-#                     f"Unknown distribution '{name}'. Options are: "
-#                     f"Normal, Uniform."
-#                 )
-#         return priors_
-
-#     @property
-#     def labels_(self):
-#         """Generate labels for the parameters."""
-#         labels = np.empty_like(self.tau, dtype=object)
-#         labels[:self.n_params] = self.bounds_implicit.params
-#         labels[self.n_params:] = [
-#             f'$\\sigma_{i+1}$' for i in range(self.n_nuisance)
-#         ]
-#         return labels
-
-#     def get_quantiles(self, confidence=0.90):
-#         upper_quantile = (1 - confidence) / 2
-#         lower_quantile = 1 - (1 - confidence) / 2
-#         quantiles = [lower_quantile, 0.5, upper_quantile]
-#         explicit_params = self.chain_explicit_[:, :self.n_params + 1]
-#         return np.quantile(explicit_params, quantiles, axis=0)
-
-#     def get_chain(
-#         self,
-#         discard: int = None,
-#         stride: int = None,
-#         remove_defects: bool = True,
-#         remove_outliers: bool = False
-#     ) -> np.ndarray:
-#         """
-#         Retrieve MCMC samples with optional filtering.
-
-#         Parameters
-#         ----------
-#         discard : int
-#             Number of initial samples to discard (default: 2 * max(tau)).
-#         stride : int
-#             Step size for thinning (default: 0.5 * min(tau)).
-#         remove_defects : bool
-#             Whether to filter out samples violating parameter bounds.
-
-#         Returns
-#         -------
-#         samples : np.ndarray
-#             The MCMC samples.
-#         """
-#         discard = discard or int(2 * np.max(self.tau))
-#         stride = stride or int(0.5 * np.min(self.tau))
-#         samples = self.chain.get_chain(
-#             discard=discard, flat=True, thin=stride
-#         ).copy()
-#         samples[:, self.n_params:] = np.exp(samples[:, self.n_params:])
-
-#         if remove_defects:
-#             bounds = self.bounds_implicit.values
-#             data = samples[:, :self.n_params]
-#             mask = np.all(
-#                 np.logical_and(
-#                     data >= bounds[:, 0],
-#                     data <= bounds[:, 1]
-#                 ),
-#                 axis=1
-#             )
-#             samples = samples[mask]
-
-#         if remove_outliers:
-#             from sklearn.ensemble import IsolationForest
-#             labels = IsolationForest(random_state=0).fit_predict(samples)
-#             samples = samples[labels == 1]
-#             threshold = np.quantile(samples, 0.999, axis=0)
-#             mask = np.all(samples < threshold, axis=1)
-#             samples = samples[mask]
-
-#         self.samples = samples
-
-#     @property
-#     def chain_implicit_(self):
-#         return self.samples
-
-#     @property
-#     def chain_explicit_(self) -> np.ndarray:
-#         """Get the explicit parameters, computing them if necessary."""
-#         return self._compute_explicit_params()
-
-#     def _compute_explicit_params(self) -> np.ndarray:
-#         """
-#         Compute the explicit parameters from the implicit parameters.
-
-#         Returns
-#         -------
-#         np.ndarray
-#             The computed explicit parameters.
-#         """
-#         params = self.chain_implicit_[:, :self.n_params]
-#         q_explicit = np.sum(params * self.constraint_matrix, axis=1)
-#         q_implicit = (
-#             self.total_charge - q_explicit
-#         ) / self.implicit_param_count
-#         return np.insert(
-#             self.chain_implicit_, self.implicit_param_pos, q_implicit, axis=1)
-
-#     def save_priors(self, fn_out):
-#         """Save priors to a YAML file."""
-#         save_yaml(self.priors_specs, str(fn_out))
-
-#     def save_tau(self, fn_out):
-#         np.save(str(fn_out), self.tau)
-
-
 class MCMCResults:
 
     DIST_REGISTRY = {
@@ -730,7 +556,7 @@ class OptimizationResults(MCMCResults, Specs):
         """
         q_lo = (1 - confidence) / 2
         q_hi = 1 - q_lo
-        return np.quantile(self.samples, [q_lo, 0.5, q_hi], axis=0)
+        return np.quantile(self.chain_explicit_, [q_lo, 0.5, q_hi], axis=0)
 
     def get_chain(self, discard=None, stride=None, remove_defects=True):
         """
@@ -759,9 +585,7 @@ class OptimizationResults(MCMCResults, Specs):
 
         params = self.chain_implicit_[:, :self.n_params_implicit]
         q_explicit = np.sum(params * self.constraint_matrix, axis=1)
-        q_implicit = (
-            self.total_charge - q_explicit
-        ) / self.implicit_param_count
+        q_implicit = (self.total_charge - q_explicit) / self.implicit_param_count
         return np.insert(
             self.chain_implicit_, self.implicit_param_pos, q_implicit, axis=1)
 
