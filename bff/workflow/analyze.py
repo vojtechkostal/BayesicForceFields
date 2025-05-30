@@ -1,8 +1,7 @@
 import sys
 import os
 
-from ..amo import AMO
-from sklearn.preprocessing import StandardScaler
+from ..bff import Optimizer
 
 from pathlib import Path
 from ..io.utils import load_yaml
@@ -38,7 +37,7 @@ def main(fn_config):
     )
 
     # Initialize the sampler
-    optimizer = AMO(
+    optimizer = Optimizer(
         *config['fn_train_set'],
         fn_log=str(config['results_dir'] / 'analyze.log')
     )
@@ -46,25 +45,22 @@ def main(fn_config):
     # Load reference and training set -> evaluate the training set
     optimizer.load_reference(**config['aimd'], **config['settings'])
     if config['ffmd'].get('fn_in', None) is not None:
-        optimizer.load_train_set(fn_in=config['ffmd']['fn_in'])
+        optimizer.load_train(fn_in=config['ffmd']['fn_in'])
     else:
-        optimizer.load_train_set(
+        optimizer.load_train(
             workers=config['ffmd']['workers'],
             fn_out=config['ffmd']['fn_out'],
             progress_stride=config['ffmd']['progress_stride'],
             **config['settings'])
 
-    optimizer.eval_train_set(*config['features'])
-
     # Train the model
-    if config.get('rf', None) is not None:
-        scaler_in, scaler_out = StandardScaler(), StandardScaler()
-        optimizer.train(config['rf']['n_trees'], scaler_in, scaler_out)
+    if config.get('lgp', None) is not None:
+        optimizer.setup_lgp(**config['lgp'])
 
     # Define the file names
     if config.get('inference', None) is not None:
         results_dir = Path(config['results_dir'])
-        fn_backend = Path('./backend.h5').resolve()
+        fn_backend = Path('./mcmc_opt.h5').resolve()
         fn_priors = results_dir / 'priors.yaml'
         fn_tau = results_dir / 'tau.npy'
         fn_specs = results_dir / 'specs.yaml'
