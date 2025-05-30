@@ -149,11 +149,11 @@ def print_progress_mcmc(
     for i, sample in enumerate(generator, start=1):
         it = sampler.iteration
         if it >= max_iter:
-            logger.info(f"> {title}: Did not converge in {it} iterations.")
+            logger.info(f"  > {title}: Did not converge in {it} iterations.")
             break
 
         if i == 1:
-            progress_str = f"> {title}: {0:>{pad}}/{max_iter}".rjust(pad)
+            progress_str = f"  > {title}: {0:>{pad}}/{max_iter}".rjust(pad)
             logger.info(progress_str, overwrite=True)
 
         # Check convergence every `stride` steps
@@ -166,7 +166,7 @@ def print_progress_mcmc(
             it_per_sec = int((i + 1) / elapsed_time) if elapsed_time > 0 else 0
 
             logger.info(
-                f"> {title}: {it:>{pad}}/{max_iter}".rjust(pad) + ' | '
+                f"  > {title}: {it:>{pad}}/{max_iter}".rjust(pad) + ' | '
                 f"{it_per_sec} it/s | "
                 f"chain: {100 * progress_chain:3.0f}%, "
                 f"fluct: {100 * progress_fluct:3.0f}%",
@@ -175,7 +175,7 @@ def print_progress_mcmc(
 
             if converged:
                 t1 = time.time()
-                logger.info(f"> {title}: Done. ({it} it. & {format_time(t1 - t0)})")
+                logger.info(f"  > {title}: Done. ({it} it. & {format_time(t1 - t0)})")
                 break
 
 

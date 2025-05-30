@@ -272,10 +272,10 @@ class Optimizer:
 
         self.lgps = []
         for q in self.QoI:
+            self.logger.info(f'> Optimizing LGP hyperparameters: {q}')
             mcmc_kwargs = kwargs | {
                 'max_iter': max_iter,
-                'logger': self.logger,
-                'title': f'Optimizing {q} hyperparams'
+                'logger': self.logger
             }
             sl = self.train_data.y_slices.get(q, slice(None))
             lgps, error = optimize_lgp(
@@ -292,11 +292,12 @@ class Optimizer:
             )
 
             self.logger.info(
-                f'> LGP {q} | performance: MAPE = {(error * 100):.1f} %')
+                f'  > LGP performance (MAPE): {(error * 100):.1f} %')
 
             # Strore the model
             self.lgps.append(lgps)
             self.logger.info('')
+
         self.surrogate = LGPCommittee(
             self.lgps, self.specs, self.train_data.observations)
 
@@ -354,6 +355,7 @@ class Optimizer:
         )
 
         # Run the MCMC sampler
+        self.logger.info(f'> Optimizing parameters: {self.specs.mol_resname}')
         print_progress_mcmc(sampler, p0, n_max, logger=self.logger, **kwargs)
         tau = sampler.get_autocorr_time(tol=0)
         results = OptimizationResults(sampler, priors, tau, self.specs.data)
