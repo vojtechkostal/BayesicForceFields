@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.constants import atomic_mass
 from scipy.spatial.transform import Rotation as R
+from scipy.stats import chi2
 
 
 def modify_dcd_frc_header(fn):
@@ -64,3 +65,32 @@ def sigmoid(x, x0=3, scale=5):
     x = np.asarray(x)
     arg = (x - x0) * scale
     return 1 / (1 + np.exp(- arg))
+
+
+def sample_within_confidence(samples, committee_size, confidence=0.68):
+    if committee_size == 1:
+        return np.median(samples, axis=0).reshape(1, -1)
+
+    median = np.median(samples, axis=0)
+    cov = np.cov(samples, rowvar=False)
+    inv_cov = np.linalg.inv(cov)
+
+    dim = samples.shape[1]
+    # Mahalanobis distance threshold corresponding to the desired confidence level
+    threshold = chi2.ppf(confidence, df=dim)
+
+    accepted = []
+    max_attempts = committee_size * 1000  # Can reduce this with better efficiency
+
+    for _ in range(max_attempts):
+        sample = np.random.multivariate_normal(median, cov)
+        mahalanobis_sq = (sample - median) @ inv_cov @ (sample - median)
+        if mahalanobis_sq <= threshold:
+            accepted.append(sample)
+        if len(accepted) == committee_size:
+            break
+
+    if len(accepted) < committee_size:
+        raise RuntimeError(f"Could only collect {len(accepted)} samples within {confidence*100:.1f}% confidence region.")
+
+    return np.array(accepted)
