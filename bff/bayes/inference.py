@@ -16,6 +16,7 @@ from .utils import (
     check_device, check_tensor,
     train_test_split
 )
+from ..tools import sample_within_confidence
 
 
 def define_param_priors(
@@ -426,32 +427,7 @@ def get_hyperparameters(chain, committee_size: int):
     # we exponentiate the samples to get the hyperparameters
     samples = np.exp(chain)
 
-    if committee_size > 1:
-        median = np.median(samples, axis=0)
-        cov = np.cov(samples, rowvar=False)
-
-        # Get the 16th and 84th percentiles per parameter
-        lower, upper = np.percentile(samples, [16, 84], axis=0)
-
-        # Try to sample committee_size vectors from the distribution,
-        # but only keep those inside the 68% confidence bounds
-        accepted = []
-        max_attempts = committee_size * 100000
-
-        for _ in range(max_attempts):
-            sample = np.random.multivariate_normal(median, cov)
-            if np.all((sample >= lower) & (sample <= upper)):
-                accepted.append(sample)
-            if len(accepted) == committee_size:
-                break
-
-        if len(accepted) < committee_size:
-            raise RuntimeError("Not enough samples within 68% confidence interval.")
-
-        hyperparams = np.array(accepted)
-
-    else:
-        hyperparams = np.median(samples, axis=0).reshape(1, -1)
+    hyperparams = sample_within_confidence(samples, committee_size, 0.68)
 
     # Assuming the last two parameters are width and noise
     lengths = hyperparams[:, :-2]
