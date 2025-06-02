@@ -466,7 +466,7 @@ class MCMCResults:
             tau = np.load(str(tau))
         elif isinstance(tau, (list, float, int)):
             tau = np.asarray(tau)
-        elif tau is None:
+        elif isinstance(tau, (None, np.nan)):
             try:
                 tau = self.chain.get_autocorr_time(tol=0)
             except AttributeError:
