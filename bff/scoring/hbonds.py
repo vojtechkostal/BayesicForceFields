@@ -46,7 +46,6 @@ def count_hbonds(
     results = {}
     for hb, count in zip(hbond_types, counts):
         name = f"{hb[0]}({hb[1]}) to {hb[2]}({hb[3]})"
-        # if count / n_frames > 0.1:
         results[name] = count / n_frames
 
     return results
