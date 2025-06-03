@@ -230,7 +230,7 @@ class TrainData:
             reference = [reference]
 
         self.reference = reference
-        self.valid_hb = set(k for trj in self.reference for k in trj.hb)
+        self.valid_hb = np.unique([k for trj in self.reference for k in trj.hb])
 
     def write_features(self, output_path: str | Path) -> None:
         """Write features into a JSON file."""
@@ -466,7 +466,7 @@ class MCMCResults:
             tau = np.load(str(tau))
         elif isinstance(tau, (list, float, int)):
             tau = np.asarray(tau)
-        elif isinstance(tau, np.nan) or tau is None:
+        elif np.isnan(tau) or tau is None:
             try:
                 tau = self.chain.get_autocorr_time(tol=0)
             except AttributeError:
