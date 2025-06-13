@@ -17,7 +17,7 @@ def dispatch_md_job(hash, sample, config):
 
     config_md = config | {'params': sample, 'hash': hash}
     data_dir = Path(config_md['data_dir']).resolve()
-    FN_MD_SCRIPT = 'amo.workflow.simulate'
+    FN_MD_SCRIPT = 'BayesicForceFields.bff.workflow.simulate'
 
     # Change to full paths
     if config_md.get('fn_specs'):
