@@ -558,7 +558,9 @@ class OptimizationResults(MCMCResults, Specs):
         q_hi = 1 - q_lo
         return np.quantile(self.chain_explicit_, [q_lo, 0.5, q_hi], axis=0)
 
-    def get_chain(self, discard=None, stride=None, remove_defects=True, remove_nuisance_outliers=True):
+    def get_chain(
+        self, discard=None, stride=None, remove_defects=True, remove_sigma_outliers=True
+    ) -> None:
         """
         Retrieve MCMC samples with optional filtering.
         """
@@ -575,7 +577,8 @@ class OptimizationResults(MCMCResults, Specs):
                 axis=1
             )
             chain_samples = chain_samples[mask]
-        if remove_nuisance_outliers:
+
+        if remove_sigma_outliers:
             # Remove outliers based on nuisance parameters
             nuisance_params = chain_samples[:, self.n_params_implicit:]
             treshold = np.quantile(nuisance_params, 0.99, axis=0)
