@@ -66,7 +66,7 @@ def initialize_environment(config):
     """
 
     data_dir = Path(config['data_dir']).resolve()
-    data_dir.mkdir(parents=True, exist_ok=False)
+    data_dir.mkdir(parents=True, exist_ok=True)
 
     if not config.get('fn_specs'):
         topol = TopologyParser(config['gromacs']['fn_topol'][0])
