@@ -83,15 +83,15 @@ def main(fn_config: str) -> None:
     job_scheduler = config.get('job_scheduler', 'local')
     run_dir = data_dir if job_scheduler == 'local' else Path('./').resolve()
 
-    # Define the output file names
-    deffnm = run_dir / f"md-{hash}-{i}"
-    fn_tpr = run_dir / f"{deffnm}.tpr"
-
     fn_log = str(data_dir / 'gmx.log')
     md_specs = [fn_mdp_em, fn_mdp_prod, fn_coord, fn_topol, fn_ndx, n_steps]
     success = []
     with open(fn_log, 'a+') as log:
         for i, (em, prod, c, t, ndx, n) in enumerate(zip(md_specs)):
+
+            # Define the output file names
+            deffnm = run_dir / f"md-{hash}-{i}"
+            fn_tpr = run_dir / f"{deffnm}.tpr"
 
             # Create topology with new parameters
             fn_top_new = str(run_dir / f"topol-{hash}-{i:03d}.top")
