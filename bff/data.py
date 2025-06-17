@@ -19,7 +19,6 @@ ANIONS = {'f', 'cl', 'br', 'i'}
 
 WATERS = ['SOL', 'water', 'HOH']
 
-
 CP2K_KIND_DEFAULTS = {
     'h': {'basis_set': 'TZV2P-GTH-q1', 'potential': 'GTH-PBE-q1'},
     'o': {'basis_set': 'TZV2P-GTH-q6', 'potential': 'GTH-PBE-q6'},
