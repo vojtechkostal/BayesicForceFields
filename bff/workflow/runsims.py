@@ -54,6 +54,7 @@ def dispatch_md_job(hash, sample, config, job_scheduler):
         return None
 
     submit_cls = SCHEDULER_CLASSES[job_scheduler]
+    submit_specs = config[job_scheduler]['preamble'] | {'output': fn_stdout}
     submit_script = submit_cls(**submit_specs)
 
     fn_submit = data_dir / f'run-{hash}.sh'
@@ -63,10 +64,6 @@ def dispatch_md_job(hash, sample, config, job_scheduler):
         raise ValueError(
             f"Configuration for job scheduler '{job_scheduler}' is missing."
         )
-    
-    submit_cls = SCHEDULER_CLASSES[job_scheduler]
-    submit_specs = config[job_scheduler]['preamble'] | {'output': fn_stdout}
-    submit_script = submit_cls(**submit_specs)
 
     for cmd in config[job_scheduler]['commands']:
         resolved = ' '.join(map(str, cmd_run)) if 'RUN MD' in cmd else cmd
