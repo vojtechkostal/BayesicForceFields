@@ -13,7 +13,7 @@ from ..io.schedulers import Slurm
 
 SCHEDULER_CLASSES = {
     'slurm': Slurm,
-    # future: 'pbs': PBS,
+    # TODO: 'pbs': PBS,
 }
 
 FN_MD_SCRIPT = Path(__file__).resolve().parent / 'simulate.py'
@@ -191,7 +191,7 @@ def print_train_summary(config):
     print("  > parameters:")
     for name, b in config['bounds'].items():
         print(f"    {name}: {b}")
-    print(f" > total charge: {config['total_charge']}")
+    print(f"  > total charge: {config['total_charge']}")
     print()
 
 
@@ -292,7 +292,7 @@ def main(fn_config):
         samples,
         Path(config['data_dir']),
         compress=config.get('compress', False),
-        remove=config.get('remove', False)
+        remove=config.get('cleanup', False)
     )
 
 
