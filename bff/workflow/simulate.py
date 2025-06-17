@@ -84,10 +84,10 @@ def main(fn_config: str) -> None:
     run_dir = data_dir if job_scheduler == 'local' else Path('./').resolve()
 
     fn_log = str(data_dir / 'gmx.log')
-    md_specs = [fn_mdp_em, fn_mdp_prod, fn_coord, fn_topol, fn_ndx, n_steps]
+    md_specs = zip(fn_mdp_em, fn_mdp_prod, fn_coord, fn_topol, fn_ndx, n_steps)
     success = []
     with open(fn_log, 'a+') as log:
-        for i, md_specs_ in enumerate(zip(md_specs)):
+        for i, md_specs_ in enumerate(md_specs):
 
             em, prod, coord, top, ndx, steps = md_specs_
 
