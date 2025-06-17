@@ -53,12 +53,12 @@ def dispatch_md_job(hash, sample, config, job_scheduler):
         subprocess.run(cmd_run, cwd=str(data_dir))
         return None
 
+    fn_submit = data_dir / f'run-{hash}.sh'
+    fn_stdout = data_dir / f'run-{hash}.out'
+
     submit_cls = SCHEDULER_CLASSES[job_scheduler]
     submit_specs = config[job_scheduler]['preamble'] | {'output': fn_stdout}
     submit_script = submit_cls(**submit_specs)
-
-    fn_submit = data_dir / f'run-{hash}.sh'
-    fn_stdout = data_dir / f'run-{hash}.out'
 
     if config.get(job_scheduler) is None:
         raise ValueError(
