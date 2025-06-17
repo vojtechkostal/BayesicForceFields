@@ -87,7 +87,9 @@ def main(fn_config: str) -> None:
     md_specs = [fn_mdp_em, fn_mdp_prod, fn_coord, fn_topol, fn_ndx, n_steps]
     success = []
     with open(fn_log, 'a+') as log:
-        for i, (em, prod, c, t, ndx, n) in enumerate(zip(md_specs)):
+        for i, md_specs_ in enumerate(zip(md_specs)):
+
+            em, prod, coord, top, ndx, steps = md_specs_
 
             # Define the output file names
             deffnm = run_dir / f"md-{hash}-{i}"
@@ -95,12 +97,12 @@ def main(fn_config: str) -> None:
 
             # Create topology with new parameters
             fn_top_new = str(run_dir / f"topol-{hash}-{i:03d}.top")
-            _ = modify_topology(t, specs, params, implicit, fn_top_new)
+            _ = modify_topology(top, specs, params, implicit, fn_top_new)
 
             # Minimize energy
             if em:
                 subprocess.run(
-                    [gmx_cmd, 'grompp', '-f', em, '-c', c, '-p',
+                    [gmx_cmd, 'grompp', '-f', em, '-c', coord, '-p',
                      fn_top_new, '-n', ndx, '-o', fn_tpr, '-maxwarn', '2'],
                     cwd=run_dir, stdout=log, stderr=log
                 )
@@ -110,7 +112,7 @@ def main(fn_config: str) -> None:
                     cwd=run_dir, stdout=log, stderr=log
                 )
             else:
-                deffnm.with_suffix('.gro').write_text(c.read_text())
+                deffnm.with_suffix('.gro').write_text(coord.read_text())
 
             # Run production MD
             subprocess.run(
@@ -121,12 +123,12 @@ def main(fn_config: str) -> None:
 
             subprocess.run(
                 [gmx_cmd, 'mdrun', '-s', fn_tpr, '-deffnm', deffnm,
-                 '-nsteps', str(n), '-dlb', 'yes', '-ntmpi', '1'],
+                 '-nsteps', str(steps), '-dlb', 'yes', '-ntmpi', '1'],
                 cwd=run_dir, stdout=log, stderr=log
             )
 
             # Check if the simulation finished aka has the expected number of frames
-            success.append(check_success(f'{deffnm}.xtc', prod, n))
+            success.append(check_success(f'{deffnm}.xtc', prod, steps))
 
     if np.all(success):
         if job_scheduler != 'local':
