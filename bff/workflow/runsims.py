@@ -15,7 +15,7 @@ SCHEDULER_CLASSES = {
     # TODO: 'pbs': PBS,
 }
 
-PATH_MD_SCRIPT = 'BayesicForceFields/bff/workflow/simulate.py'
+PATH_MD_SCRIPT = 'BayesicForceFields/bff/workflow/simulate'
 
 
 def resolve_config_paths(config: dict) -> dict:
