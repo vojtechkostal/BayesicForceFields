@@ -6,10 +6,10 @@ import numpy as np
 
 from pathlib import Path
 
-from ..io.mdp import get_n_frames_target
-from ..structures import Specs
-from ..topology import TopologyParser
-from ..io.utils import load_yaml
+from bff.io.mdp import get_n_frames_target
+from bff.structures import Specs
+from bff.topology import TopologyParser
+from bff.io.utils import load_yaml
 
 
 def check_success(fn_trj: str, fn_mdp: str, n_target: int) -> bool:
