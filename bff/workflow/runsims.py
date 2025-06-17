@@ -15,7 +15,7 @@ SCHEDULER_CLASSES = {
     # TODO: 'pbs': PBS,
 }
 
-PATH_MD_SCRIPT = Path(__file__).resolve().parent / 'simulate.py'
+PATH_MD_SCRIPT = Path(__file__).resolve().parent / 'simulate'
 
 
 def resolve_config_paths(config: dict) -> dict:
