@@ -2,6 +2,7 @@ import argparse
 import os
 import time
 import subprocess
+import shutil
 import numpy as np
 from pathlib import Path
 from ..topology import TopologyParser
@@ -170,9 +171,15 @@ def clean_up_train_dir(samples, data_dir, compress=False, remove=False):
     if compress:
         compress_results(data_dir)
         if remove:
-            os.system(f'rm -rf {data_dir}')
+            shutil.rmtree(data_dir)
     elif remove:
-        os.system(f'rm {data_dir}/slurm* {data_dir}/config-* {data_dir}/run-*')
+        patterns = ['run-*.sh', 'run-*.out', 'config-*.yaml']
+        for pattern in patterns:
+            for f in Path(data_dir).glob(pattern):
+                try:
+                    f.unlink()
+                except Exception as e:
+                    print(f"Warning: Failed to remove {f}: {e}")
 
 
 def print_train_summary(config):
