@@ -15,7 +15,7 @@ SCHEDULER_CLASSES = {
     # TODO: 'pbs': PBS,
 }
 
-PATH_MD_SCRIPT = Path(__file__).resolve().parent / 'simulate'
+PATH_MD_SCRIPT = Path(__file__).resolve().parent / 'simulate.py'
 
 
 def resolve_config_paths(config: dict) -> dict:
@@ -47,7 +47,7 @@ def dispatch_md_job(hash, sample, config, job_scheduler):
     fn_config_md = data_dir / f'config-{hash}.yaml'
     save_yaml(config_md, fn_config_md)
 
-    cmd_run = [config['python'], '-m', str(PATH_MD_SCRIPT), '-f', str(fn_config_md)]
+    cmd_run = [config['python'], str(PATH_MD_SCRIPT), '-f', str(fn_config_md)]
 
     if job_scheduler == 'local':
         subprocess.run(cmd_run, cwd=str(data_dir))
