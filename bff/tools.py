@@ -3,7 +3,7 @@ from scipy.constants import atomic_mass
 from scipy.spatial.transform import Rotation as R
 from scipy.stats import chi2
 
-
+    
 def modify_dcd_frc_header(fn):
     """
     Modify the header of a DCD file to include the 'CORD' flag.
