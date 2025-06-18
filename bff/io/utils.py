@@ -10,13 +10,6 @@ def path_to_str(path: Path) -> str:
     return str(path)
 
 
-# def save_yaml(data: dict, fn: Path | str) -> None:
-#     """Save a dictionary as YAML to a file."""
-#     fn = path_to_str(fn) if isinstance(fn, Path) else fn
-#     data_yaml = yaml.dump(data, default_flow_style=True)
-#     with open(fn, "w") as f:
-#         f.write(data_yaml)
-
 class NumpyYAMLEncoder(yaml.SafeDumper):
     """YAML encoder for numpy arrays and numpy scalar types."""
 

@@ -5,9 +5,9 @@ from torch.distributions import Normal, Uniform
 from functools import partial
 from pathlib import Path
 
-from ..scoring.metrics import mape_fn
+from ..evaluation.metrics import mape_fn
 from .gaussian_process import LocalGaussianProcess
-from .likelihood import loo_log_likelihood, gaussian_log_likelihood
+from .likelihoods import loo_log_likelihood, gaussian_log_likelihood
 from ..structures import MCMCResults
 from ..io.logs import print_progress_mcmc
 from ..io.utils import load_yaml, save_yaml
