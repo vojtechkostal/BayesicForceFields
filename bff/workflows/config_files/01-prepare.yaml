@@ -1,0 +1,48 @@
+project: MOL
+fn_topol:
+  - ./topol-1.top
+  - ./topol-2.top
+  - ./topol-2.top
+fn_mol: ./MOL.pdb
+charge:
+  - -1
+  - 1
+  - 1
+mult:
+  - 1
+  - 1
+  - 1
+restr_sel:  # Selection strings for restraint atoms (optional, empty by default)
+  - [null] # null means no restraints
+  - ['P CAL'] # Use atom names
+  - ['P CAL']
+restr_x0:  # Restraint distances (optional, empty by default)
+  - [null] # Same at above
+  - [0.35]
+  - [0.50]
+restr_k:  # Force constants (optional, empty by default)
+  - [null] # same as above
+  - [5000]
+  - [5000]
+  
+# If you start from scratch, DO NOT specify the box sizes
+#box:
+#  - [15.0, 15.0, 15.0]
+#  - [15.1, 15.1, 15.1]
+#  - [15.2, 15.2, 15.2]
+
+# If you don't specify the .mdp files, defaults are taken from ecco/data/mdp
+#fn_em:
+#  - ./em-1.mdp
+#  - ./em-2.mdp
+#  - ./em-3.mdp
+#fn_nvt:
+#  - ./nvt-1.mdp
+#  - ./nvt-2.mdp
+#  - ./nvt-3.mdp
+#fn_npt:
+#  - ./npt-1.mdp
+#  - ./npt-2.mdp
+#  - ./npt-3.mdp
+nsteps_npt: 5000000 # 10ns for NpT equilibration should be sufficient
+nsteps_nvt: 500000 # 1ns for NVT equilibration should be sufficient

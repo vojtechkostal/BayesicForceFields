@@ -5,7 +5,7 @@ import multiprocessing as mp
 from pathlib import Path
 from .bayes.inference import optimize_lgp, initialize_mcmc_sampler
 from .bayes.gaussian_process import LGPCommittee
-from .scoring.trajectory import (
+from .evaluation.trajectory import (
     analyze_all_trajectories,
     analyze_trajectories_wrapper,
 )
