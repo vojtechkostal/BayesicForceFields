@@ -1,0 +1,54 @@
+inputs: './results/random_samples.npy'
+fn_specs: './results/specs.yaml'
+data_dir: ./test/amber-q81-tip4p2005
+gromacs:
+  fn_mdp_em:
+    - ./train/em.mdp
+    - ./train/em.mdp
+    - ./train/em.mdp
+  fn_mdp_prod:
+    - ./train//nvt-000.mdp
+    - ./train//nvt-001.mdp
+    - ./train//nvt-002.mdp
+  fn_coordinates:
+    - ./train/win-000.gro
+    - ./train/win-001.gro
+    - ./train/win-002.gro
+  fn_topol:
+    - ./train/topol-000.top
+    - ./train/topol-001.top
+    - ./train/topol-002.top
+  fn_ndx:
+    - ./train/index-000.ndx
+    - ./train/index-001.ndx
+    - ./train/index-002.ndx
+  n_steps:
+    - 2500000
+    - 2500000
+    - 2500000
+max_slurm: 200
+compress: false
+cleanup: true
+slurm:
+  sbatch:
+    job-name: mol-test
+    nodes: 1
+    ntasks-per-node: 8
+    gres: gpu:1
+    mem: 20G
+    time: 03:55:00
+    partition: b32_128_gpu
+  commands:
+#    - source /uochb/soft/b/spack/20221211-git/share/spack/setup-env.sh
+    - source /uochb/soft/b/spack/2024.9-gcc12.3-git/share/spack/setup-env.sh
+#    - spack load gromacs@2022.3 ~mpi /ydjyace
+    - spack load gromacs@2024.2+cuda
+    - export SLURM_MPI_TYPE=pmix_v3
+    - export WORKDIR=/dev/shm/$USER/$SLURM_JOB_ID
+    - mkdir -p $WORKDIR || exit 1
+    - cd $WORKDIR
+    - RUN MD
+    - rm -rf $WORKDIR
+    - sleep 2
+    - exit
+  python: python3.10
