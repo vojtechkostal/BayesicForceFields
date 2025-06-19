@@ -8,6 +8,7 @@ from ..topology import TopologyParser
 from ..structures import Specs, RandomParamsGenerator
 from ..io.utils import load_yaml, save_yaml, compress_results
 from ..io.schedulers import Slurm
+from ..io.logs import Logger
 
 
 SCHEDULER_CLASSES = {
@@ -181,26 +182,27 @@ def clean_up_train_dir(samples, data_dir, compress=False, remove=False):
                     print(f"Warning: Failed to remove {f}: {e}")
 
 
-def print_train_summary(config):
+def print_train_summary(config, logger):
     """
     Print a summary of the configuration settings.
     """
-    print()
-    print(f'> Generating training set for: {config['mol_resname']}')
-    print("  > parameters:")
+
+    logger.info("")
+    logger.info(f"> Generating training set for: {config['mol_resname']}")
+    logger.info("  > parameters:")
     for name, b in config['bounds'].items():
-        print(f"    {name}: {b}")
-    print(f"  > total charge: {config['total_charge']}")
-    print()
+        logger.info(f"    {name}: {b}")
+    logger.info(f"  > total charge: {config['total_charge']}")
+    logger.info('')
 
 
-def print_validate_summary(config):
+def print_validate_summary(config, logger):
     """
     Print a summary of the configuration settings.
     """
-    print()
-    print(f'> Generating validation set for: {config['mol_resname']}')
-    print()
+    logger.info("")
+    logger.info(f"> Generating validation set for: {config['mol_resname']}")
+    logger.info("")
 
 
 # ---- Main Workflow ----
@@ -214,13 +216,15 @@ def main(fn_config):
     fn_specs = initialize_environment(config)
     validate = 'inputs' in config
 
+    logger = Logger(None)
+
     if validate:
-        print_validate_summary(config)
+        print_validate_summary(config, logger)
         inputs = np.load(config['inputs'])
         iterator = inputs
         n_total = len(inputs)
     else:
-        print_train_summary(config)
+        print_train_summary(config, logger)
         sampler = RandomParamsGenerator(fn_specs)
         iterator = range(config['n_samples'])
         n_total = config['n_samples']
@@ -230,10 +234,10 @@ def main(fn_config):
     job_ids = []
     for idx, p in enumerate(iterator):
 
-        print(
+        logger.info(
             f"> Running MD: {idx+1}/{n_total} "
-            f"({((idx + 1) / n_total * 100):.0f}%)\r",
-            end='', flush=True
+            f"({((idx + 1) / n_total * 100):.0f}%)",
+            overwrite=True
         )
 
         # Generate sample or use provided input
@@ -284,7 +288,7 @@ def main(fn_config):
     if job_scheduler != 'local' and n_max > 0:
         control_jobs(job_ids, job_scheduler)
 
-    print(f'> Running MD: {n_total}/{n_total} (100%) | Done.'.ljust(50))
+    logger.info(f"> Running MD: {n_total}/{n_total} (100%) | Done.")
 
     # Cleanup
     clean_up_train_dir(

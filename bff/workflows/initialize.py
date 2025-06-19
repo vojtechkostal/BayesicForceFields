@@ -1,5 +1,6 @@
 import argparse
-import os
+# import os
+import subprocess
 import numpy as np
 import parmed as pmd
 
@@ -15,14 +16,23 @@ from ..topology import create_box
 from ..io.cp2k import make_cp2k_input
 from ..io.mdp import MDP
 from ..io.utils import load_yaml
+from ..io.logs import Logger
 
 
-def check_gmx_available():
+def check_gmx_available(gmx_cmd='gmx') -> None:
     """Check if the 'gmx' command is available in the system PATH."""
-    if os.system("gmx --version > /dev/null 2>&1") != 0:
+    try:
+        subprocess.run(
+            [gmx_cmd, '--version'],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
         raise RuntimeError(
-            "GROMACS ('gmx') is not available.\n"
-            "Please make sure that you can call 'gmx' from the command line."
+            f"GROMACS ({gmx_cmd}) is not available.\n"
+            "Please make sure that your Gromacs executable is available "
+            "from the command line."
         )
 
 
@@ -109,20 +119,27 @@ def run_md(
     fn_coord: str,
     fn_ndx: str,
     n_steps: int = -2,
-    maxwarn: int = 0
+    maxwarn: int = 0,
+    fn_log: str = 'gmx.log'
 ) -> None:
+    
     fn_tpr = str(name) + '.tpr'
-    if fn_ndx is None:
-        os.system(
-            f'gmx grompp -f {fn_mdp} -c {fn_coord} -p {fn_topol} '
-            f'-o {fn_tpr} -maxwarn {maxwarn}'
-        )
-    else:
-        os.system(
-            f'gmx grompp -f {fn_mdp} -c {fn_coord} -p {fn_topol} '
-            f'-n {fn_ndx} -o {fn_tpr} -maxwarn {maxwarn}'
-        )
-    os.system(f'gmx mdrun -s {fn_tpr} -deffnm {name} -nsteps {n_steps} -v')
+
+    grompp_cmd = [
+        'gmx', 'grompp', '-f', str(fn_mdp), '-c', str(fn_coord),
+        '-p', str(fn_topol), '-o', fn_tpr, '-maxwarn', str(maxwarn)
+    ]
+    if fn_ndx:
+        grompp_cmd.extend(['-n', str(fn_ndx)])
+
+    mdrun_cmd = [
+        'gmx', 'mdrun', '-s', fn_tpr, '-deffnm', str(name),
+        '-nsteps', str(n_steps)
+    ]
+
+    with open(fn_log, "a") as f:
+        subprocess.run(grompp_cmd, stdout=f, stderr=f, check=True)
+        subprocess.run(mdrun_cmd, stdout=f, stderr=f, check=True)
 
 
 def insert_pull_code(
@@ -253,7 +270,13 @@ def main(fn_config: str) -> None:
     config = load_yaml(fn_config)
     validate_config(config)
 
-    check_gmx_available()
+    # Set up logging
+    fn_log = config.get('fn_log', None)
+    logger = Logger(fn_log)
+    logger.info(f"> Initializing project: {config['project']}")
+
+    # Check if GROMACS is available
+    check_gmx_available(config.get('gmx_cmd', 'gmx'))
 
     # Create directories
     prep_dir, train_dir, cp2k_dir = setup_directories()
@@ -267,21 +290,25 @@ def main(fn_config: str) -> None:
         grouped.items(
         ), config['fn_mol'], config['box'], config['charge'], config['mult']
     ):
+        logger.info(f"> Processing topology {i}: {fn_topol}:")
         restr_sel = restr_specs['sel']
         restr_x0 = np.array(restr_specs['x0'], dtype=float)
         restr_k = np.array(restr_specs['k'], dtype=float)
 
         # Create system
+        logger.info(f"  > Inserting molecules", overwrite=True)
         fn_system = prep_dir / f'system-{i:02d}.gro'
         u, topol = create_box(fn_topol, fn_mol, fn_out=fn_system, box=box)
         fn_topol_processed = fn_system.with_suffix('.top')
         topol.save(str(fn_topol_processed))
+        logger.info(f"  > Inserting molecules: Done")
 
         # Adjust maxwarn based on total charge
         q = sum(atom.charge for atom in topol.atoms)
         maxwarn = 1 if not np.isclose(q, 0, atol=1e-4) else 0
 
         # Run energy minimization
+        logger.info(f"  > Energy minimization", overwrite=True)
         deffnm_em = prep_dir / f'0-em-{i:02d}'
         if config.get('fn_mdp_em'):
             fn_mdp_em = config.get('fn_mdp_em')[i]
@@ -296,12 +323,16 @@ def main(fn_config: str) -> None:
             n_steps=-2,
             maxwarn=maxwarn
         )
+        logger.info(f"  > Energy minimization: Done")
         (train_dir / 'em.mdp').write_text(fn_mdp_em.read_text())
+
 
         # Run NPT equilibration
         deffnm_npt = prep_dir / f'1-npt-{i:02d}'
-        if config.get('fn_mdp_em') is not None:
-            fn_mdp_npt = config.get('fn_mdp_em')[i]
+        n = config['nsteps_npt'] if box is None else 0
+        logger.info(f"  > NpT equilibration", overwrite=True)
+        if config.get('fn_mdp_npt') is not None:
+            fn_mdp_npt = config.get('fn_mdp_npt')[i]
         else:
             fn_mdp_npt = get_fn_mdp('npt.mdp')
         run_md(
@@ -310,9 +341,13 @@ def main(fn_config: str) -> None:
             fn_topol=fn_topol_processed,
             fn_coord=deffnm_em.with_suffix('.gro'),
             fn_ndx=None,
-            n_steps=config['nsteps_npt'] if box is None else 0,
+            n_steps=n,
             maxwarn=maxwarn
         )
+        if n > 0:
+            logger.info(f"  > NpT equilibration: Done")
+        else:
+            logger.info(f"  > NpT equilibration: skipped (box defined)")
 
         # Compute average box size
         u = mda.Universe(
@@ -327,7 +362,7 @@ def main(fn_config: str) -> None:
 
         # Iterate over restraint windows
         for sel, x0, k in zip(restr_sel, restr_x0, restr_k):
-            if config.get('fn_mdp_em') is not None:
+            if config.get('fn_mdp_nvt') is not None:
                 fn_mdp_nvt = config.get('fn_mdp_nvt')[i]
             else:
                 fn_mdp_nvt = get_fn_mdp('nvt.mdp')
@@ -335,11 +370,13 @@ def main(fn_config: str) -> None:
             fn_ndx = prep_dir / f'index-{i:03d}.ndx'
 
             if sel[0] is not None:
+                message = f"  > NVT equilibration {i} | restraint: {sel} x0: {x0} k: {k}"
                 make_ndx(u, sel, fn_out=fn_ndx)
                 fn_out = prep_dir / f'win-{i:03d}.gro'
                 create_restraint_window(u, sel, x0, box_avg, fn_out)
                 insert_pull_code(fn_mdp_nvt, sel, x0, k, fn_nvt_local)
             else:
+                message = f"  > NVT equilibration {i} | restraint: None"
                 fn_out = prep_dir / f'win-{i:03d}.gro'
                 make_ndx(u, None, fn_out=fn_ndx)
                 with mda.Writer(fn_out, 'w') as w:
@@ -347,6 +384,7 @@ def main(fn_config: str) -> None:
                     ts.dimensions = box_avg
                     w.write(u.atoms)
                 fn_nvt_local.write_text(fn_mdp_nvt.read_text())
+            logger.info(message, overwrite=True)
 
             # Run NVT equilibration
             deffnm_nvt = prep_dir / f'2-nvt-{i:03d}'
@@ -399,6 +437,7 @@ def main(fn_config: str) -> None:
                 )
 
             i += 1
+            logger.info(message + ': Done')
 
 
 if __name__ == "__main__":
