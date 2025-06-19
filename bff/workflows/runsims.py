@@ -268,7 +268,7 @@ def main(fn_config):
                 f"Unsupported scheduler '{job_scheduler}'. "
                 f"Supported: {list(SCHEDULER_CLASSES)}"
             )
-        
+
         else:
             n_max = config[job_scheduler].get('max_parallel_jobs', 1)
             n_max = np.inf if n_max == -1 else n_max

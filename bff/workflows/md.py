@@ -16,7 +16,7 @@ def check_success(fn_trj: str, fn_mdp: str, n_target: int) -> bool:
     """Check if the trajectory has reached the target number of frames."""
     output = subprocess.run(
         ['gmx', 'check', '-f', fn_trj], capture_output=True, text=True)
-    
+
     for line in output.stderr.splitlines():
         if line.startswith("Step"):
             n = int(line.split()[1])
@@ -72,7 +72,7 @@ def main(fn_config: str) -> None:
     for fn_group in job_keys:
         if isinstance(config['gromacs'][fn_group], str):
             config['gromacs'][fn_group] = [config['gromacs'][fn_group]] * len(fn_topol)
-            
+
     fn_mdp_em = config['gromacs']['fn_mdp_em']
     fn_mdp_prod = config['gromacs']['fn_mdp_prod']
     fn_coord = config['gromacs']['fn_coordinates']
@@ -136,7 +136,7 @@ def main(fn_config: str) -> None:
             for file in run_dir.glob(pattern):
                 shutil.copy(file, data_dir)
     else:
-        for file in run_dir.glob(f"*.xtc"):
+        for file in run_dir.glob("*.xtc"):
             try:
                 Path(file).unlink()
             except FileNotFoundError:
