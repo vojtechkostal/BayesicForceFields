@@ -3,7 +3,7 @@ from scipy.constants import atomic_mass
 from scipy.spatial.transform import Rotation as R
 from scipy.stats import chi2
 
-    
+
 def modify_dcd_frc_header(fn):
     """
     Modify the header of a DCD file to include the 'CORD' flag.
@@ -91,6 +91,8 @@ def sample_within_confidence(samples, committee_size, confidence=0.68):
             break
 
     if len(accepted) < committee_size:
-        raise RuntimeError(f"Could only collect {len(accepted)} samples within {confidence*100:.1f}% confidence region.")
+        raise RuntimeError(
+            f"Could only collect {len(accepted)} samples within"
+            f"{confidence*100:.1f}% confidence region.")
 
     return np.array(accepted)

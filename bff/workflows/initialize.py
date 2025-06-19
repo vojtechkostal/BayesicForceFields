@@ -122,7 +122,7 @@ def run_md(
     maxwarn: int = 0,
     fn_log: str = 'gmx.log'
 ) -> None:
-    
+
     fn_tpr = str(name) + '.tpr'
 
     grompp_cmd = [
@@ -296,19 +296,19 @@ def main(fn_config: str) -> None:
         restr_k = np.array(restr_specs['k'], dtype=float)
 
         # Create system
-        logger.info(f"  > Inserting molecules", overwrite=True)
+        logger.info("  > Inserting molecules", overwrite=True)
         fn_system = prep_dir / f'system-{i:02d}.gro'
         u, topol = create_box(fn_topol, fn_mol, fn_out=fn_system, box=box)
         fn_topol_processed = fn_system.with_suffix('.top')
         topol.save(str(fn_topol_processed))
-        logger.info(f"  > Inserting molecules: Done")
+        logger.info("  > Inserting molecules: Done")
 
         # Adjust maxwarn based on total charge
         q = sum(atom.charge for atom in topol.atoms)
         maxwarn = 1 if not np.isclose(q, 0, atol=1e-4) else 0
 
         # Run energy minimization
-        logger.info(f"  > Energy minimization", overwrite=True)
+        logger.info("  > Energy minimization", overwrite=True)
         deffnm_em = prep_dir / f'0-em-{i:02d}'
         if config.get('fn_mdp_em'):
             fn_mdp_em = config.get('fn_mdp_em')[i]
@@ -323,14 +323,13 @@ def main(fn_config: str) -> None:
             n_steps=-2,
             maxwarn=maxwarn
         )
-        logger.info(f"  > Energy minimization: Done")
+        logger.info("  > Energy minimization: Done")
         (train_dir / 'em.mdp').write_text(fn_mdp_em.read_text())
-
 
         # Run NPT equilibration
         deffnm_npt = prep_dir / f'1-npt-{i:02d}'
         n = config['nsteps_npt'] if box is None else 0
-        logger.info(f"  > NpT equilibration", overwrite=True)
+        logger.info("  > NpT equilibration", overwrite=True)
         if config.get('fn_mdp_npt') is not None:
             fn_mdp_npt = config.get('fn_mdp_npt')[i]
         else:
@@ -345,9 +344,9 @@ def main(fn_config: str) -> None:
             maxwarn=maxwarn
         )
         if n > 0:
-            logger.info(f"  > NpT equilibration: Done")
+            logger.info("  > NpT equilibration: Done")
         else:
-            logger.info(f"  > NpT equilibration: skipped (box defined)")
+            logger.info("  > NpT equilibration: skipped (box defined)")
 
         # Compute average box size
         u = mda.Universe(
@@ -370,13 +369,13 @@ def main(fn_config: str) -> None:
             fn_ndx = prep_dir / f'index-{i:03d}.ndx'
 
             if sel[0] is not None:
-                message = f"  > NVT equilibration {i} | restraint: {sel} x0: {x0} k: {k}"
+                message = f"  > NVT equilibration {i} | restr: {sel} x0: {x0} k: {k}"
                 make_ndx(u, sel, fn_out=fn_ndx)
                 fn_out = prep_dir / f'win-{i:03d}.gro'
                 create_restraint_window(u, sel, x0, box_avg, fn_out)
                 insert_pull_code(fn_mdp_nvt, sel, x0, k, fn_nvt_local)
             else:
-                message = f"  > NVT equilibration {i} | restraint: None"
+                message = f"  > NVT equilibration {i} | restr: None"
                 fn_out = prep_dir / f'win-{i:03d}.gro'
                 make_ndx(u, None, fn_out=fn_ndx)
                 with mda.Writer(fn_out, 'w') as w:
