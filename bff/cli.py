@@ -3,7 +3,8 @@ from pathlib import Path
 from typing import Optional, Callable
 
 
-app = typer.Typer(help="BayesicForceFields: Bayesian optimization of molecular force fields.")
+app = typer.Typer(
+    help="BayesicForceFields: Bayesian optimization of molecular force fields.")
 
 
 @app.command()
@@ -16,8 +17,8 @@ def version():
 
 
 def run_workflow(
-    fn_config: Optional[Path], 
-    workflow_main: Callable[[Path], None], 
+    fn_config: Optional[Path],
+    workflow_main: Callable[[Path], None],
     workflow_name: str
 ):
     """
@@ -27,7 +28,9 @@ def run_workflow(
     if fn_config:
         workflow_main(fn_config)
     else:
-        typer.echo(f"No configuration file provided for {workflow_name} workflow. Please specify a config file.")
+        typer.echo(
+            f"No configuration file provided for {workflow_name} workflow. "
+            "Please specify a config file.")
 
 
 @app.command()
@@ -52,7 +55,7 @@ def runsims(
     """
     Run molecular simulations as configured in the given config file.
     """
-    
+
     from bff.workflows.runsims import main as runsims_main
     run_workflow(fn_config, runsims_main, "runsims")
 
