@@ -114,7 +114,7 @@ def load_md_files(train_dir: Path) -> tuple:
     fn_samples = train_dir / "samples.yaml"
     fn_samples = load_yaml(fn_samples) if fn_samples.exists() else None
 
-    fn_mdp = sorted([f for f in train_dir.glob("*.mdp")])
+    fn_mdp = sorted([f for f in train_dir.glob("*prod*.mdp")])
     fn_topol = sorted(list(train_dir.glob("*.top")))
     fn_coord = sorted(list(train_dir.glob("*.gro")))
 

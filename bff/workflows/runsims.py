@@ -15,7 +15,7 @@ SCHEDULER_CLASSES = {
     'slurm': Slurm,
     # TODO: 'pbs': PBS,
 }
- 
+
 MD_SCRIPT = 'BayesicForceFields.bff.workflows.md'
 
 
@@ -24,7 +24,7 @@ def resolve_config_paths(config: dict) -> dict:
     for key in ['fn_specs', 'data_dir']:
         if key in config:
             config[key] = str(Path(config[key]).resolve())
-    
+
     # Resolve GROMACS file paths
     for fn_group, items in config['gromacs'].items():
         if fn_group == 'n_steps':
@@ -85,7 +85,8 @@ def initialize_environment(config):
 
     # Check if Specs file is provided or needs to be generated
     if not config.get('fn_specs'):
-        topol = TopologyParser(config['gromacs']['fn_topol'][0]) # NOTE: assumes the mol_resname is the same for all topologies
+        # NOTE: assumes the mol_resname is the same for all topologies
+        topol = TopologyParser(config['gromacs']['fn_topol'][0])
         topol.select_mol(config['mol_resname'], config['implicit_atomtype'])
         specs_data = {
             'mol_resname': config['mol_resname'],
