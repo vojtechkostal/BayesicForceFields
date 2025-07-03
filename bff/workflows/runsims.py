@@ -197,12 +197,13 @@ def print_train_summary(config, logger):
     logger.info('')
 
 
-def print_validate_summary(config, logger):
+def print_validate_summary(fn_specs, logger):
     """
     Print a summary of the configuration settings.
     """
+    specs = Specs(fn_specs)
     logger.info("")
-    logger.info(f"> Generating validation set for: {config['mol_resname']}")
+    logger.info(f"> Generating validation set for: {specs.mol_resname}")
     logger.info("")
 
 
