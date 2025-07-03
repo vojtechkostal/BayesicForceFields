@@ -134,7 +134,7 @@ def main(fn_config: str) -> None:
         if job_scheduler != 'local':
             pattern = "*" if config.get('store', False) else "*.xtc"
             for file in run_dir.glob(pattern):
-                shutil.copy(file, data_dir)
+                shutil.copy(file, data_dir / file.name)
     else:
         for file in run_dir.glob("*.xtc"):
             try:
