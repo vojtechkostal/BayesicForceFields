@@ -233,6 +233,7 @@ class Optimizer:
         max_iter: int = 20000,
         means: dict = {'rdf': 'sigmoid'},
         committee: int = 1,
+        test_fraction: float = 0.2,
         device: str = 'cuda:0',
         **kwargs
     ) -> None:
@@ -283,7 +284,7 @@ class Optimizer:
                 y=self.train_data.y[:, sl],
                 y_mean=means_local.get(q, 0.0),
                 fn_hyperparams=fn_hyper.get(q, None),
-                test_fraction=0.2,
+                test_fraction=test_fraction,
                 n_hyper=n_hyper,
                 committee=committee,
                 fn_backend=f'./mcmc_hyper_{q}.h5',
