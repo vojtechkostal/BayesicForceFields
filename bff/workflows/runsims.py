@@ -221,7 +221,7 @@ def main(fn_config):
     logger = Logger(None)
 
     if validate:
-        print_validate_summary(config, logger)
+        print_validate_summary(fn_specs, logger)
         inputs = np.load(config['inputs'])
         iterator = inputs
         n_total = len(inputs)
