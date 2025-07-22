@@ -534,11 +534,10 @@ class OptimizationResults(MCMCResults, Specs):
         return self._get_labels('explicit')
 
     def _get_labels(self, kind):
+        n_params = self.n_params_implicit
         if kind == 'implicit':
-            n_params = self.n_params_implicit
             param_labels = self.bounds_implicit.params.tolist()
         elif kind == 'explicit':
-            n_params = self.n_params_explicit
             param_labels = self.bounds_explicit.params.tolist()
         else:
             raise ValueError(f"Unknown kind '{kind}'. Use 'implicit' or 'explicit'.")
