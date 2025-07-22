@@ -56,7 +56,7 @@ def define_param_priors(
             'Options are "normal" or "uniform".'
         )
 
-    nuisance_priors = {q: Normal(-2, 2) for q in QoI}
+    nuisance_priors = {f'nuisance {q}': Normal(-2, 2) for q in QoI}
 
     return param_priors | nuisance_priors
 
