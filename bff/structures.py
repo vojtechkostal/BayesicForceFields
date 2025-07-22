@@ -447,7 +447,7 @@ class MCMCResults:
             return initialize_backend(chain)
         return chain
 
-    def load_priors(self, priors):
+    def load_priors(self, priors: str | Path | dict) -> dict:
         """Load priors from YAML or dictionary of distributions."""
         if isinstance(priors, (str, Path)):
             return load_yaml(str(priors))
@@ -456,9 +456,7 @@ class MCMCResults:
                 f"{name} {type(p).__name__}": [float(p.mean), float(p.scale)]
                 for name, p in priors.items()
             }
-        if isinstance(priors, dict):
-            return priors
-        raise TypeError("Priors must be str, Path, list, or dict.")
+        raise TypeError("Priors must be str, Path or dictionary.")
 
     def load_tau(self, tau):
         """Load tau array from file, list, or numeric array."""
@@ -543,8 +541,9 @@ class OptimizationResults(MCMCResults, Specs):
             raise ValueError(f"Unknown kind '{kind}'. Use 'implicit' or 'explicit'.")
 
         nuisance_labels = [
-            f'$\\sigma_{{\\mathrm{{{q.split()[0]}}}}}$'
-            for q in list(self.priors.keys())[n_params:]
+            f'$\\sigma_{{\\mathrm{{{p.split()[1]}}}}}$'
+            for p in list(self.priors.keys())
+            if 'nuisance' in p
         ]
 
         return param_labels + nuisance_labels
