@@ -118,4 +118,7 @@ def load_md_files(train_dir: Path) -> tuple:
     fn_topol = sorted(list(train_dir.glob("*.top")))
     fn_coord = sorted(list(train_dir.glob("*.gro")))
 
+    assert len(fn_mdp) == len(fn_topol) == len(fn_coord), \
+        f"Some files in {train_dir} are missing (.mdp, .top or .gro)."
+
     return fn_specs, fn_mdp, fn_topol, fn_coord, fn_samples
