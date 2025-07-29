@@ -1,10 +1,29 @@
 import torch
 from .kernels import gaussian_kernel
-from .utils import check_tensor, nearest_positve_definite
+from .utils import check_tensor, nearest_positive_definite
 
 
 class LocalGaussianProcess:
-    """Local Gaussian Process Regression."""
+    """
+    Local Gaussian Process Regression model.
+
+    Parameters
+    ----------
+    X_train : torch.Tensor
+        Training input features.
+    y_train : torch.Tensor
+        Training output values.
+    y_mean : torch.Tensor
+        Mean of the output values.
+    lengths : torch.Tensor
+        Length scales for the Gaussian kernel.
+    width : float
+        Width (amplitude) of the Gaussian kernel.
+    sigma : float
+        Observation noise standard deviation.
+    device : str
+        Device on which tensors are stored (e.g., "cpu" or "cuda").
+    """
 
     def __init__(
         self,
@@ -25,7 +44,7 @@ class LocalGaussianProcess:
 
         noise = torch.eye(n_samples, device=device) * self.sigma
         Kdd = gaussian_kernel(self.X_train, self.X_train, self.lengths, width) + noise
-        Kdd = nearest_positve_definite(Kdd)
+        Kdd = nearest_positive_definite(Kdd)
         L = torch.linalg.cholesky(Kdd)
         Kdd_inv = torch.cholesky_inverse(L)
         self.Kdd_inv = check_tensor(Kdd_inv, device=device)
@@ -47,6 +66,19 @@ class LocalGaussianProcess:
         }
 
     def predict(self, Xi):
+        """
+        Predict outputs for given input points.
+
+        Parameters
+        ----------
+        Xi : torch.Tensor
+            Input tensor of shape (n_samples, n_features).
+
+        Returns
+        -------
+        torch.Tensor
+            Predicted outputs of shape (n_samples, output_dim).
+        """
         Xi = check_tensor(Xi, device=self.device)
         Kid = gaussian_kernel(Xi, self.X_train, self.lengths, self.width)
         mean = self.y_mean + (Kid @ self.Kdd_inv) @ (self.y_train - self.y_mean)
@@ -65,20 +97,40 @@ class LocalGaussianProcess:
             f"  device='{self.device}'\n"
             f")"
         )
-    
+
 
 class LGPCommittee:
+    """
+    Committee of Local Gaussian Process (LGP) models.
+
+    Parameters
+    ----------
+    lgps : list of LocalGaussianProcess
+        List of LGP models.
+    """
     def __init__(self, lgps: list[LocalGaussianProcess]) -> None:
         self.lgps = lgps
 
     @property
     def size(self):
         return len(self.lgps)
-    
+
     def predict(self, X: torch.Tensor) -> torch.Tensor:
-        """Predict using all LGP models."""
+        """
+        Predict outputs by averaging predictions from all LGP models.
+
+        Parameters
+        ----------
+        X : torch.Tensor
+            Input tensor of shape (n_samples, n_features).
+
+        Returns
+        -------
+        torch.Tensor
+            Averaged predicted outputs of shape (n_samples, output_dim).
+        """
         return torch.stack([lgp.predict(X) for lgp in self.lgps]).mean(dim=0)
-    
+
     def __repr__(self):
         return (
             f"{self.__class__.__name__}(\n"
@@ -89,8 +141,16 @@ class LGPCommittee:
 
 
 class CommitteeWrapper:
-    """Wrapper for a list of Local Gaussian Process models."""
+    """
+    Wrapper for a list of Local Gaussian Process committees.
 
+    Parameters
+    ----------
+    committees : list of LGPCommittee
+        List of committees, each handling a subset of the output.
+    observations : list of int
+        List of indices representing which outputs are observed.
+    """
     def __init__(
         self,
         committees: list[LGPCommittee],
@@ -105,9 +165,9 @@ class CommitteeWrapper:
     def n_params(self) -> int:
         n = [lgp.n_params for com in self.committees for lgp in com.lgps]
         if len(set(n)) != 1:
-            raise ValueError("All Local Gaussian Processes must have the same number of parameters.")
+            raise ValueError("All LGPs must have the same number of parameters.")
         return n[0]
-    
+
     @property
     def slices(self) -> list[slice]:
 
@@ -121,8 +181,19 @@ class CommitteeWrapper:
         ]
 
     def predict(self, X: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        """Predict using all LGP committees."""
+        """
+        Predict outputs for all output dimensions using all LGP committees.
 
+        Parameters
+        ----------
+        X : torch.Tensor
+            Input tensor of shape (n_samples, n_features).
+
+        Returns
+        -------
+        tuple of torch.Tensor
+            Stacked predictions of shape (n_samples, total_output_dim).
+        """
         return torch.column_stack([com.predict(X) for com in self.committees])
 
     def __repr__(self) -> str:
