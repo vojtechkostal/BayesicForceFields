@@ -1,6 +1,7 @@
 import torch
 from .kernels import gaussian_kernel
 from .utils import valid_bounds
+from ..structures import Specs
 
 
 def loo_log_likelihood(
@@ -9,7 +10,7 @@ def loo_log_likelihood(
     """Leave One Out Log Likelihood for Gaussian Process Regression.
     From Sundarajan & Keerthi (2001):
     "Predictive Approaches for Choosing Hyperparameters in Gaussian Processes",
-    Equation 17.
+    Equation 8.
     doi: 10.1162/08997660151134343
 
     Parameters
@@ -68,7 +69,8 @@ def loo_log_likelihood(
 def gaussian_log_likelihood(
     theta: torch.Tensor,
     y_true: torch.Tensor,
-    surrogate: object
+    surrogate: object,
+    specs: Specs
 ) -> torch.Tensor:
 
     """Compute the gaussian log likelihood.
@@ -96,7 +98,7 @@ def gaussian_log_likelihood(
     params, sigma = theta[:, :n_params], theta[:, n_params:]
 
     # Check if the parameters are within the valid bounds
-    mask = valid_bounds(params, surrogate.specs)
+    mask = valid_bounds(params, specs)
 
     # Ensure y_true is a 2D tensor and expand it to match the batch size
     batch_size = len(theta)
@@ -104,7 +106,7 @@ def gaussian_log_likelihood(
     y_true = y_true.expand(batch_size, -1).to(device)
 
     # Predict the trial values using the surrogate model
-    y_trial_mean, y_trial_std = surrogate.predict(params[mask])
+    y_trial_mean = surrogate.predict(params[mask])
 
     # Compute the log-likelihod
     log_likelihood = torch.full((batch_size, ), -torch.inf, device=device)

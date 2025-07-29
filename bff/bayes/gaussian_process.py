@@ -2,8 +2,6 @@ import torch
 from .kernels import gaussian_kernel
 from .utils import check_tensor, nearest_positve_definite
 
-from ..structures import Specs
-
 
 class LocalGaussianProcess:
     """Local Gaussian Process Regression."""
@@ -51,13 +49,9 @@ class LocalGaussianProcess:
     def predict(self, Xi):
         Xi = check_tensor(Xi, device=self.device)
         Kid = gaussian_kernel(Xi, self.X_train, self.lengths, self.width)
-        Kii = gaussian_kernel(Xi, Xi, self.lengths, self.width)
-        Kdi = gaussian_kernel(self.X_train, Xi, self.lengths, self.width)
-
         mean = self.y_mean + (Kid @ self.Kdd_inv) @ (self.y_train - self.y_mean)
-        var = Kii - Kid @ self.Kdd_inv @ Kdi
 
-        return mean, torch.diagonal(var)**0.5
+        return mean
 
     def __repr__(self) -> str:
         hp = self.hyperparameters
@@ -71,30 +65,53 @@ class LocalGaussianProcess:
             f"  device='{self.device}'\n"
             f")"
         )
-
+    
 
 class LGPCommittee:
+    def __init__(self, lgps: list[LocalGaussianProcess]) -> None:
+        self.lgps = lgps
+
+    @property
+    def size(self):
+        return len(self.lgps)
+    
+    def predict(self, X: torch.Tensor) -> torch.Tensor:
+        """Predict using all LGP models."""
+        return torch.stack([lgp.predict(X) for lgp in self.lgps]).mean(dim=0)
+    
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}(\n"
+            f"  committee_size={self.size},\n"
+            f"  n_params={self.lgps[0].n_params},\n"
+            f")"
+        )
+
+
+class CommitteeWrapper:
     """Wrapper for a list of Local Gaussian Process models."""
 
     def __init__(
         self,
-        lgps: list[list[LocalGaussianProcess]],
-        specs: Specs,
-        observations: list[int]
+        committees: list[LGPCommittee],
+        observations: list[int],
     ) -> None:
         """Wrapper for a list of Local Gaussian Process models."""
 
-        if not lgps:
-            raise ValueError("List of LGP models cannot be empty.")
-        self.lgps = lgps
+        self.committees = committees
         self.observations = observations
-        self.specs = specs
-        self.error = None
 
+    @property
+    def n_params(self) -> int:
+        n = [lgp.n_params for com in self.committees for lgp in com.lgps]
+        if len(set(n)) != 1:
+            raise ValueError("All Local Gaussian Processes must have the same number of parameters.")
+        return n[0]
+    
     @property
     def slices(self) -> list[slice]:
 
-        lengths = [lgp[0].y_size for lgp in self.lgps]
+        lengths = [com.lgps[0].y_size for com in self.committees]
         offsets = [0]
         for length in lengths[:-1]:
             offsets.append(offsets[-1] + length)
@@ -103,23 +120,10 @@ class LGPCommittee:
             for start, length in zip(offsets, lengths)
         ]
 
-    @property
-    def n_params(self) -> int:
-        return self.lgps[0][0].n_params
-
-    @property
-    def committee_size(self) -> int:
-        return len(self.lgps[0])
-
     def predict(self, X: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        """Predict using all LGP models and return stacked means and stds."""
+        """Predict using all LGP committees."""
 
-        # select a random models
-        idx = torch.randint(0, self.committee_size, (len(self.lgps), ))
-        results = [com[i].predict(X) for com, i in zip(self.lgps, idx)]
-        mean, var = zip(*results)
-
-        return torch.column_stack(mean), torch.column_stack(var)
+        return torch.column_stack([com.predict(X) for com in self.committees])
 
     def __repr__(self) -> str:
         return (

@@ -1,9 +1,12 @@
 import torch
+from .utils import check_tensor, auto_manual_switch
 
 
+@auto_manual_switch
 def gaussian_kernel(
     x1: torch.Tensor, x2: torch.Tensor,
-    lengths: float | torch.Tensor, width: float | torch.Tensor
+    lengths: float | torch.Tensor, width: float | torch.Tensor,
+    manual_sqdist: bool = False
 ) -> torch.Tensor:
     """Gaussian (Squared Exponential) kernel.
 
@@ -19,6 +22,10 @@ def gaussian_kernel(
     width : float or torch.Tensor
         Width scale(s) for the kernel.
         Can be a single float or a tensor of shape (n_features,).
+    manual_sqdist : bool, optional
+        If True, computes the squared distance manually.
+        If False, uses `torch.cdist` for efficiency.
+        manual_sqdist is necessary for evaluation of second derivatives.
 
     Returns
     -------
@@ -32,20 +39,29 @@ def gaussian_kernel(
     device = x1.device
 
     if x1.dim() == 2:
-        x1 = x1[torch.newaxis, :, :].to(device)
+        x1 = x1[None, :, :].to(device)
     if x2.dim() == 2:
-        x2 = x2[torch.newaxis, :, :].to(device)
+        x2 = x2[None, :, :].to(device)
 
-    if not isinstance(lengths, torch.Tensor):
-        lengths = torch.tensor([lengths])
+    lengths = check_tensor(lengths, device=device)
     if lengths.dim() == 1:
-        lengths = lengths[torch.newaxis, :].to(device)
-    if not isinstance(width, torch.Tensor):
-        width = torch.tensor([width])
-    if width.dim() == 1:
-        width = torch.tensor([width])[torch.newaxis, :].to(device)
+        lengths = lengths[None, :].to(device)
 
-    pairwise_disances = torch.cdist(x1 / lengths, x2 / lengths, p=2)
-    kernel = width**2 * torch.exp(- 0.5 * pairwise_disances**2)
+    width = check_tensor(width, device=device)
+    if width.dim() == 1:
+        width = width[None, :].to(device)
+
+    x1_scaled = x1 / lengths
+    x2_scaled = x2 / lengths
+
+    if manual_sqdist:
+        x1_sq = (x1_scaled**2).sum(dim=-1, keepdim=True)  # (B, N1, 1)
+        x2_sq = (x2_scaled**2).sum(dim=-1, keepdim=True).transpose(1, 2)  # (B, 1, N2)
+        sqdist = x1_sq + x2_sq - 2 * (x1_scaled @ x2_scaled.transpose(1, 2))
+        sqdist = torch.clamp(sqdist, min=0.0)
+    else:
+        sqdist = torch.cdist(x1_scaled, x2_scaled, p=2).pow(2)
+
+    kernel = width.pow(2).mean() * torch.exp(-0.5 * sqdist)
 
     return kernel.squeeze(0)

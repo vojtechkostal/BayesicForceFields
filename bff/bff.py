@@ -3,14 +3,14 @@ import warnings
 import multiprocessing as mp
 
 from pathlib import Path
-from .bayes.inference import optimize_lgp, initialize_mcmc_sampler
-from .bayes.gaussian_process import LGPCommittee
+from .bayes.inference import lgp_hyperopt, initialize_mcmc_sampler
+from .bayes.gaussian_process import CommitteeWrapper
 from .evaluation.trajectory import (
     analyze_all_trajectories,
     analyze_trajectories_wrapper,
 )
 
-from .structures import TrainData, OptimizationResults
+from .structures import TrainData, OptimizationResults, Specs
 from .topology import check_topols
 from .io.logs import Logger, print_progress, print_progress_mcmc, format_time
 
@@ -49,14 +49,14 @@ class Optimizer:
         """
 
         self.reference = None
-        self.model = None
+        self.surrogate = None
         self.loss_components = []
 
         # Initialize the logger
         self.logger = Logger(fn_log, verbose=verbose)
 
         self.logger.info('===============================================')
-        self.logger.info('     Ab initio Molecular Optimization          ')
+        self.logger.info('     Byaesian Force Field Optimizer            ')
         self.logger.info('===============================================')
         self.logger.info('')
         self.logger.info('> loading training data: in progress...', overwrite=True)
@@ -69,7 +69,7 @@ class Optimizer:
             f'({format_time(t1 - t0)})'
         )
         self.logger.info('')
-        self.specs = self.train_data.specs
+        self.specs = Specs(self.train_data.fn_specs)
 
         self.logger.info(f'> molecule: {self.specs.mol_resname}')
         self.logger.info('> parameters:')
@@ -230,7 +230,6 @@ class Optimizer:
         QoI: list[str] = None,
         n_hyper: int = 200,
         fn_hyper: dict[str | Path] = None,
-        max_iter: int = 20000,
         means: dict = {'rdf': 'sigmoid'},
         committee: int = 1,
         test_fraction: float = 0.2,
@@ -261,7 +260,8 @@ class Optimizer:
             Number of LGP models in the committee for each QoI. Default is 1.
         device : str, optional
             Device to use for computations ('cuda:0', 'cpu' or 'mps').
-            Default is 'cuda:0'.
+            Default is 'cpu' (faster for single-input batch during
+            gradient-based optimizartion).
         kwargs : dict, optional
             Additional keyword arguments for the `optimize_lgp` funciton.
         """
@@ -271,15 +271,11 @@ class Optimizer:
         if means.get('rdf') == 'sigmoid':
             means_local['rdf'] = self.train_data.rdf_sigmoid_mean
 
-        self.lgps = []
+        lgp_committees = []
         for q in self.QoI:
             self.logger.info(f'> Optimizing LGP hyperparameters: {q}')
-            mcmc_kwargs = kwargs | {
-                'max_iter': max_iter,
-                'logger': self.logger
-            }
             sl = self.train_data.y_slices.get(q, slice(None))
-            lgps, error = optimize_lgp(
+            committee_qoi = lgp_hyperopt(
                 X=self.train_data.X,
                 y=self.train_data.y[:, sl],
                 y_mean=means_local.get(q, 0.0),
@@ -287,20 +283,16 @@ class Optimizer:
                 test_fraction=test_fraction,
                 n_hyper=n_hyper,
                 committee=committee,
-                fn_backend=f'./mcmc_hyper_{q}.h5',
                 device=device,
-                mcmc_kwargs=mcmc_kwargs
+                logger=self.logger,
+                opt_kwargs=kwargs,
             )
 
-            self.logger.info(
-                f'  > LGP performance (MAPE): {(error * 100):.1f} %')
-
             # Strore the model
-            self.lgps.append(lgps)
+            lgp_committees.append(committee_qoi)
             self.logger.info('')
 
-        self.surrogate = LGPCommittee(
-            self.lgps, self.specs, self.train_data.observations)
+        self.surrogate = CommitteeWrapper(lgp_committees, self.train_data.observations)
 
     def run(
         self,
@@ -344,14 +336,13 @@ class Optimizer:
         """
 
         # Construct the MCMC sampler
-        if not self.lgps:
-            raise ValueError("Local Gaussian Process models are not set up. "
+        if not self.surrogate:
+            raise ValueError("Surrogate model is not set up. "
                              "Call `setup_lgp` before running the MCMC sampler.")
 
         # Construct the LGP committee
-        surrogate = LGPCommittee(self.lgps, self.specs, self.train_data.observations)
         p0, priors, sampler = initialize_mcmc_sampler(
-            surrogate, self.specs, self.QoI, self.train_data.y_true,
+            self.surrogate, self.specs, self.QoI, self.train_data.y_true,
             n_walkers, priors_disttype, fn_backend, restart, device
         )
 
