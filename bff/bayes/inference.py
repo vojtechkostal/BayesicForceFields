@@ -8,8 +8,6 @@ from pathlib import Path
 from ..evaluation.metrics import mape_fn
 from .gaussian_process import LocalGaussianProcess, LGPCommittee
 from .likelihoods import loo_log_likelihood, gaussian_log_likelihood
-from ..structures import MCMCResults
-from ..io.logs import print_progress_mcmc
 from ..io.utils import load_yaml, save_yaml
 from .utils import (
     initialize_backend, initialize_walkers,
@@ -17,7 +15,6 @@ from .utils import (
     train_test_split,
     find_map, laplace_approximation
 )
-from ..tools import sample_within_confidence
 
 
 def define_param_priors(
@@ -89,8 +86,21 @@ def define_hyper_priors(n_params) -> list[Normal]:
 def log_prior(
     theta: torch.Tensor, priors: list[torch.distributions.Distribution]
 ) -> torch.Tensor:
+    """
+    Compute the log prior probabilities for the parameters.
 
-    """Compute the log prior probabilities for the parameters."""
+    Parameters
+    ----------
+    theta : torch.Tensor
+        Tensor of shape (n_samples, n_params) containing parameter values.
+    priors : list of torch.distributions.Distribution
+        List of prior distributions for each parameter.
+
+    Returns
+    -------
+    torch.Tensor
+        Log prior probabilities for each parameter set.
+    """
 
     device = theta.device
     log_probabilities = [
@@ -121,6 +131,9 @@ def log_posterior(
         It must have signature `log_likelihood_fn(theta: torch.Tensor) -> torch.Tensor`.
     device : str
         Device on which the computations should be performed (e.g., 'cuda:0' or 'cpu').
+    numpy_output : bool, optional
+        If True, returns the log-posterior as a NumPy array.
+        If False, returns it as a PyTorch tensor. Defaults to True.
 
     Returns
     -------
@@ -142,78 +155,6 @@ def log_posterior(
     if numpy_output:
         return log_prob.detach().cpu().numpy()
     return log_prob
-
-
-def initialize_hyper_sampler(
-    X: torch.Tensor | np.ndarray,
-    y: torch.Tensor | np.ndarray,
-    y_mean: torch.Tensor | np.ndarray,
-    fn_backend: str,
-    device: str,
-    restart: bool = True
-) -> tuple[torch.Tensor, list, emcee.EnsembleSampler]:
-
-    """
-    Initialize the MCMC sampler for hyperparameter optimization.
-
-    Parameters
-    ----------
-    X : torch.Tensor | np.ndarray
-        Input features for the model.
-    y : torch.Tensor | np.ndarray
-        Target values for the model.
-    y_mean : torch.Tensor | np.ndarray
-        Mean of the target values, used for centering.
-    fn_backend : str
-        Path to the backend file for storing samples.
-    device : str
-        Device on which to perform computations (e.g., 'cuda:0' or 'cpu').
-    restart : bool, optional
-        Whether to restart the sampler from the last saved state.
-        Defaults to True.
-
-    Returns
-    -------
-    tuple[torch.Tensor, list, emcee.EnsembleSampler]
-        Initial parameter values (p0), list of priors, and the initialized sampler.
-    """
-
-    # Ensure that all inputs are tensors and on the correct device
-    X = check_tensor(X, device)
-    y = check_tensor(y, device)
-    y_mean = check_tensor(y_mean, device)
-
-    # Define priors based on the number of parameters
-    n_params = X.shape[1]
-    priors = define_hyper_priors(n_params)
-
-    # Initialize backend
-    n_dim, n_walkers = len(priors), 5 * len(priors)
-    backend = initialize_backend(fn_backend)
-    if restart:
-        try:
-            p0 = backend.get_last_sample()
-        except AttributeError:
-            p0 = initialize_walkers(priors, n_walkers)
-    else:
-        backend.reset(n_walkers, n_dim)
-        p0 = initialize_walkers(priors, n_walkers)
-
-    # Setup the log-probability function
-    log_likelihood = partial(loo_log_likelihood, X=X, y=y-y_mean)
-    log_probability = partial(
-        log_posterior,
-        priors=list(priors.values()),
-        log_likelihood_fn=log_likelihood,
-        device=device)
-
-    # Initialize the sampler with a Gaussian move (stability purpose)
-    cov = 0.05 * np.diag(np.array([p.scale for p in priors.values()]))
-    sampler = emcee.EnsembleSampler(
-        n_walkers, n_dim, log_probability,
-        backend=backend, vectorize=True, moves=[emcee.moves.GaussianMove(cov)])
-
-    return p0, priors, sampler
 
 
 def initialize_mcmc_sampler(
@@ -317,6 +258,38 @@ def lgp_hyperopt(
     logger: callable,
     opt_kwargs: dict
 ) -> tuple[list[LocalGaussianProcess], tuple]:
+    """
+    Perform hyperparameter optimization for Local Gaussian Processes (LGPs)
+    and construct a committee of LGP models.
+
+    Parameters
+    ----------
+    X : torch.Tensor
+        Input features of shape (n_samples, n_features).
+    y : torch.Tensor
+        Target values of shape (n_samples, output_dim).
+    y_mean : torch.Tensor
+        Mean of the target values (used for centering).
+    fn_hyperparams : str or Path
+        Path to file to load/save optimized hyperparameters.
+    test_fraction : float
+        Fraction of the data to reserve for testing.
+    n_hyper : int
+        Maximum number of data points used for hyperparameter optimization.
+    committee : int
+        Number of LGP models in the ensemble.
+    device : str
+        Device to perform computations on (e.g., 'cpu' or 'cuda').
+    logger : callable
+        Logger for reporting progress.
+    opt_kwargs : dict
+        Additional arguments passed to the MAP optimizer.
+
+    Returns
+    -------
+    LGPCommittee
+        Committee of Local Gaussian Process models.
+    """
 
     check_device(device)
 
@@ -349,16 +322,16 @@ def lgp_hyperopt(
         # Optimization of the hyperparameters
         n_hyper = min(n_hyper, len(X_train))
 
-        X_train_hyper = check_tensor(X_train[:n_hyper], device='cpu')
-        y_train_hyper = check_tensor(y_train[:n_hyper], device='cpu')
+        X_hyper = check_tensor(X_train[:n_hyper], device='cpu')
+        y_hyper = check_tensor(y_train[:n_hyper], device='cpu')
 
         priors = define_hyper_priors(X.shape[1])
         p0 = initialize_walkers(priors, 1).squeeze(0)
 
         log_likelihood = partial(
             loo_log_likelihood,
-            X=X_train_hyper,
-            y=y_train_hyper-y_mean)
+            X=X_hyper,
+            y=y_hyper-y_mean)
 
         log_probability = partial(
             log_posterior,

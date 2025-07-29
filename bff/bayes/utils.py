@@ -91,7 +91,7 @@ def check_device(device):
 
 
 @torch.no_grad()
-def nearest_positve_definite(A):
+def nearest_positive_definite(A):
     """Find the nearest positive definite matrix to A."""
     # Symmetrize
     A_sym = (A + A.T) / 2
@@ -212,10 +212,18 @@ def find_map(
     logger: callable = None
 ):
 
-    logger.info('  > optimizing hyperparameters: stable learning rate search: in progres...', overwrite=True)
+    logger.info(
+        '  > optimizing hyperparameters: stable learning rate search: in progres...',
+        overwrite=True
+    )
     lr_opt = 0.5 * find_max_stable_lr(fn, x0, learning_rates=lr)
     if lr_opt is not None:
-        logger.info(f'  > optimizing hyperparameters: stable learning rate search: Done. | {lr_opt:.1e}')
+        logger.info(
+            (
+                '  > optimizing hyperparameters: stable learning rate search: Done. | '
+                f'{lr_opt:.1e}'
+            )
+        )
     else:
         raise ValueError('No stable learning rate found.')
 
@@ -228,14 +236,23 @@ def find_map(
         loss.backward()
         grad_norm = x0.grad.norm().item()
         if i % 100 == 0 and logger is not None:
-            logger.info(f"  > optimizing hyperparameters: it. {i}/{max_iter} | loss: {loss.item():.3f} | grad: {grad_norm:.3f}/{tol_grad}", overwrite=True)
+            logger.info(
+                (
+                    f"  > optimizing hyperparameters: it. {i}/{max_iter} | "
+                    f"loss: {loss.item():.3f} | grad: {grad_norm:.3f}/{tol_grad}"
+                ),
+                overwrite=True
+            )
         optimizer.step()
         if grad_norm < tol_grad:
             logger.info('  > optimizing hyperparameters: Done.')
             break
-    
+
     else:
-        logger.info('  > optimizing hyperparameters: Fail. | Max iterations reached without convergence.')
+        logger.info(
+            '  > optimizing hyperparameters: Fail. | '
+            'Max iterations reached without convergence.'
+        )
 
     return x0.detach()
 

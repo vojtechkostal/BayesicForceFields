@@ -160,7 +160,16 @@ def plot_distributions(results: OptimizationResults, fn_out: str = None) -> None
         plt.show()
 
 
-def plot_corner(samples, labels=None, bins=30, levels=5, figsize=6, cmap=plt.cm.Reds, scatter_alpha=0.1, fn_out=None):
+def plot_corner(
+    samples,
+    labels=None,
+    bins=30,
+    levels=5,
+    figsize=6,
+    cmap=plt.cm.Reds,
+    scatter_alpha=0.1,
+    fn_out=None
+) -> None:
     """
     Corner plot with 1D histograms and 2D KDE contourf + scatter background.
     The lowest density level is transparent; contours are outlined in black.
@@ -168,7 +177,8 @@ def plot_corner(samples, labels=None, bins=30, levels=5, figsize=6, cmap=plt.cm.
     samples = np.asarray(samples)
     n_params = samples.shape[1]
     gridspecs = {'wspace': 0.05, 'hspace': 0.05}
-    fig, axes = plt.subplots(n_params, n_params, figsize=(figsize * n_params / 3, figsize * n_params / 3), gridspec_kw=gridspecs)
+    figsize = (figsize * n_params / 3, figsize * n_params / 3)
+    fig, axes = plt.subplots(n_params, n_params, figsize=figsize, gridspec_kw=gridspecs)
 
     # Create transparent colormap: first level transparent
     colors = cmap(np.linspace(0, 1, levels))
@@ -180,7 +190,13 @@ def plot_corner(samples, labels=None, bins=30, levels=5, figsize=6, cmap=plt.cm.
             ax = axes[i, j]
 
             if i == j:
-                ax.hist(samples[:, i], bins=bins, histtype='step', linewidth=3, color=transparent_cmap.colors[-1])
+                ax.hist(
+                    samples[:, i],
+                    bins=bins,
+                    histtype='step',
+                    linewidth=3,
+                    color=transparent_cmap.colors[-1]
+                )
 
                 q_values = np.quantile(samples[:, i], [0.016, 0.5, 0.84])
                 # Plot vertical lines
@@ -188,10 +204,19 @@ def plot_corner(samples, labels=None, bins=30, levels=5, figsize=6, cmap=plt.cm.
                     ax.axvline(q, color='black', linestyle='--', linewidth=1)
 
                 # Add text labels above histogram
-                l = q_values[1] - q_values[0]
-                u = q_values[2] - q_values[1]
-                quantiles_label = f"{labels[i]}\n${q_values[1]:.3f}^{{+{u:.3f}}}_{{-{l:.3f}}}$"
-                ax.text(0.5, 1, quantiles_label, transform=ax.transAxes, ha='center', va='bottom', fontsize=10)
+                lower = q_values[1] - q_values[0]
+                upper = q_values[2] - q_values[1]
+                quantiles_label = (
+                    f"{labels[i]}\n"
+                    f"${q_values[1]:.3f}^{{+{upper:.3f}}}_{{-{lower:.3f}}}$"
+                )
+                ax.text(
+                    0.5, 1, quantiles_label,
+                    transform=ax.transAxes,
+                    ha='center',
+                    va='bottom',
+                    fontsize=10
+                )
             elif i > j:
                 x, y = samples[::10, j], samples[::10, i]
                 ax.scatter(x, y, s=3, alpha=scatter_alpha, color="gray")
@@ -208,7 +233,9 @@ def plot_corner(samples, labels=None, bins=30, levels=5, figsize=6, cmap=plt.cm.
                     ax.contourf(xi, yi, zi, levels=levels_lin, cmap=transparent_cmap)
 
                     # Black contour lines
-                    ax.contour(xi, yi, zi, levels=levels_lin, colors='black', linewidths=0.5)
+                    ax.contour(
+                        xi, yi, zi, levels=levels_lin, colors='black', linewidths=0.5
+                    )
                 except np.linalg.LinAlgError:
                     pass
 
@@ -218,8 +245,10 @@ def plot_corner(samples, labels=None, bins=30, levels=5, figsize=6, cmap=plt.cm.
             # Labels and ticks
             # Ensure at least 3 major ticks
             from matplotlib.ticker import MaxNLocator
-            ax.xaxis.set_major_locator(MaxNLocator(nbins='auto', steps=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], min_n_ticks=3))
-            ax.yaxis.set_major_locator(MaxNLocator(nbins='auto', steps=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], min_n_ticks=3))
+            locator_kws = {'nbins': 'auto', 'steps': np.arange(1, 11), 'min_n_ticks': 3}
+            ax.xaxis.set_major_locator(MaxNLocator(**locator_kws))
+            ax.yaxis.set_major_locator(MaxNLocator(**locator_kws))
+
             ax.tick_params(
                 direction='in',
                 top=True, right=True,
