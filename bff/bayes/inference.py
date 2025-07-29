@@ -6,7 +6,7 @@ from functools import partial
 from pathlib import Path
 
 from ..evaluation.metrics import mape_fn
-from .gaussian_process import LocalGaussianProcess
+from .gaussian_process import LocalGaussianProcess, LGPCommittee
 from .likelihoods import loo_log_likelihood, gaussian_log_likelihood
 from ..structures import MCMCResults
 from ..io.logs import print_progress_mcmc
@@ -14,7 +14,8 @@ from ..io.utils import load_yaml, save_yaml
 from .utils import (
     initialize_backend, initialize_walkers,
     check_device, check_tensor,
-    train_test_split
+    train_test_split,
+    find_map, laplace_approximation
 )
 from ..tools import sample_within_confidence
 
@@ -102,7 +103,8 @@ def log_posterior(
     theta: torch.Tensor,
     priors: list[torch.distributions.Distribution],
     log_likelihood_fn: callable,
-    device: str
+    device: str,
+    numpy_output: bool = True
 ) -> np.ndarray:
 
     """
@@ -126,15 +128,20 @@ def log_posterior(
         Log-posterior values for the given parameters.
     """
 
-    if not torch.is_tensor(theta):
-        theta = torch.tensor(theta).float()
-    if theta.device != device:
-        theta = theta.to(device)
+    theta = check_tensor(theta, device)
+    if theta.dim() == 1:
+        theta = theta.unsqueeze(0)
 
     log_likelihood = log_likelihood_fn(theta)
     log_likelihood = torch.where(
-        torch.isnan(log_likelihood), - torch.inf, log_likelihood)
-    return (log_prior(theta, priors) + log_likelihood).cpu().numpy()
+        torch.isnan(log_likelihood), -torch.inf, log_likelihood)
+
+    log_prob = log_prior(theta, priors) + log_likelihood
+    if log_prob.ndim == 1:
+        log_prob = log_prob.squeeze(0)
+    if numpy_output:
+        return log_prob.detach().cpu().numpy()
+    return log_prob
 
 
 def initialize_hyper_sampler(
@@ -279,7 +286,9 @@ def initialize_mcmc_sampler(
     log_likelihood = partial(
         gaussian_log_likelihood,
         y_true=y_true,
-        surrogate=surrogate)
+        surrogate=surrogate,
+        specs=specs
+    )
 
     log_probability = partial(
         log_posterior,
@@ -296,7 +305,7 @@ def initialize_mcmc_sampler(
     return p0, priors, sampler
 
 
-def optimize_lgp(
+def lgp_hyperopt(
     X: torch.Tensor,
     y: torch.Tensor,
     y_mean: torch.Tensor,
@@ -304,48 +313,11 @@ def optimize_lgp(
     test_fraction: float,
     n_hyper: int,
     committee: int,
-    fn_backend: str,
     device: str,
-    mcmc_kwargs: dict = None
-) -> tuple[list[LocalGaussianProcess], tuple, float]:
+    logger: callable,
+    opt_kwargs: dict
+) -> tuple[list[LocalGaussianProcess], tuple]:
 
-    """
-    Optimize hyperparameters for a Local Gaussian Process model.
-
-    Parameters
-    ----------
-    X : torch.Tensor
-        Input features for the model.
-    y : torch.Tensor
-        Output features for the model.
-    y_mean : torch.Tensor
-        Mean of the output features, used for centering.
-    fn_hyperparams : str | Path
-        Path to the file where hyperparameters will be saved.
-        If None, hyperparameters will not be saved.
-        If the file exists, they will be reused.
-    test_fraction : float
-        Fraction of the data to be used for testing.
-    n_hyper : int
-        Maximum number of samples to use for hyperoptimization.
-    comittee : int
-        Number of Local Gaussian Process models in the committee.
-    fn_backend : str
-        Path to the backend file for storing the MCMC samples.
-    device : str
-        Device on which to perform computations (e.g., 'cuda:0' or 'cpu').
-    mcmc_kwargs : dict, optional
-        Additional keyword arguments for the MCMC sampler.
-        Defaults to None.
-
-    Returns
-    -------
-    tuple[list[LocalGaussianProcess], tuple, float]
-        List of Local Gaussian Process models, hyperparameters,
-        and mean absolute percentage error (MAPE).
-    """
-
-    # Check if the device is available
     check_device(device)
 
     # Split the data into training and testing sets
@@ -370,68 +342,68 @@ def optimize_lgp(
         ):
             raise ValueError(
                 f"Number of hyperparameters in {fn_hyperparams}"
-                f" does not match the committee size {committee}."
+                f" does not match the ensemble size {committee}."
             )
+
     else:
-        # Bayesian optimization for hyperparameters
+        # Optimization of the hyperparameters
         n_hyper = min(n_hyper, len(X_train))
 
-        X_train_hyper = X_train[:n_hyper]
-        y_train_hyper = y_train[:n_hyper]
-        p0, priors, sampler = initialize_hyper_sampler(
-            X_train_hyper, y_train_hyper, y_mean, fn_backend, device)
+        X_train_hyper = check_tensor(X_train[:n_hyper], device='cpu')
+        y_train_hyper = check_tensor(y_train[:n_hyper], device='cpu')
 
-        print_progress_mcmc(sampler, p0, **mcmc_kwargs)
+        priors = define_hyper_priors(X.shape[1])
+        p0 = initialize_walkers(priors, 1).squeeze(0)
 
-        mcmc_results = MCMCResults(sampler, priors)
-        chain = mcmc_results.chain_samples()
-        lengths, widths, sigmas = get_hyperparameters(chain, committee)
+        log_likelihood = partial(
+            loo_log_likelihood,
+            X=X_train_hyper,
+            y=y_train_hyper-y_mean)
 
-    # Create a committee of Local Gaussian Process models
-    lgps = [
-        LocalGaussianProcess(
-            X_train, y_train, y_mean, length, width, sigma, device)
-        for length, width, sigma in zip(lengths, widths, sigmas)
-    ]
+        log_probability = partial(
+            log_posterior,
+            priors=list(priors.values()),
+            log_likelihood_fn=log_likelihood,
+            device='cpu',
+            numpy_output=False)
 
-    # Assess the performance of the committee
-    mape = np.mean([
-        mape_fn(y_test, lgp.predict(X_test)[0].cpu().numpy())
-        for lgp in lgps])
+        map_theta = find_map(log_probability, p0, logger=logger, **opt_kwargs)
 
+        if committee > 1:
+            cov = laplace_approximation(log_probability, map_theta, device='cpu')
+            hyper_dist = torch.distributions.MultivariateNormal(map_theta, cov)
+            hyper_samples = hyper_dist.sample((committee,))
+        else:
+            hyper_samples = map_theta.unsqueeze(0)
+
+        # Split hyperparameters
+        hyper_samples = hyper_samples.exp()
+        lengths = hyper_samples[:, :-2]
+        widths = hyper_samples[:, -2]
+        sigmas = hyper_samples[:, -1]
+
+    # Create committee of LGPs
+    logger.info(f'  > LGP committee: {0}/{committee}', overwrite=True)
+    lgps = []
+    for i, (l, w, s) in enumerate(zip(lengths, widths, sigmas), start=1):
+        lgps.append(LocalGaussianProcess(X_train, y_train, y_mean, l, w, s, device))
+        logger.info(f'  > LGP committee: {i}/{committee}', overwrite=True)
+
+    lgp_committee = LGPCommittee(lgps)
+
+    # Validate the surrogate
+    y_pred = lgp_committee.predict(X_test).cpu().numpy()
+    error = mape_fn(y_test, y_pred) * 100
+
+    logger.info(f'  > LGP committee: {committee} (100%) | MAPE = {error:.2f}%')
+
+    # Save hyperparameters if a file is specified
     if fn_hyperparams and not reuse_hyper:
         committee_data = {
-            'lengths': np.array([lgp.lengths.cpu().numpy() for lgp in lgps]),
-            'widths':  np.array([lgp.width.cpu().numpy() for lgp in lgps]),
-            'sigmas': np.array([lgp.sigma.cpu().numpy() for lgp in lgps]),
+            'lengths': np.array([lgp.hyperparameters['lengths'] for lgp in lgps]),
+            'widths':  np.array([lgp.hyperparameters['width'] for lgp in lgps]),
+            'sigmas': np.array([lgp.hyperparameters['sigma'] for lgp in lgps]),
         }
         save_yaml(committee_data, fn_hyperparams)
 
-    return lgps, mape
-
-
-def get_hyperparameters(chain, committee_size: int):
-    """
-    Extract hyperparameters from the sampler.
-    Assumes the last two parameters are width and noise.
-
-    Parameters
-    ----------
-    sampler : emcee.EnsembleSampler
-        The MCMC sampler containing the chain of samples.
-    comittee_size : int
-        Number of Local Gaussian Process models in the committee.
-    """
-
-    # Due to the log-normal distribution sampled as normal distribution,
-    # we exponentiate the samples to get the hyperparameters
-    samples = np.exp(chain)
-
-    hyperparams = sample_within_confidence(samples, committee_size, 0.68)
-
-    # Assuming the last two parameters are width and noise
-    lengths = hyperparams[:, :-2]
-    widths = hyperparams[:, -2]
-    sigmas = hyperparams[:, -1]
-
-    return lengths, widths, sigmas
+    return lgp_committee

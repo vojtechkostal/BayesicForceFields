@@ -1,12 +1,12 @@
-import corner
+import torch
 import matplotlib.pyplot as plt
-from matplotlib.colors import to_rgba
+from matplotlib.colors import ListedColormap
 import numpy as np
+
+from scipy.stats import gaussian_kde
 
 from .structures import Specs, OptimizationResults
 from .bayes.utils import valid_bounds
-
-__all__ = ['draw_samples', 'plot_confidence_intervals']
 
 
 def draw_samples(
@@ -71,112 +71,175 @@ def draw_samples(
     return samples_out
 
 
-def plot_confidence_intervals(
-        results: OptimizationResults,
-        confidence: float = 0.95,
-        fn_out: str = None
-) -> None:
+def plot_distributions(results: OptimizationResults, fn_out: str = None) -> None:
 
-    param_types = [p.split()[0] for p in results.bounds_explicit.params]
-    unique_param_types, counts = np.unique(param_types, return_counts=True)
-    n_cols = len(unique_param_types)
+    labels_used = {"prior": False, "posterior": False, "bound": False}
 
-    gridspec_kw = dict(width_ratios=counts, wspace=0.5)
-    fig, axs = plt.subplots(
-        1, n_cols, figsize=(np.sum(counts)*0.75, 3), gridspec_kw=gridspec_kw)
-    axs = np.atleast_1d(axs)
-    for ax, name in zip(axs, unique_param_types):
-        bounds = np.array([
-            v for p, v in results.bounds_explicit.bounds.items()
-            if name in p
-        ])
-        bound_ranges = np.diff(bounds, axis=1).flatten()
-        bound_bottoms = bounds[:, 0]
+    x_offset = 0
+    x_lim_low, x_lim_high = -0.5, len(results.atomtypes)
 
-        x = np.arange(1, len(bounds) + 1, 1)
+    fig, ax = plt.subplots(figsize=(4, 3))
+    for posterior, (param, bound) in zip(
+        results.chain_explicit_[:, :results.n_params_explicit].T,
+        results.bounds_explicit.bounds.items()
+    ):
+        x_min = bound[0] - 0.2
+        x_max = bound[1] + 0.2
+        x = torch.linspace(x_min, x_max, 1000)
 
-        bar_kws = {
-            'color': 'gray',
-            'alpha': 0.5,
-            'label': 'bounds'
-        }
-        ax.bar(x, bound_ranges, bottom=bound_bottoms, **bar_kws)
-        lower, median, upper = results.quantiles(confidence)[:, :len(bounds)]
-        errobar_kws = {
-            'color': 'tab:red',
-            'elinewidth': 2,
-            'markeredgewidth': 2,
-            'ls': '',
-            'marker': 'o',
-            'capsize': 5,
-            'label': f'{(confidence*100):.0f}% confidence interval'
-        }
-        ax.errorbar(
+        # Prior
+        if param.split()[1] != results.implicit_atomtype:
+            prior = results.priors[param + ' Normal']
+            y = prior.log_prob(x).exp()
+            ax.fill_between(
+                -y * 0.1 + x_offset,
+                x,
+                color='gray',
+                lw=0,
+                label='prior' if not labels_used["prior"] else None,
+            )
+            labels_used["prior"] = True
+            x_lim_low = min(- max(y) * 0.1 * 1.1, -0.5)
+
+        # Posterior
+        kde = gaussian_kde(posterior)
+        posterior_kde = kde.evaluate(x)
+        ax.fill_between(
+            posterior_kde * 0.1 + x_offset,
             x,
-            median,
-            yerr=(median - lower, upper - median),
-            **errobar_kws
+            color='tab:red',
+            lw=0,
+            label='posterior' if not labels_used["posterior"] else None,
         )
 
-        # Set the x-ticks and labels
-        ax.set_xlabel('Atomtype')
-        ax.tick_params(direction='in')
-        ax.set_xticks(x)
-        tick_labels = [
-            p.split()[1] for p in results.bounds_explicit.params if name in p
-        ]
-        ax.set_xticklabels(tick_labels, rotation=45)
+        labels_used["posterior"] = True
+        x_lim_high = max((max(posterior_kde) * 0.1 + x_offset) * 1.05, 0.5)
 
-        # Plot the zero line for charges
-        if name == 'charge':
-            ax.axhline(0, c='k', ls='--')
+        # Bound as errorbar
+        bound_center = np.mean(bound)
+        yerr = np.array([[bound_center - bound[0]], [bound[1] - bound_center]])
+        ax.errorbar(
+            [x_offset],
+            [bound_center],
+            yerr=yerr,
+            lw=2,
+            ls='',
+            capsize=5,
+            markeredgewidth=2,
+            color='k',
+            label='bound' if not labels_used["bound"] else None,
+        )
+        labels_used["bound"] = True
 
-        ax.set_ylabel(name.capitalize())
-        y_range = bounds.max() - bounds.min()
-        ax.set_ylim(bounds.min() - 0.1 * y_range, bounds.max() + 0.1 * y_range)
+        # Add value label
+        ax.text(
+            x_offset,
+            bound[0] - 0.1,
+            f'{x[posterior_kde.argmax()]:.3f}',
+            ha='center',
+            va='top',
+            fontsize=10,
+            color='tab:red',
+            fontweight='bold',
+        )
 
-    axs[0].legend()
+        x_offset += 1
+
+    ax.set_xlim(x_lim_low, x_lim_high)
+    ax.tick_params(axis='both', direction='in')
+    ax.set_xticks(np.arange(0, len(results.atomtypes), 1))
+    ax.set_xticklabels(results.atomtypes, rotation=30)
+    ax.set_xlabel('Atomtype')
+    ax.set_ylabel('Charge [e]')
+    ax.legend(ncol=3, loc='upper center', frameon=False, bbox_to_anchor=(0.5, 1.15))
 
     if fn_out is not None:
         plt.savefig(fn_out, bbox_inches='tight')
-        plt.close(fig)
+        plt.close(fig)  # Prevents display in Jupyter Notebook
     else:
         plt.show()
 
 
-def plot_corner(
-    results: OptimizationResults,
-    quantiles: list[float] = [0.025, 0.5, 0.975],
-    cmap=None,
-    fn_out: str = None
-):
+def plot_corner(samples, labels=None, bins=30, levels=5, figsize=6, cmap=plt.cm.Reds, scatter_alpha=0.1, fn_out=None):
+    """
+    Corner plot with 1D histograms and 2D KDE contourf + scatter background.
+    The lowest density level is transparent; contours are outlined in black.
+    """
+    samples = np.asarray(samples)
+    n_params = samples.shape[1]
+    gridspecs = {'wspace': 0.05, 'hspace': 0.05}
+    fig, axes = plt.subplots(n_params, n_params, figsize=(figsize * n_params / 3, figsize * n_params / 3), gridspec_kw=gridspecs)
 
-    contour_levels = [0.3, 0.5, 0.7, 0.9]
-    if cmap is None:
-        cmap = plt.get_cmap('Reds')(np.linspace(0, 1, len(contour_levels)))
-    fill_colors_rgb = [i for i in cmap]
-    alpha_fill = 1.0
-    transparent_white = (1, 1, 1, 0)  # RGBA
-    colors_for_map = [transparent_white]
-    colors_for_map += [to_rgba(c, alpha=alpha_fill) for c in fill_colors_rgb]
+    # Create transparent colormap: first level transparent
+    colors = cmap(np.linspace(0, 1, levels))
+    colors[0, -1] = 0.0  # set alpha of lowest level to 0
+    transparent_cmap = ListedColormap(colors)
 
-    results.get_chain()
-    fig = corner.corner(
-        results.chain_implicit_,
-        labels=results.labels_implicit_,
-        show_titles=True,
-        title_fmt=".2f",
-        hist_bin_factor=1.0,  # Increase the number of histogram bins
-        hist_kwargs={"color": colors_for_map[-1], "linewidth": 3},  # Red histograms
-        contourf_kwargs={"cmap": None, 'colors': colors_for_map},
-        contour_kwargs={"colors": "k", "linewidths": 2},  # Black contour lines
-        smooth=0.5,
-        levels=contour_levels,  # Contour levels
-        fill_contours=True,  # Fill the contour levels
-        plot_density=False,  # Ensure density plots are used
-        plot_contours=True,  # Ensure contour plots are drawn
-        quantiles=quantiles,  # Add quantiles to the plot
-    )
+    for i in range(n_params):
+        for j in range(n_params):
+            ax = axes[i, j]
+
+            if i == j:
+                ax.hist(samples[:, i], bins=bins, histtype='step', linewidth=3, color=transparent_cmap.colors[-1])
+
+                q_values = np.quantile(samples[:, i], [0.016, 0.5, 0.84])
+                # Plot vertical lines
+                for q in q_values:
+                    ax.axvline(q, color='black', linestyle='--', linewidth=1)
+
+                # Add text labels above histogram
+                l = q_values[1] - q_values[0]
+                u = q_values[2] - q_values[1]
+                quantiles_label = f"{labels[i]}\n${q_values[1]:.3f}^{{+{u:.3f}}}_{{-{l:.3f}}}$"
+                ax.text(0.5, 1, quantiles_label, transform=ax.transAxes, ha='center', va='bottom', fontsize=10)
+            elif i > j:
+                x, y = samples[::10, j], samples[::10, i]
+                ax.scatter(x, y, s=3, alpha=scatter_alpha, color="gray")
+
+                try:
+                    kde = gaussian_kde(np.vstack([x, y]))
+                    xi, yi = np.mgrid[x.min():x.max():100j, y.min():y.max():100j]
+                    zi = kde(np.vstack([xi.ravel(), yi.ravel()])).reshape(xi.shape)
+
+                    # Define contour levels
+                    levels_lin = np.linspace(zi.min(), zi.max(), levels)
+
+                    # Filled contour
+                    ax.contourf(xi, yi, zi, levels=levels_lin, cmap=transparent_cmap)
+
+                    # Black contour lines
+                    ax.contour(xi, yi, zi, levels=levels_lin, colors='black', linewidths=0.5)
+                except np.linalg.LinAlgError:
+                    pass
+
+            else:
+                ax.axis('off')
+
+            # Labels and ticks
+            # Ensure at least 3 major ticks
+            from matplotlib.ticker import MaxNLocator
+            ax.xaxis.set_major_locator(MaxNLocator(nbins='auto', steps=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], min_n_ticks=3))
+            ax.yaxis.set_major_locator(MaxNLocator(nbins='auto', steps=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], min_n_ticks=3))
+            ax.tick_params(
+                direction='in',
+                top=True, right=True,
+                which='both', length=4
+            )
+            if i == n_params - 1 and j < n_params:
+                ax.set_xlabel(labels[j] if labels else f"$\\theta_{{{j}}}$")
+            else:
+                ax.set_xticklabels([])
+            if j == 0 and i > 0:
+                ax.set_ylabel(labels[i] if labels else f"$\\theta_{{{i}}}$")
+            else:
+                ax.set_yticklabels([])
+            ax.tick_params(direction='in', which='both')
+
+            for label in ax.get_xticklabels():
+                label.set_rotation(45)
+                label.set_horizontalalignment('center')
+
+    fig.align_ylabels()
 
     if fn_out is not None:
         plt.savefig(fn_out, bbox_inches='tight')
