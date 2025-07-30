@@ -14,7 +14,6 @@ def compute_rdf(
     r_range: list = (0, 10),
     n_bins: int = 200,
     pbc: bool = True,
-    normalize_vol: bool = True,
     start: int = None,
     stop: int = None,
     step: int = None,
@@ -56,8 +55,6 @@ def compute_rdf(
         Array of (normalized) probability density values.
     """
 
-    unitcell = universe.dimensions if pbc else None
-
     # Compute distances (under periodic boundary conditions)
     distances = compute_distances(
         universe, atoms_ref, atoms_sel, start, stop, step, pbc=pbc)
@@ -69,11 +66,7 @@ def compute_rdf(
 
     # Normalize
     volume_shells = 4 / 3 * np.pi * (edges[1:] ** 3 - edges[:-1] ** 3)
-    if normalize_vol:
-        V = unitcell[:3].prod()
-        norm = distances.size * np.sum(1 / V) * volume_shells
-    else:
-        norm = len(distances) * atoms_ref.n_atoms * volume_shells
+    norm = len(distances) * atoms_ref.n_atoms * volume_shells
     g /= norm
 
     # Smoothen the rdf
