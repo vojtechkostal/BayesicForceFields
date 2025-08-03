@@ -78,7 +78,17 @@ def print_progress(
         Logger instance for logging progress messages.
     """
     start_time = time.time()
-    pad = len(str(total)) + 1
+    pad = len(str(total))
+
+    progress_template = (
+        "> loading training trajectories: {i:>{pad}}/{total} "
+        "({percent:3.0f}%) | {elapsed} < {eta}"
+    )
+
+    progress_str = progress_template.format(
+        i=0, pad=pad, total=total, percent=0, elapsed='0s', eta='NaN'
+    )
+    logger.info(progress_str, overwrite=True)
 
     for i, item in enumerate(iterable, 1):
         yield item
@@ -88,10 +98,11 @@ def print_progress(
             time_per_step = elapsed_time / i
             eta = time_per_step * (total - i)
 
-            progress_str = (
-                f"> loading training trajectories: {i:>{pad}}/{total} "
-                f"({100 * i / total:3.0f}%) | "
-                f"{format_time(elapsed_time)} < {format_time(eta)}"
+            progress_str = progress_template.format(
+                i=i, pad=pad, total=total,
+                percent=100 * i / total,
+                elapsed=format_time(elapsed_time),
+                eta=format_time(eta)
             )
 
             if logger is not None:
@@ -144,7 +155,7 @@ def print_progress_mcmc(
     generator = sampler.sample(
         p0, iterations=max_iter, progress=False, store=True, **kwargs
     )
-    pad = len(str(max_iter)) + 1
+    pad = len(str(max_iter))
 
     for i, sample in enumerate(generator, start=1):
         it = sampler.iteration
