@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-# from scipy.stats import norm, uniform
 from torch.distributions import Normal, Uniform
 from scipy.stats.qmc import LatinHypercube
 
@@ -12,8 +11,7 @@ from .io.utils import (
     load_json, load_yaml, save_json, save_yaml,
     extract_tarball, load_md_files
 )
-from .io.mdp import get_restraints, get_n_frames_target
-from .topology import prepare_universe
+from .io.mdp import get_restraints
 from .tools import sigmoid
 
 
@@ -37,216 +35,6 @@ class TrajectoryData:
     restr: dict
 
 
-# class TrainData:
-
-#     def __init__(self, *train_dirs: str | Path) -> None:
-#         """Initialize TrainData with training directories."""
-
-#         self.train_dirs = [Path(dir).resolve() for dir in train_dirs]
-#         self.parent_dirs = []
-#         self.specs = None
-#         self.restraints = None
-#         self.fn_topol = None
-#         self.fn_coords = None
-#         self.samples = {}
-#         self.scores = None
-#         self.features = None
-#         self.reference = None
-#         self.valid_hb = set()
-#         self.extract()
-
-#     def extract(self) -> None:
-#         """Extract and load data from training directories."""
-#         all_specs = []
-#         all_restr = []
-#         all_topols = []
-#         all_coords = []
-#         all_universes = []
-
-#         for i, train_dir in enumerate(self.train_dirs):
-#             processed_dir = self._process_directory(train_dir)
-#             self.parent_dirs.append(processed_dir)
-
-#             specs, mdps, topols, coords, sample_data = load_md_files(
-#                 processed_dir
-#             )
-#             mdps = [m for m in mdps if get_n_frames_target(m) is not None]
-#             all_specs.append(specs)
-#             all_restr.append([get_restraints(mdp) for mdp in mdps])
-#             all_topols.append(topols)
-#             all_coords.append(coords)
-#             all_universes.append([
-#                 prepare_universe(top, crd)
-#                 for top, crd in zip(topols, coords)
-#             ])
-#             self.samples.update(sample_data)
-
-#         self._validate_restraints(all_restr)
-#         self._validate_universes(all_universes)
-
-#         self.specs = Specs(*all_specs)
-#         self.restraints = all_restr[0]
-#         self.fn_topol = all_topols[0]
-#         self.fn_coords = all_coords[0]
-
-#     def _process_directory(self, directory: Path) -> Path:
-#         """Process a directory or extract it if it's a tarball."""
-#         if directory.is_dir():
-#             return directory
-#         elif directory.suffix == ".gz":
-#             extracted_dir = directory.parent / directory.stem.replace(
-#                 ".tar", ""
-#             )
-#             if not extracted_dir.exists():
-#                 extract_tarball(directory)
-#             return extracted_dir
-#         else:
-#             raise ValueError(
-#                 f"Invalid input: {directory} - must be a directory or "
-#                 f".tar.gz file"
-#             )
-
-#     @staticmethod
-#     def _validate_restraints(*all_restraints):
-#         for restraints in all_restraints[1:]:
-#             if len(all_restraints[0]) != len(restraints):
-#                 raise ValueError("Inconsistent number of restraints.")
-#             for r1, r2 in zip(all_restraints[0], restraints):
-#                 if r1 != r2:
-#                     raise ValueError("Inconsistent restraints.")
-
-#     @staticmethod
-#     def _validate_universes(*all_universes):
-#         for u in all_universes[1:]:
-#             if all_universes[0].atoms.n_atoms != u.atoms.n_atoms:
-#                 raise ValueError("Inconsistent number of atoms.")
-#             if not np.all(all_universes[0].atoms.types == u.atoms.types):
-#                 raise ValueError("Inconsistent atom types.")
-#             if not np.all(all_universes[0].atoms.names == u.atoms.names):
-#                 raise ValueError("Inconsistent atom names.")
-
-#     def _flatten_feature(self, sample: list[TrajectoryData]) -> list:
-#         rdf = np.array([g for s in sample for r, g in s.rdf.values()])
-#         hb = np.array([s.hb.get(name, 0) for s in sample for name in self.valid_hb])
-#         restr = np.array([prob for s in sample for _, prob in s.restr.values()])
-
-#         return rdf.flatten(), hb.flatten(), restr.flatten()
-
-#     @property
-#     def X(self) -> np.ndarray:
-#         """Return an array of parameters from all samples."""
-#         return np.array([sample["params"] for sample in self.samples.values()])
-
-#     @property
-#     def y(self) -> np.ndarray:
-#         if not self.features:
-#             raise ValueError("Features not loaded. Call load_features() first.")
-#         y_raw = [np.r_[self._flatten_feature(sample)] for sample in self.features]
-#         return np.stack(y_raw)
-
-#     @property
-#     def y_true(self) -> np.ndarray:
-#         """Return the true values of the features and corresponding slices."""
-#         if not self.reference:
-#             raise ValueError("Reference not loaded. Call load_reference() first.")
-
-#         features = self._flatten_feature(self.reference)
-
-#         return np.concatenate(features)
-
-#     @property
-#     def y_slices(self) -> dict[str, slice]:
-#         if not self.reference:
-#             raise ValueError("Reference not loaded. Call load_reference() first.")
-
-#         features = self._flatten_feature(self.reference)
-
-#         keys = ['rdf', 'hb', 'restr']
-#         lengths = list(map(len, features))
-#         offsets = np.cumsum([0] + lengths[:-1])
-
-#         return {
-#             key: slice(offset, offset + length)
-#             for key, offset, length, in zip(keys, offsets, lengths)
-#         }
-
-#     @property
-#     def observations(self):
-
-#         # Determine observation numbers
-#         n_rdf = sum([len(trj.rdf) for trj in self.reference])
-#         n_hb = len(self.valid_hb)
-#         n_restr = sum(len(trj.restr) for trj in self.reference)
-
-#         return n_rdf, n_hb, n_restr
-
-#     @property
-#     def rdf_sigmoid_mean(self) -> np.ndarray:
-#         rs = [sigmoid(r) for trj in self.reference for r, g in trj.rdf.values()]
-#         return np.array(rs).flatten()
-
-#     @property
-#     def trajectories(self) -> list[list[str]]:
-#         """Return a list of trajectory file paths for all samples."""
-#         return [
-#             [lookup(fn, self.parent_dirs) for fn in sample["fn_trj"]]
-#             for sample in self.samples.values()
-#         ]
-
-#     @property
-#     def hashes(self):
-#         return self.samples.keys()
-
-#     @property
-#     def n_samples(self):
-#         return len(self.samples)
-
-#     def load_features(self, features: str | Path | list) -> None:
-#         """Load features from a file or dictionary."""
-#         if isinstance(features, (str, Path)):
-#             features = load_json(str(features))
-#             if self.hashes != features.keys():
-#                 raise ValueError(
-#                     "Supplied features do not match the training samples."
-#                 )
-#             features = [
-#                 [TrajectoryData(**t) for t in sample]
-#                 for sample in features.values()
-#             ]
-#         elif isinstance(features, list):
-#             features = features
-#         else:
-#             raise TypeError("Features must be a file path or list.")
-
-#         self.features = features
-
-#     def load_reference(self, reference: list[TrajectoryData]) -> None:
-#         """Load reference data."""
-#         if not isinstance(reference, list):
-#             raise TypeError("Reference must be a list of TrajectoryData.")
-#         if not all(isinstance(r, TrajectoryData) for r in reference):
-#             raise TypeError("All items in reference must be TrajectoryData.")
-#         if not isinstance(reference, list):
-#             reference = [reference]
-
-#         self.reference = reference
-#         self.valid_hb = np.unique([k for trj in self.reference for k in trj.hb])
-
-#     def write_features(self, output_path: str | Path) -> None:
-#         """Write features into a JSON file."""
-#         if not self.features:
-#             raise ValueError("No features to write.")
-#         output_path = Path(output_path).resolve()
-#         output_path.parent.mkdir(parents=True, exist_ok=True)
-#         hashed_samples = dict(zip(self.hashes, self.features))
-#         save_json(hashed_samples, output_path)
-
-#     def __repr__(self) -> str:
-#         """Return a string representation of the TrainData instance."""
-#         return (
-#             f"Training Set for {self.specs.mol_resname}: "
-#             f"{self.n_samples} samples"
-#         )
 class TrainData:
 
     def __init__(self, train_dir: str | Path) -> None:
@@ -259,7 +47,8 @@ class TrainData:
         self.fn_coords = None
         self.samples = None
         self.scores = None
-        self.features = None
+        self.settings = None
+        self.qoi = None
         self.reference = None
         self.valid_hb = set()
         self.extract()
@@ -308,9 +97,9 @@ class TrainData:
 
     @property
     def y(self) -> np.ndarray:
-        if not self.features:
+        if not self.qoi:
             raise ValueError("Features not loaded. Call load_features() first.")
-        y_raw = [np.r_[self._flatten_feature(sample)] for sample in self.features]
+        y_raw = [np.r_[self._flatten_feature(sample)] for sample in self.qoi]
         return np.stack(y_raw)
 
     @property
@@ -358,7 +147,7 @@ class TrainData:
     def trajectories(self) -> list[list[str]]:
         """Return a list of trajectory file paths for all samples."""
         return [
-            self.train_dir / sample["fn_trj"]
+            [self.train_dir / t for t in sample["fn_trj"]]
             for sample in self.samples.values()
         ]
 
@@ -370,24 +159,30 @@ class TrainData:
     def n_samples(self):
         return len(self.samples)
 
-    def load_features(self, features: str | Path | list) -> None:
+    def load_features(self, features: str | Path | list, settings: dict = None) -> None:
         """Load features from a file or dictionary."""
         if isinstance(features, (str, Path)):
             features = load_json(str(features))
-            if self.hashes != features.keys():
+            if self.hashes != features['samples'].keys():
                 raise ValueError(
                     "Supplied features do not match the training samples."
                 )
-            features = [
+            qoi = [
                 [TrajectoryData(**t) for t in sample]
-                for sample in features.values()
+                for sample in features['samples'].values()
             ]
+            settings = features.get('settings', {})
         elif isinstance(features, list):
-            features = features
+            qoi = features
+            if not settings:
+                raise ValueError(
+                    "Settings must be provided when loading features from a list."
+                )
         else:
             raise TypeError("Features must be a file path or list.")
 
-        self.features = features
+        self.qoi = qoi
+        self.settings = settings
 
     def load_reference(self, reference: list[TrajectoryData]) -> None:
         """Load reference data."""
@@ -401,14 +196,16 @@ class TrainData:
         self.reference = reference
         self.valid_hb = np.unique([k for trj in self.reference for k in trj.hb])
 
-    def write_features(self, output_path: str | Path) -> None:
+    def write_features(self, fn_out: str | Path) -> None:
         """Write features into a JSON file."""
-        if not self.features:
-            raise ValueError("No features to write.")
-        output_path = Path(output_path).resolve()
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        hashed_samples = dict(zip(self.hashes, self.features))
-        save_json(hashed_samples, output_path)
+        if not self.qoi:
+            raise ValueError("No QoI to write.")
+
+        qoi_hashed = dict(zip(self.hashes, self.qoi))
+        data = {'settings': self.settings} | {'samples': qoi_hashed}
+        fn_out = Path(fn_out).resolve()
+        fn_out.parent.mkdir(parents=True, exist_ok=True)
+        save_json(data, fn_out)
 
     def __repr__(self) -> str:
         """Return a string representation of the TrainData instance."""
@@ -439,152 +236,6 @@ class Bounds:
         """Return a string representation of the Bounds object."""
         return f"{self.bounds}"
 
-
-# class Specs:
-#     """Handles molecular specifications,
-#     ensuring consistency across multiple inputs."""
-
-#     def __init__(self, *specs: str | dict | Path) -> None:
-#         # Load and validate specs
-#         data = [self._load_spec(spec) for spec in specs]
-#         if len(data) > 1:
-#             self._validate_consistency(data)
-#         self.data = data[0]
-#         self.data['bounds'] = self._merge_bounds(data)
-
-#         # Extract attributes
-#         self.atomtype_counts = self.data.get('atomtype_counts', {})
-#         self.mol_resname = self.data.get('mol_resname', "")
-#         self.implicit_atomtype = self.data.get('implicit_atomtype', "")
-#         self.total_charge = self.data.get('total_charge', 0.0)
-#         self._bounds = Bounds(self.data['bounds'])
-
-#     @staticmethod
-#     def _load_spec(spec: str | dict | Path) -> dict:
-#         """Load a specification from a file, dictionary, or path."""
-#         if isinstance(spec, dict):
-#             data = spec
-#         elif isinstance(spec, (str, Path)):
-#             data = load_yaml(str(spec))
-#         else:
-#             raise TypeError(f"Unsupported spec type: {type(spec)}")
-
-#         # Ensure bounds are sorted for consistency
-#         data['bounds'] = {k: data['bounds'][k] for k in sorted(data['bounds'])}
-#         return data
-
-#     @staticmethod
-#     def _validate_consistency(data_list: list[dict]) -> None:
-#         """Ensure all given specs are consistent except for bounds values."""
-#         reference = data_list[0]
-
-#         for spec in data_list[1:]:
-#             ref_core = {k: v for k, v in reference.items() if k != 'bounds'}
-#             spec_core = {k: v for k, v in spec.items() if k != 'bounds'}
-
-#             if ref_core != spec_core:
-#                 raise ValueError("Inconsistent specs.")
-
-#             if set(reference['bounds'].keys()) != set(spec['bounds'].keys()):
-#                 raise ValueError("Inconsistent bounds.")
-
-#     @staticmethod
-#     def _merge_bounds(data_list: list[dict]) -> dict:
-#         """Merge bounds by taking min and max across all specs."""
-#         keys = data_list[0]['bounds'].keys()
-#         bounds_array = np.array([
-#             [spec['bounds'][k] for k in keys] for spec in data_list])
-#         min_bounds = bounds_array[:, :, 0].min(axis=0)
-#         max_bounds = bounds_array[:, :, 1].max(axis=0)
-#         new_bounds = np.stack([min_bounds, max_bounds], axis=1)
-
-#         return {k: v for k, v in zip(keys, new_bounds)}
-
-#     def save(self, fn_out: str):
-#         save_yaml(self.data, fn_out)
-
-#     @property
-#     def atomtypes(self):
-#         return list(self.atomtype_counts.keys())
-
-#     @property
-#     def implicit_param(self):
-#         return f"charge {self.implicit_atomtype}"
-
-#     @property
-#     def implicit_param_pos(self):
-#         return np.argmax(self.bounds_explicit.params == self.implicit_param)
-
-#     @property
-#     def implicit_param_count(self):
-#         return self.atomtype_counts[self.implicit_atomtype]
-
-#     @property
-#     def implicit_param_bounds(self):
-#         return self.bounds_explicit.values[self.implicit_param_pos]
-
-#     @property
-#     def total_charge_bounds(self):
-#         bounds = self.total_charge
-#         if isinstance(bounds, float):
-#             bounds = [bounds] * 2
-#         return bounds
-
-#     @property
-#     def n_params_implicit(self):
-#         """Number of parameters excluding the implicit charge."""
-#         return len(self.bounds_implicit.bounds)
-
-#     @property
-#     def n_params_explicit(self):
-#         """Number of parameters excluding the implicit charge."""
-#         return len(self.bounds_explicit.bounds)
-
-#     @property
-#     def bounds_implicit(self):
-#         bounds_copy = self._bounds.bounds.copy()
-#         bounds_copy.pop(self.implicit_param, None)
-#         return Bounds(bounds_copy)
-
-#     @property
-#     def bounds_explicit(self):
-#         return self._bounds
-
-#     @property
-#     def varied_param_names(self):
-#         mask = self.bounds_explicit.params != self.implicit_param
-#         return self.bounds_explicit.params[mask]
-
-#     @property
-#     def constraint_matrix(self):
-#         """Determine constraint matrix and create a linear constraint."""
-#         return np.array([
-#             self.atomtype_counts[p.split()[1]] if 'charge' in p else 0
-#             for p in self.bounds_implicit.params
-#         ])
-
-#     def test_sample(self, params):
-#         params = np.asarray(params)
-#         for param, (lower, upper) in zip(params, self.bounds_implicit.values):
-#             if not (lower <= param <= upper):
-#                 return False
-
-#         # Check the implicit charge
-#         lbi, ubi = self.implicit_param_bounds
-#         q_explicit = np.sum(params * self.constraint_matrix)
-#         q_implicit = self.total_charge - q_explicit
-
-#         return lbi <= q_implicit <= ubi
-
-#     def __repr__(self) -> str:
-#         """Return a string representation of the Specs instance."""
-#         return (
-#             f"Specs(atomtype_counts={self.atomtype_counts}, "
-#             f"mol_resname={self.mol_resname}, "
-#             f"implicit_atomtype={self.implicit_atomtype}, "
-#             f"total_charge={self.total_charge}, "
-#             f"bounds={self.bounds_explicit.bounds})"
-#         )
 
 class Specs:
     """Handles molecular specifications,
@@ -732,10 +383,22 @@ class MCMCResults:
         if isinstance(priors, (str, Path)):
             return load_yaml(str(priors))
         if isinstance(priors, dict):
-            return {
-                f"{name} {type(p).__name__}": [float(p.mean), float(p.scale)]
-                for name, p in priors.items()
-            }
+            priors_dict = {}
+            for name, p in priors.items():
+                dist_type = type(p).__name__
+                if dist_type == 'Normal':
+                    a, b = float(p.mean), float(p.scale)
+                elif dist_type == 'Uniform':
+                    a, b = float(p.low), float(p.high)
+                else:
+                    raise ValueError(
+                        f"Unsupported distribution type: {dist_type}. "
+                        "Only 'Normal' and 'Uniform' are supported."
+                    )
+                priors_dict[f"{name} {dist_type}"] = [a, b]
+
+            return priors_dict
+
         raise TypeError("Priors must be str, Path or dictionary.")
 
     def load_tau(self, tau):
@@ -762,7 +425,7 @@ class MCMCResults:
             dist_cls = self.DIST_REGISTRY.get(dist_name)
             if not dist_cls:
                 raise ValueError(f"Unknown distribution '{dist_name}'")
-            priors[name] = dist_cls(arg1, arg2)
+            priors[name] = dist_cls(arg1, arg2, validate_args=False)
         return priors
 
     def chain_samples(self, discard=None, stride=None):
@@ -812,7 +475,6 @@ class OptimizationResults(MCMCResults, Specs):
         return self._get_labels('explicit')
 
     def _get_labels(self, kind):
-        n_params = self.n_params_implicit
         if kind == 'implicit':
             param_labels = self.bounds_implicit.params.tolist()
         elif kind == 'explicit':
