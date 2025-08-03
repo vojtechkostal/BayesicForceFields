@@ -1,8 +1,9 @@
 import MDAnalysis as mda
+import inspect
 
-from .hbonds import compute_all_hbonds
-from .rdf import compute_all_rdfs
-from .restraints import compute_all_restraints
+from .hbonds import compute_all_hbonds, compute_hbonds
+from .rdf import compute_all_rdfs, compute_rdf
+from .restraints import compute_all_restraints, compute_probability_density
 from ..structures import TrajectoryData
 
 from ..topology import prepare_universe
@@ -72,6 +73,7 @@ def analyze_trajectories_wrapper(args):
     # Unpack the tuple of arguments
     (fn_topol, fn_coords, trj, restraints, mol_resname,
      start, stop, step, kwargs) = args
+
     return analyze_all_trajectories(
         fn_topol=fn_topol,
         fn_coord=fn_coords,
@@ -85,40 +87,38 @@ def analyze_trajectories_wrapper(args):
     )
 
 
-# def score_sample(
-#     trj_sample: list[TrajectoryData],
-#     trj_reference: list[TrajectoryData],
-#     components: list
-# ) -> list:
-#     """Evaluate the trajectory data."""
-#     results = []
-#     for c in components:
-#         analyzer = ANALYZERS[c]
-#         for r, s in zip(trj_reference, trj_sample):
-#             features_true = getattr(r, c)
-#             features_pred = getattr(s, c)
-#             results.extend(analyzer(features_true, features_pred))
-#     return results
+def extract_defaults(fn):
+    """
+    Extracts default values from the function's signature.
+
+    Parameters
+    ----------
+    fn : callable
+        Function from which to extract defaults.
+
+    Returns
+    -------
+    dict
+        Dictionary of default parameter values.
+    """
+    sig = inspect.signature(fn)
+    return {
+        k: v.default
+        for k, v in sig.parameters.items()
+        if v.default is not inspect.Parameter.empty
+    }
 
 
-# def feature_splits(results: list, components: list) -> tuple:
-#     """Splits the reference output into segments
-#     according to the results' components."""
-#     i = 0
-#     output_reference = []
-#     output_segments = {}
-#     for c in components:
+def get_all_settings(kwargs: dict) -> dict:
 
-#         # Calculte length of the expected output
-#         n = sum(len(getattr(ref, c)) for ref in results)
-#         output_segments[c] = [i, i + n]
-#         i += n
+    all_kwargs = {'rdf_kwargs': extract_defaults(compute_rdf),
+                  'hbond_kwargs': extract_defaults(compute_hbonds),
+                  'restraint_kwargs': extract_defaults(compute_probability_density)}
+    # Update with user-provided kwargs
+    for key, value in kwargs.items():
+        if key in all_kwargs:
+            all_kwargs[key].update(value)
+        else:
+            all_kwargs[key] = value
 
-#         # Update the reference output
-#         if c in ["rdf", "restr"]:
-#             out = np.zeros(n)
-#         elif c in ["rdf_fpp", "rdf_fph", "hb"]:
-#             out = [v for ref in results for v in getattr(ref, c).values()]
-#         output_reference.append(out)
-
-#     return output_segments, np.concatenate(output_reference)
+    return all_kwargs
