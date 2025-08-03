@@ -1,6 +1,7 @@
 import torch
 from .kernels import gaussian_kernel
 from .utils import check_tensor, nearest_positive_definite
+from ..evaluation.metrics import mape_fn
 
 
 class LocalGaussianProcess:
@@ -110,6 +111,7 @@ class LGPCommittee:
     """
     def __init__(self, lgps: list[LocalGaussianProcess]) -> None:
         self.lgps = lgps
+        self.error = None
 
     @property
     def size(self):
@@ -131,11 +133,34 @@ class LGPCommittee:
         """
         return torch.stack([lgp.predict(X) for lgp in self.lgps]).mean(dim=0)
 
+    def validate(self, X_test: torch.Tensor, y_test: torch.Tensor) -> float:
+        """
+        Validate the committee by computing the mean squared error.
+
+        Parameters
+        ----------
+        X_test : torch.Tensor
+            Test input tensor of shape (n_samples, n_features).
+        y_test : torch.Tensor
+            Test output tensor of shape (n_samples, output_dim).
+
+        Returns
+        -------
+        float
+            Mean squared error of the predictions.
+        """
+
+        y_pred = self.predict(X_test).cpu().numpy()
+        if isinstance(y_test, torch.Tensor):
+            y_test = y_test.cpu().numpy()
+        self.error = mape_fn(y_test, y_pred) * 100
+
     def __repr__(self):
         return (
             f"{self.__class__.__name__}(\n"
             f"  committee_size={self.size},\n"
             f"  n_params={self.lgps[0].n_params},\n"
+            f"  testset error={self.error},\n"
             f")"
         )
 
@@ -199,7 +224,6 @@ class CommitteeWrapper:
     def __repr__(self) -> str:
         return (
             f"{self.__class__.__name__}(\n"
-            f"  committee_size={self.committee_size},\n"
             f"  n_params={self.n_params},\n"
             f"  n_observations={self.observations},\n"
             f")"
