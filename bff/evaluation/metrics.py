@@ -13,7 +13,7 @@ def mape_fn(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     y_pred = np.asarray(y_pred)
 
     abs_diff = np.sum(np.abs(y_true - y_pred), axis=1)
-    norm = np.sum(y_true, axis=1) + np.sum(y_pred, axis=1)
+    norm = np.sum(np.abs(y_true), axis=1) + np.sum(np.abs(y_pred), axis=1)
 
     return np.mean(abs_diff / norm)
 
