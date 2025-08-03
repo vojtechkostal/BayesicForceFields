@@ -8,6 +8,7 @@ from .bayes.gaussian_process import CommitteeWrapper
 from .evaluation.trajectory import (
     analyze_all_trajectories,
     analyze_trajectories_wrapper,
+    get_all_settings
 )
 
 from .structures import TrainData, OptimizationResults, Specs
@@ -55,9 +56,9 @@ class Optimizer:
         # Initialize the logger
         self.logger = Logger(fn_log, verbose=verbose)
 
-        self.logger.info('===============================================')
-        self.logger.info('     Byaesian Force Field Optimizer            ')
-        self.logger.info('===============================================')
+        self.logger.info('=========================================')
+        self.logger.info('     Byaesian Force Field Optimizer      ')
+        self.logger.info('=========================================')
         self.logger.info('')
         self.logger.info('> loading training data: in progress...', overwrite=True)
 
@@ -115,12 +116,15 @@ class Optimizer:
         for top_ref, top_train in zip(fn_topol, self.train_data.fn_topol):
             check_topols(top_ref, top_train)
 
+        # Load settings to match the training set
+        settings = self.train_data.settings or kwargs
+
         # Analyze the reference trajectories
         t0 = time.time()
         reference = analyze_all_trajectories(
             fn_topol, fn_coord, fn_trjs, self.train_data.restraints,
             self.specs.mol_resname,
-            start, stop, step, **kwargs)
+            start, stop, step, **settings)
         self.train_data.load_reference(reference)
         t1 = time.time()
         self.logger.info(
@@ -199,13 +203,15 @@ class Optimizer:
                     pool.join()
             else:
                 iterator = print_progress(
-                    self.train_data.trajectories,
+                    args_list,
                     total=n_samples,
                     logger=self.logger,
                     stride=progress_stride
                 )
                 features = [analyze_trajectories_wrapper(args) for args in iterator]
-            self.train_data.load_features(features)
+
+            settings = get_all_settings(kwargs)
+            self.train_data.load_features(features, settings)
 
         t1 = time.time()
         self.logger.info(
@@ -217,6 +223,7 @@ class Optimizer:
         # Save the analyzed samples
         if fn_out:
             self.logger.info('> saving samples into file: in progress', overwrite=True)
+
             self.train_data.write_features(fn_out)
             t2 = time.time()
             self.logger.info(
