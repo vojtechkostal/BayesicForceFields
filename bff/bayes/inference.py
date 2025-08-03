@@ -5,7 +5,6 @@ from torch.distributions import Normal, Uniform
 from functools import partial
 from pathlib import Path
 
-from ..evaluation.metrics import mape_fn
 from .gaussian_process import LocalGaussianProcess, LGPCommittee
 from .likelihoods import loo_log_likelihood, gaussian_log_likelihood
 from ..io.utils import load_yaml, save_yaml
@@ -45,7 +44,7 @@ def define_param_priors(
         }
     elif dist_type == 'uniform':
         param_priors = {
-            param: Uniform(bound[0], bound[1])
+            param: Uniform(bound[0], bound[1], validate_args=False)
             for param, bound in param_bounds.bounds.items()
         }
     else:
@@ -365,10 +364,11 @@ def lgp_hyperopt(
     lgp_committee = LGPCommittee(lgps)
 
     # Validate the surrogate
-    y_pred = lgp_committee.predict(X_test).cpu().numpy()
-    error = mape_fn(y_test, y_pred) * 100
+    lgp_committee.validate(X_test, y_test)
 
-    logger.info(f'  > LGP committee: {committee} (100%) | MAPE = {error:.2f}%')
+    logger.info(
+        f'  > LGP committee: {committee} (100%) | MAPE = {lgp_committee.error:.2f}%'
+    )
 
     # Save hyperparameters if a file is specified
     if fn_hyperparams and not reuse_hyper:
