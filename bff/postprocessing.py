@@ -79,18 +79,21 @@ def plot_distributions(results: OptimizationResults, fn_out: str = None) -> None
     x_lim_low, x_lim_high = -0.5, len(results.atomtypes)
 
     fig, ax = plt.subplots(figsize=(4, 3))
-    for posterior, (param, bound), (prior_name, prior) in zip(
-        results.chain_explicit_[:, :results.n_params_explicit].T,
-        results.bounds_explicit.bounds.items(),
-        results.priors.items(),
-    ):
+    for param in results.labels_explicit_:
+        if len(param.split()) == 1:
+            continue
+        atomtype = param.split()[1]
+        posterior = results.chain_explicit_[:, results.atomtypes.index(atomtype)]
+        bound = results.bounds_explicit.bounds[param]
+
         x_min = bound[0] - 0.2
         x_max = bound[1] + 0.2
         x = torch.linspace(x_min, x_max, 1000)
 
         # Plot prior
-        param_type, atomtype, prior_type = prior_name.split()
         if atomtype != results.implicit_atomtype:
+            prior_key = ''.join(key for key in results.priors.keys() if param in key)
+            prior = results.priors[prior_key]
             y = prior.log_prob(x).exp()
             ax.fill_between(
                 -y * 0.1 + x_offset,
