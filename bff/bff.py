@@ -4,7 +4,6 @@ import multiprocessing as mp
 
 from pathlib import Path
 from .bayes.inference import lgp_hyperopt, initialize_mcmc_sampler
-from .bayes.gaussian_process import CommitteeWrapper
 from .evaluation.trajectory import (
     analyze_all_trajectories,
     analyze_trajectories_wrapper,
@@ -278,7 +277,8 @@ class Optimizer:
         if means.get('rdf') == 'sigmoid':
             means_local['rdf'] = self.train_data.rdf_sigmoid_mean
 
-        lgp_committees = []
+        # lgp_committees = []
+        lgp_committees = {}
         for q in self.QoI:
             self.logger.info(f'> Optimizing LGP hyperparameters: {q}')
             sl = self.train_data.y_slices.get(q, slice(None))
@@ -290,16 +290,19 @@ class Optimizer:
                 test_fraction=test_fraction,
                 n_hyper=n_hyper,
                 committee=committee,
+                observations=self.train_data.observations.get(q, None),
                 device=device,
                 logger=self.logger,
                 opt_kwargs=kwargs,
             )
 
-            # Strore the model
-            lgp_committees.append(committee_qoi)
+            # Store the model
+            # lgp_committees.append(committee_qoi)
+            lgp_committees[q] = committee_qoi
             self.logger.info('')
 
-        self.surrogate = CommitteeWrapper(lgp_committees, self.train_data.observations)
+        # self.surrogate = CommitteeWrapper(lgp_committees)
+        self.surrogate = lgp_committees
 
     def run(
         self,
@@ -349,7 +352,8 @@ class Optimizer:
 
         # Construct the LGP committee
         p0, priors, sampler = initialize_mcmc_sampler(
-            self.surrogate, self.specs, self.QoI, self.train_data.y_true,
+            self.surrogate, self.specs, self.QoI,
+            self.train_data.y_true, self.train_data.y_slices,
             n_walkers, priors_disttype, fn_backend, restart, device
         )
 

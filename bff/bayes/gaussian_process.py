@@ -109,9 +109,10 @@ class LGPCommittee:
     lgps : list of LocalGaussianProcess
         List of LGP models.
     """
-    def __init__(self, lgps: list[LocalGaussianProcess]) -> None:
+    def __init__(self, lgps: list[LocalGaussianProcess], n_observations: int) -> None:
         self.lgps = lgps
         self.error = None
+        self.observations = n_observations
 
     @property
     def size(self):
@@ -161,70 +162,5 @@ class LGPCommittee:
             f"  committee_size={self.size},\n"
             f"  n_params={self.lgps[0].n_params},\n"
             f"  testset error={self.error},\n"
-            f")"
-        )
-
-
-class CommitteeWrapper:
-    """
-    Wrapper for a list of Local Gaussian Process committees.
-
-    Parameters
-    ----------
-    committees : list of LGPCommittee
-        List of committees, each handling a subset of the output.
-    observations : list of int
-        List of indices representing which outputs are observed.
-    """
-    def __init__(
-        self,
-        committees: list[LGPCommittee],
-        observations: list[int],
-    ) -> None:
-        """Wrapper for a list of Local Gaussian Process models."""
-
-        self.committees = committees
-        self.observations = observations
-
-    @property
-    def n_params(self) -> int:
-        n = [lgp.n_params for com in self.committees for lgp in com.lgps]
-        if len(set(n)) != 1:
-            raise ValueError("All LGPs must have the same number of parameters.")
-        return n[0]
-
-    @property
-    def slices(self) -> list[slice]:
-
-        lengths = [com.lgps[0].y_size for com in self.committees]
-        offsets = [0]
-        for length in lengths[:-1]:
-            offsets.append(offsets[-1] + length)
-        return [
-            slice(start, start + length)
-            for start, length in zip(offsets, lengths)
-        ]
-
-    def predict(self, X: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        """
-        Predict outputs for all output dimensions using all LGP committees.
-
-        Parameters
-        ----------
-        X : torch.Tensor
-            Input tensor of shape (n_samples, n_features).
-
-        Returns
-        -------
-        tuple of torch.Tensor
-            Stacked predictions of shape (n_samples, total_output_dim).
-        """
-        return torch.column_stack([com.predict(X) for com in self.committees])
-
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__name__}(\n"
-            f"  n_params={self.n_params},\n"
-            f"  n_observations={self.observations},\n"
             f")"
         )

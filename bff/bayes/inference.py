@@ -161,6 +161,7 @@ def initialize_mcmc_sampler(
     specs: object,
     QoI: list[str],
     y_true: np.ndarray | torch.Tensor,
+    sl_true: dict[slice],
     n_walkers: int = None,
     priors_disttype: str = 'normal',
     fn_backend: str = 'backend.h5',
@@ -183,6 +184,8 @@ def initialize_mcmc_sampler(
         List of number of observations used in the likelihood function.
     y_true : np.ndarray | torch.Tensor
         True target values for the model.
+    sl_true : dict[slice]
+        Dictionary mapping quantities of interest (QoI) to slices of `y_true`.
     n_walkers : int, optional
         Number of walkers in the MCMC sampler.
         If None, defaults to 5 times the number of parameters.
@@ -226,6 +229,7 @@ def initialize_mcmc_sampler(
     log_likelihood = partial(
         gaussian_log_likelihood,
         y_true=y_true,
+        sl_true=sl_true,
         surrogate=surrogate,
         specs=specs
     )
@@ -253,6 +257,7 @@ def lgp_hyperopt(
     test_fraction: float,
     n_hyper: int,
     committee: int,
+    observations: int,
     device: str,
     logger: callable,
     opt_kwargs: dict
@@ -277,6 +282,8 @@ def lgp_hyperopt(
         Maximum number of data points used for hyperparameter optimization.
     committee : int
         Number of LGP models in the ensemble.
+    observations : int
+        Number of observations.
     device : str
         Device to perform computations on (e.g., 'cpu' or 'cuda').
     logger : callable
@@ -361,7 +368,7 @@ def lgp_hyperopt(
         lgps.append(LocalGaussianProcess(X_train, y_train, y_mean, l, w, s, device))
         logger.info(f'  > LGP committee: {i}/{committee}', overwrite=True)
 
-    lgp_committee = LGPCommittee(lgps)
+    lgp_committee = LGPCommittee(lgps, observations)
 
     # Validate the surrogate
     lgp_committee.validate(X_test, y_test)

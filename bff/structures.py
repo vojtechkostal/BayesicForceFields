@@ -7,10 +7,7 @@ from torch.distributions import Normal, Uniform
 from scipy.stats.qmc import LatinHypercube
 
 from .bayes.utils import initialize_backend
-from .io.utils import (
-    load_json, load_yaml, save_json, save_yaml,
-    extract_tarball, load_md_files
-)
+from .io.utils import (load_yaml, save_yaml, extract_tarball, load_md_files)
 from .io.mdp import get_restraints
 from .tools import sigmoid
 
@@ -134,9 +131,10 @@ class TrainData:
         # Determine observation numbers
         n_rdf = sum([len(trj.rdf) for trj in self.reference])
         n_hb = len(self.valid_hb)
-        n_restr = sum(len(trj.restr) for trj in self.reference)
+        # n_hb = sum(len(trj.hb) for trj in self.reference)
+        n_restr = 5 * sum(len(trj.restr) for trj in self.reference)
 
-        return n_rdf, n_hb, n_restr
+        return {'rdf': n_rdf, 'hb': n_hb, 'restr': n_restr}
 
     @property
     def rdf_sigmoid_mean(self) -> np.ndarray:
@@ -162,16 +160,19 @@ class TrainData:
     def load_features(self, features: str | Path | list, settings: dict = None) -> None:
         """Load features from a file or dictionary."""
         if isinstance(features, (str, Path)):
-            features = load_json(str(features))
-            if self.hashes != features['samples'].keys():
+            # features = load_json(str(features))
+            features = np.load(features, allow_pickle=True)
+            settings = features['settings'].item()
+            samples = features['samples'].item()
+            if self.hashes != samples.keys():
                 raise ValueError(
                     "Supplied features do not match the training samples."
                 )
             qoi = [
                 [TrajectoryData(**t) for t in sample]
-                for sample in features['samples'].values()
+                for sample in samples.values()
             ]
-            settings = features.get('settings', {})
+            # settings = features.get('settings', {})
         elif isinstance(features, list):
             qoi = features
             if not settings:
@@ -205,7 +206,8 @@ class TrainData:
         data = {'settings': self.settings} | {'samples': qoi_hashed}
         fn_out = Path(fn_out).resolve()
         fn_out.parent.mkdir(parents=True, exist_ok=True)
-        save_json(data, fn_out)
+        # save_json(data, fn_out)
+        np.savez_compressed(fn_out, **data)
 
     def __repr__(self) -> str:
         """Return a string representation of the TrainData instance."""
