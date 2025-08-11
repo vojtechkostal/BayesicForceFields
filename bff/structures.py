@@ -131,8 +131,7 @@ class TrainData:
         # Determine observation numbers
         n_rdf = sum([len(trj.rdf) for trj in self.reference])
         n_hb = len(self.valid_hb)
-        # n_hb = sum(len(trj.hb) for trj in self.reference)
-        n_restr = 5 * sum(len(trj.restr) for trj in self.reference)
+        n_restr = sum(len(trj.restr) for trj in self.reference)
 
         return {'rdf': n_rdf, 'hb': n_hb, 'restr': n_restr}
 
