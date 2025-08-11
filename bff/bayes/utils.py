@@ -160,7 +160,7 @@ def find_max_stable_lr(
     fn: callable,
     p0: torch.Tensor,
     learning_rates: float | torch.Tensor = None,
-    max_iter: int = 200,
+    max_iter: int = 100,
     param_bounds: tuple[float, float] = (-7, 7),
 ) -> float | None:
     """Find the largest stable learning rate for gradient-based optimization.

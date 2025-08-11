@@ -332,7 +332,8 @@ def lgp_hyperopt(
         y_hyper = check_tensor(y_train[:n_hyper], device='cpu')
 
         priors = define_hyper_priors(X.shape[1])
-        p0 = initialize_walkers(priors, 1).squeeze(0)
+        # p0 = initialize_walkers(priors, 1).squeeze(0)
+        p0 = torch.tensor([p.mean for p in priors.values()])
 
         log_likelihood = partial(
             loo_log_likelihood,
