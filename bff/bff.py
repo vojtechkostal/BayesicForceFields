@@ -4,7 +4,7 @@ import multiprocessing as mp
 
 from pathlib import Path
 from .bayes.inference import lgp_hyperopt, initialize_mcmc_sampler
-from .evaluation.trajectory import (
+from .qoi.trajectory import (
     analyze_all_trajectories,
     analyze_trajectories_wrapper,
     get_all_settings
