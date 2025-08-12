@@ -30,7 +30,7 @@ class Optimizer:
 
     def __init__(
         self,
-        *train_dirs: str | Path,
+        train_dir: str | Path,
         verbose: bool = True,
         fn_log: str = None
     ) -> None:
@@ -59,13 +59,13 @@ class Optimizer:
         self.logger.info('     Byaesian Force Field Optimizer      ')
         self.logger.info('=========================================')
         self.logger.info('')
-        self.logger.info('> loading training data: in progress...', overwrite=True)
+        self.logger.info('> loading training set: in progress...', overwrite=True)
 
         t0 = time.time()
-        self.train_data = TrainData(*train_dirs)
+        self.train_data = TrainData(train_dir)
         t1 = time.time()
         self.logger.info(
-            f'> loading training sets: {len(train_dirs)} | Done. '
+            f'> loading training set: Done. '
             f'({format_time(t1 - t0)})'
         )
         self.logger.info('')
@@ -81,7 +81,7 @@ class Optimizer:
         self,
         fn_topol: list[str | Path],
         fn_coord: list[str | Path],
-        fn_trjs: list[str | Path],
+        fn_trj: list[str | Path],
         start: int = 0,
         stop: int = None,
         step: int = 1,
@@ -116,12 +116,25 @@ class Optimizer:
             check_topols(top_ref, top_train)
 
         # Load settings to match the training set
-        settings = self.train_data.settings or kwargs
+        if self.train_data.settings is None:
+            self.logger.info(
+                'No settings found in the training set. '
+                'Using custom settings for reference analysis.'
+                'Be sure to match the settings with the training set.'
+            )
+            settings = kwargs or {}
+        else:
+            settings = self.train_data.settings.copy()
+            if kwargs:
+                self.logger.info(
+                    'Settings from the training set will'
+                    'overwrite the supplied ones.'
+                )
 
         # Analyze the reference trajectories
         t0 = time.time()
         reference = analyze_all_trajectories(
-            fn_topol, fn_coord, fn_trjs, self.train_data.restraints,
+            fn_topol, fn_coord, fn_trj, self.train_data.restraints,
             self.specs.mol_resname,
             start, stop, step, **settings)
         self.train_data.load_reference(reference)
