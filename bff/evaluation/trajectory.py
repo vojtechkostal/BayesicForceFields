@@ -36,7 +36,7 @@ def analyze_trajectory(
 def analyze_all_trajectories(
         fn_topol: list[str],
         fn_coord: list[str],
-        fn_trjs: list[str],
+        fn_trj: list[str],
         restraints: list[list],
         mol_resname: str,
         start: int = 0,
@@ -46,7 +46,7 @@ def analyze_all_trajectories(
 ) -> list[TrajectoryData]:
     """Analyze all trajectories in the dataset."""
     results = []
-    for t, c, trj, r in zip(fn_topol, fn_coord, fn_trjs, restraints):
+    for t, c, trj, r in zip(fn_topol, fn_coord, fn_trj, restraints):
         universe = prepare_universe(t, c, dt=1)
 
         # Load trajectory into the universe and set the unitcell
@@ -77,7 +77,7 @@ def analyze_trajectories_wrapper(args):
     return analyze_all_trajectories(
         fn_topol=fn_topol,
         fn_coord=fn_coords,
-        fn_trjs=trj,
+        fn_trj=trj,
         restraints=restraints,
         mol_resname=mol_resname,
         start=start,
