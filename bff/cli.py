@@ -16,6 +16,19 @@ def version():
     typer.echo(f"BayesicForceFields version: {bff.__version__}")
 
 
+@app.command()
+def help():
+    """
+    Print help message.
+    """
+    typer.echo("Use as 'bff <command> fn_config'")
+    typer.echo("\nAvailable commands:")
+    typer.echo("  initialize   Creates the system")
+    typer.echo("  runsims      Run MDs (training or validation).")
+    typer.echo("  optimize     Runs the Bayesian inference of the force field parameters.")
+    typer.echo("  version      Show package version.")
+
+
 def run_workflow(
     fn_config: Optional[Path],
     workflow_main: Callable[[Path], None],
