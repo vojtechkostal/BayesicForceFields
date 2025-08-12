@@ -36,17 +36,25 @@ def check_gmx_available(gmx_cmd='gmx') -> None:
         )
 
 
-def validate_config(config: dict) -> None:
+def load_config(config: str | Path) -> None:
     """Ensure the config file contains necessary fields with valid types."""
 
+    config = load_yaml(config)
+
+    fn_log = config.get('fn_log')
+    config['fn_log'] = fn_log
+
     required_keys = ['fn_topol', 'restr_sel', 'restr_x0', 'restr_k',
-                     'fn_mol', 'charge', 'mult', 'nsteps_nvt']
+                     'fn_mol', 'charge', 'mult', 'nsteps_nvt', 'project', 'gmx_cmd']
     for key in required_keys:
         if key not in config:
             raise ValueError(f"Missing required key in config: {key}")
+    
+    # Check if gromacs executable is available
+    check_gmx_available(config['gmx_cmd'])
 
     # Ensure lists have the same length
-    list_keys = ['fn_topol', 'restr_sel', 'restr_x0', 'restr_k']
+    list_keys = ['fn_topol', 'restr_sel', 'restr_x0', 'restr_k', 'charge', 'mult']
     length = len(config['fn_topol'])
     for key in list_keys:
         if len(config[key]) != length:
@@ -75,6 +83,8 @@ def validate_config(config: dict) -> None:
                 raise ValueError(
                     f"Invalid box dimensions: {box}. "
                     f"Must contain either 3 or 6 values.")
+            
+    return config
 
 
 def setup_directories(main_dir: Path = Path('./')) -> tuple:
@@ -267,16 +277,12 @@ def get_fn_mdp(fn: str) -> Path:
 def main(fn_config: str) -> None:
 
     # Load the config file
-    config = load_yaml(fn_config)
-    validate_config(config)
+    config = load_config(fn_config)
 
     # Set up logging
-    fn_log = config.get('fn_log', None)
+    fn_log = config['fn_log']
     logger = Logger(fn_log)
     logger.info(f"> Initializing project: {config['project']}")
-
-    # Check if GROMACS is available
-    check_gmx_available(config.get('gmx_cmd', 'gmx'))
 
     # Create directories
     prep_dir, train_dir, cp2k_dir = setup_directories()
@@ -369,13 +375,13 @@ def main(fn_config: str) -> None:
             fn_ndx = prep_dir / f'index-{i:03d}.ndx'
 
             if sel[0] is not None:
-                message = f"  > NVT equilibration {i} | restr: {sel} x0: {x0} k: {k}"
+                message = f"  > NVT equilibration: {i} | restr: {sel} x0: {x0} k: {k}"
                 make_ndx(u, sel, fn_out=fn_ndx)
                 fn_out = prep_dir / f'win-{i:03d}.gro'
                 create_restraint_window(u, sel, x0, box_avg, fn_out)
                 insert_pull_code(fn_mdp_nvt, sel, x0, k, fn_nvt_local)
             else:
-                message = f"  > NVT equilibration {i} | restr: None"
+                message = f"  > NVT equilibration: {i} | restr: None"
                 fn_out = prep_dir / f'win-{i:03d}.gro'
                 make_ndx(u, None, fn_out=fn_ndx)
                 with mda.Writer(fn_out, 'w') as w:

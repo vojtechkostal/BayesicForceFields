@@ -19,22 +19,86 @@ SCHEDULER_CLASSES = {
 MD_SCRIPT = 'BayesicForceFields.bff.workflows.md'
 
 
-def resolve_config_paths(config: dict) -> dict:
-    # Resolve key paths
-    for key in ['fn_specs', 'data_dir']:
-        if key in config:
+def load_config(config: str | Path):
+    """
+    Check if the configuration is valid.
+    """
+
+    # load the configuration file
+    config = load_yaml(config)
+
+    # Check the mandatory keys
+    required_keys = ['data_dir', 'gromacs', 'python', 'job_scheduler', 'gmx_cmd']
+    validate = 'inputs' in config
+    if validate:
+        required_keys.extend(['inputs', 'fn_specs'])
+    else:
+        required_keys.extend(['mol_resname', 'bounds', 'total_charge', 'implicit_atomtype', 'n_samples'])
+
+    for key in required_keys:
+        if key not in config:
+            raise ValueError(f"Missing required configuration key: '{key}'")
+        if key in ['fn_specs', 'data_dir']:
             config[key] = str(Path(config[key]).resolve())
 
-    # Resolve GROMACS file paths
-    for fn_group, items in config['gromacs'].items():
-        if fn_group == 'n_steps':
-            config['gromacs'][fn_group] = items
-        else:
-            config['gromacs'][fn_group] = [
-                str(Path(f).resolve()) for f in items
-            ]
+    # --- GROMACS section ---
+    gmx_required = ['fn_topol', 'fn_coordinates', 'fn_mdp_em', 'fn_mdp_prod', 'fn_ndx', 'n_steps']
+    gmx = config['gromacs']
+    for key in gmx_required:
+        if key not in gmx:
+            raise ValueError(f"Missing required gromacs key: '{key}'")
+        
+    # All list keys except n_steps must be the same length
+    file_keys = [k for k in gmx_required if k != 'n_steps']
+    lengths = [len(gmx[k]) for k in file_keys]
+    if len(set(lengths)) != 1:
+        raise ValueError(f"GROMACS file lists must have same length, got lengths: {dict(zip(file_keys, lengths))}")
+    
+    # Check is all the GROMACS files exist
+    for key in file_keys:
+        resolved_paths = []
+        for f in gmx[key]:
+            if not Path(f).is_file():
+                raise ValueError(f"File not found: {f} (for '{key}')")
+            resolved_paths.append(str(Path(f).resolve()))
+        config['gromacs'][key] = resolved_paths
+            
+    # --- Bounds ---
+    if not isinstance(config['bounds'], dict):
+        raise ValueError("'bounds' must be a dict")
+    for name, b in config['bounds'].items():
+        if not (isinstance(b, (list, tuple)) and len(b) == 2 and all(isinstance(x, (int, float)) for x in b)):
+            raise ValueError(f"Invalid bounds for '{name}': {b}")
+        
+    # --- Numeric fields ---
+    if not isinstance(config['total_charge'], (int, float)):
+        raise ValueError("'total_charge' must be float")
+    if 'n_samples' in config and (not isinstance(config['n_samples'], int) or config['n_samples'] <= 0):
+        raise ValueError("'n_samples' must be a positive integer")
+    
+    # --- Python executable ---
+    if not shutil.which(config['python']):
+        raise ValueError(f"Python interpreter not found: {config['python']}")
+    
+    # --- Scheduler ---
+    scheduler = config.get('job_scheduler', 'local')
+    if scheduler != 'local':
+        if scheduler not in SCHEDULER_CLASSES:
+            raise ValueError(f"Unsupported scheduler '{scheduler}'. Supported: {list(SCHEDULER_CLASSES)}")
+        if scheduler not in config:
+            raise ValueError(f"Missing scheduler settings for '{scheduler}'")
+        sched_conf = config[scheduler]
+        required_sched_keys = ['preamble', 'commands']
+        for key in required_sched_keys:
+            if key not in sched_conf:
+                raise ValueError(f"Scheduler '{scheduler}' must define '{key}'")
+            
+    # --- misc ---
+    config['compress'] = config.get('compress', False)
+    config['cleanup'] = config.get('cleanup', False)
+    config['store'] = config.get('store', False)
 
-    return config
+    return config, validate
 
 
 def dispatch_md_job(hash, sample, config, job_scheduler):
@@ -43,7 +107,7 @@ def dispatch_md_job(hash, sample, config, job_scheduler):
     """
 
     # Prepare job-specific configurations
-    config_md = resolve_config_paths(config) | {'params': sample, 'hash': hash}
+    config_md = config | {'params': sample, 'hash': hash}
     data_dir = Path(config_md['data_dir'])
     fn_config_md = data_dir / f'config-{hash}.yaml'
     save_yaml(config_md, fn_config_md)
@@ -74,7 +138,7 @@ def dispatch_md_job(hash, sample, config, job_scheduler):
 
 
 # ---- Initialization ----
-def initialize_environment(config):
+def initialize_environment(config, validate):
     """
     Set up the directory structure and save settings and initial data.
     """
@@ -84,8 +148,9 @@ def initialize_environment(config):
     data_dir.mkdir(parents=True, exist_ok=True)
 
     # Check if Specs file is provided or needs to be generated
-    if not config.get('fn_specs'):
-        # NOTE: assumes the mol_resname is the same for all topologies
+    if validate:
+        fn_specs = Path(config['fn_specs']).resolve()
+    else:
         topol = TopologyParser(config['gromacs']['fn_topol'][0])
         topol.select_mol(config['mol_resname'], config['implicit_atomtype'])
         specs_data = {
@@ -99,8 +164,6 @@ def initialize_environment(config):
         # Save the Specs data into a file
         fn_specs = data_dir / 'specs.yaml'
         Specs(specs_data).save(fn_specs)
-    else:
-        fn_specs = Path(config['fn_specs']).resolve()
 
     gmx_keys = ['fn_topol', 'fn_coordinates', 'fn_mdp_em', 'fn_mdp_prod', 'fn_ndx']
     files = zip(*(config['gromacs'][key] for key in gmx_keys))
@@ -192,7 +255,10 @@ def print_train_summary(config, logger):
     logger.info(f"> Generating training set for: {config['mol_resname']}")
     logger.info("  > parameters:")
     for name, b in config['bounds'].items():
-        logger.info(f"    {name}: {b}")
+        if name.split()[1] == config['implicit_atomtype']:
+            logger.info(f"    {name}: {b} (implicit)")
+        else:
+            logger.info(f"    {name}: {b}")
     logger.info(f"  > total charge: {config['total_charge']}")
     logger.info('')
 
@@ -214,9 +280,8 @@ def main(fn_config):
     """
 
     # Initialization
-    config = load_yaml(fn_config)
-    fn_specs = initialize_environment(config)
-    validate = 'inputs' in config
+    config, validate = load_config(fn_config)
+    fn_specs = initialize_environment(config, validate)
 
     logger = Logger(None)
 
