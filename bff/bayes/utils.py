@@ -4,6 +4,21 @@ import torch
 from torch.autograd.functional import hessian
 
 
+def smape(y_true: torch.tensor, y_pred: torch.tensor) -> float:
+    """
+    Compute the Symmetric Mean Absolute Percentage Error (SMAPE).
+    """
+    
+    y_true = check_tensor(y_true)
+    y_pred = check_tensor(y_pred)
+
+    abs_diff = torch.sum(torch.abs(y_true - y_pred), dim=1)
+    y_true_abs = torch.sum(torch.abs(y_true), dim=1)
+    y_pred_abs = torch.sum(torch.abs(y_pred), dim=1)
+    norm = y_true_abs + y_pred_abs
+
+    return np.mean(abs_diff / norm)
+
 def initialize_backend(fn_backend: str):
     """Initialize the backend for the MCMC sampler."""
     return emcee.backends.HDFBackend(fn_backend)
