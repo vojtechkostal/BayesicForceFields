@@ -63,8 +63,8 @@ def main(fn_config: str) -> None:
     params = config['params']
     data_dir = Path(config['data_dir'])
     specs = Specs(config['fn_specs']) if config.get('fn_specs') else Specs(config)
-    implicit = config.get('implicit', True)
-    gmx_cmd = config.get('gmx_cmd', 'gmx')
+    implicit = True
+    gmx_cmd = config['gmx_cmd']
 
     # Unpack Gromacs configuration
     job_keys = ['fn_mdp_em', 'fn_mdp_prod', 'fn_coordinates', 'fn_ndx', 'n_steps']
@@ -80,7 +80,7 @@ def main(fn_config: str) -> None:
     n_steps = config['gromacs']['n_steps']
 
     # Determine the run directory
-    job_scheduler = config.get('job_scheduler', 'local')
+    job_scheduler = config['job_scheduler']
     run_dir = data_dir if job_scheduler == 'local' else Path('./').resolve()
 
     fn_log = str(data_dir / 'gmx.log')
@@ -96,7 +96,7 @@ def main(fn_config: str) -> None:
             fn_tpr = run_dir / f"{deffnm}.tpr"
 
             # Create topology with new parameters
-            fn_top_new = str(run_dir / f"topol-{hash}-{i:03d}.top")
+            fn_top_new = str(run_dir / f"md-{hash}-{i:03d}.top")
             _ = modify_topology(top, specs, params, implicit, fn_top_new)
 
             # Minimize energy
@@ -132,7 +132,7 @@ def main(fn_config: str) -> None:
 
     if np.all(success):
         if job_scheduler != 'local':
-            pattern = "*" if config.get('store', False) else "*.xtc"
+            pattern = "*" if config['store'] else "*.xtc"
             for file in run_dir.glob(pattern):
                 shutil.copy(file, data_dir / file.name)
     else:

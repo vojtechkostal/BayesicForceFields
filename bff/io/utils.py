@@ -115,8 +115,8 @@ def load_md_files(train_dir: Path) -> tuple:
     fn_samples = load_yaml(fn_samples) if fn_samples.exists() else None
 
     fn_mdp = sorted([f for f in train_dir.glob("*prod*.mdp")])
-    fn_topol = sorted(list(train_dir.glob("*.top")))
-    fn_coord = sorted(list(train_dir.glob("*.gro")))
+    fn_topol = sorted(list(train_dir.glob("topol-*.top")))
+    fn_coord = sorted(list(train_dir.glob("coords-*.gro")))
 
     assert len(fn_mdp) == len(fn_topol) == len(fn_coord), \
         f"Some files in {train_dir} are missing (.mdp, .top or .gro)."
