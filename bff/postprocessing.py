@@ -71,7 +71,11 @@ def draw_samples(
     return samples_out
 
 
-def plot_distributions(results: OptimizationResults, fn_out: str = None) -> None:
+def plot_distributions(
+    results: OptimizationResults,
+    color_prior: str = 'gray', color_posterior: str = 'tab:red',
+    fn_out: str = None
+) -> None:
 
     labels_used = {"prior": False, "posterior": False, "bound": False}
 
@@ -98,7 +102,7 @@ def plot_distributions(results: OptimizationResults, fn_out: str = None) -> None
             ax.fill_between(
                 -y * 0.1 + x_offset,
                 x,
-                color='gray',
+                color=color_prior,
                 lw=0,
                 label='prior' if not labels_used["prior"] else None,
             )
@@ -111,7 +115,7 @@ def plot_distributions(results: OptimizationResults, fn_out: str = None) -> None
         ax.fill_between(
             posterior_kde * 0.1 + x_offset,
             x,
-            color='tab:red',
+            color=color_posterior,
             lw=0,
             label='posterior' if not labels_used["posterior"] else None,
         )
