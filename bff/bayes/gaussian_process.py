@@ -1,7 +1,6 @@
 import torch
 from .kernels import gaussian_kernel
-from .utils import check_tensor, nearest_positive_definite
-from ..evaluation.metrics import mape_fn
+from .utils import check_tensor, nearest_positive_definite, smape
 
 
 class LocalGaussianProcess:
@@ -154,7 +153,7 @@ class LGPCommittee:
         y_pred = self.predict(X_test).cpu().numpy()
         if isinstance(y_test, torch.Tensor):
             y_test = y_test.cpu().numpy()
-        self.error = mape_fn(y_test, y_pred) * 100
+        self.error = smape(y_test, y_pred) * 100
 
     def __repr__(self):
         return (
