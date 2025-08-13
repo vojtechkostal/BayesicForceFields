@@ -96,7 +96,8 @@ def plot_distributions(
 
         # Plot prior
         if atomtype != results.implicit_atomtype:
-            prior_key = ''.join(key for key in results.priors.keys() if param in key)
+            all_keys = results.priors.keys()
+            prior_key = ''.join(key for key in all_keys if f'{param} ' in key)
             prior = results.priors[prior_key]
             y = prior.log_prob(x).exp()
             ax.fill_between(
@@ -173,6 +174,7 @@ def plot_corner(
     labels=None,
     bins=30,
     levels=5,
+    quantiles=[0.16, 0.5, 0.84],
     figsize=6,
     cmap=plt.cm.Reds,
     scatter_alpha=0.1,
@@ -206,7 +208,7 @@ def plot_corner(
                     color=transparent_cmap.colors[-1]
                 )
 
-                q_values = np.quantile(samples[:, i], [0.016, 0.5, 0.84])
+                q_values = np.quantile(samples[:, i], quantiles)
                 # Plot vertical lines
                 for q in q_values:
                     ax.axvline(q, color='black', linestyle='--', linewidth=1)
@@ -227,7 +229,8 @@ def plot_corner(
                 )
             elif i > j:
                 x, y = samples[::10, j], samples[::10, i]
-                ax.scatter(x, y, s=3, alpha=scatter_alpha, color="gray")
+                ax.scatter(
+                    x, y, s=3, lw=0, alpha=scatter_alpha, color="k")
 
                 try:
                     kde = gaussian_kde(np.vstack([x, y]))
@@ -277,6 +280,7 @@ def plot_corner(
                 label.set_horizontalalignment('center')
 
     fig.align_ylabels()
+    fig.align_xlabels()
 
     if fn_out is not None:
         plt.savefig(fn_out, bbox_inches='tight')
