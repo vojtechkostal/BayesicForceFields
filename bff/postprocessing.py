@@ -177,7 +177,7 @@ def plot_corner(
     quantiles=[0.16, 0.5, 0.84],
     figsize=6,
     cmap=plt.cm.Reds,
-    scatter_alpha=0.1,
+    scatter_alpha=0.2,
     fn_out=None
 ) -> None:
     """
@@ -230,7 +230,7 @@ def plot_corner(
             elif i > j:
                 x, y = samples[::10, j], samples[::10, i]
                 ax.scatter(
-                    x, y, s=3, lw=0, alpha=scatter_alpha, color="k")
+                    x, y, s=3, lw=0, alpha=scatter_alpha, color="k", rasterized=True)
 
                 try:
                     kde = gaussian_kde(np.vstack([x, y]))
@@ -283,7 +283,7 @@ def plot_corner(
     fig.align_xlabels()
 
     if fn_out is not None:
-        plt.savefig(fn_out, bbox_inches='tight')
+        plt.savefig(fn_out, bbox_inches='tight', dpi=200)
         plt.close(fig)  # Prevents display in Jupyter Notebook
     else:
         plt.show()  # Display only if not saving
