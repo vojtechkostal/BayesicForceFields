@@ -156,22 +156,18 @@ class TrainData:
     def n_samples(self):
         return len(self.samples)
 
-    def load_features(self, features: str | Path | list, settings: dict = None) -> None:
+    def load_qoi(self, features: str | Path | list, settings: dict = None) -> None:
         """Load features from a file or dictionary."""
         if isinstance(features, (str, Path)):
             # features = load_json(str(features))
             features = np.load(features, allow_pickle=True)
             settings = features['settings'].item()
-            samples = features['samples'].item()
-            if self.hashes != samples.keys():
+            qoi_hashed = features['samples'].item()
+            qoi = list(qoi_hashed.values())
+            if self.hashes != qoi_hashed.keys():
                 raise ValueError(
                     "Supplied features do not match the training samples."
                 )
-            qoi = [
-                [TrajectoryData(**t) for t in sample]
-                for sample in samples.values()
-            ]
-            # settings = features.get('settings', {})
         elif isinstance(features, list):
             qoi = features
             if not settings:

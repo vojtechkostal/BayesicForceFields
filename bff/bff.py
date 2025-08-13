@@ -178,7 +178,7 @@ class Optimizer:
             self.logger.info(
                 '> loading training trajectories: from file', overwrite=True
             )
-            self.train_data.load_features(fn_in)
+            self.train_data.load_qoi(fn_in)
 
         # Analyze the samples from scratch
         else:
@@ -223,7 +223,7 @@ class Optimizer:
                 features = [analyze_trajectories_wrapper(args) for args in iterator]
 
             settings = get_all_settings(kwargs)
-            self.train_data.load_features(features, settings)
+            self.train_data.load_qoi(features, settings)
 
         t1 = time.time()
         self.logger.info(
