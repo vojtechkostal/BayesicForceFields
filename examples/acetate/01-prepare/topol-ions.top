@@ -1,0 +1,16 @@
+#include "/home/vojta/code/amo/data/ff/defaults.itp"
+#include "./ace-atomtypes.itp"
+#include "/home/vojta/code/amo/data/ff/water/ecc80/atomtypes.itp"
+#include "/home/vojta/code/amo/data/ff/ions/ecc80/atomtypes.itp"
+#include "/home/vojta/code/amo/data/ff/ions/ecc80/nb.itp"
+#include "/home/vojta/code/amo/data/ff/ions/ecc80/ions.itp"
+#include "/home/vojta/code/amo/data/ff/water/ecc80/water.itp"
+#include "./ace.itp"
+
+[ system ]
+Aqueous calcium acetate
+
+[ molecules ]
+ACE        1
+CAL        1
+SOL      128

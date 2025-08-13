@@ -1,0 +1,1835 @@
+                      :-) GROMACS - gmx grompp, 2024.3 (-:
+
+Executable:   /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj/bin/gmx
+Data prefix:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj
+Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare
+Command line:
+  gmx grompp -f /home/vojta/code/BayesicForceFields/bff/data/mdp/em.mdp -c /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/system-00.gro -p /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/system-00.top -o /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/0-em-00.tpr -maxwarn 1
+
+
+NOTE 1 [file /home/vojta/code/BayesicForceFields/bff/data/mdp/em.mdp]:
+  With Verlet lists the optimal nstlist is >= 10, with GPUs >= 20. Note
+  that with the Verlet scheme, nstlist has no effect on the accuracy of
+  your simulation.
+
+Generating 1-4 interactions: fudge = 1
+
+NOTE 2 [file system-00.top, line 137]:
+  System has non-zero total charge: -1.000000
+  Total charge should normally be an integer. See
+  https://manual.gromacs.org/current/user-guide/floating-point.html
+  for discussion on how close it should be to an integer.
+
+
+
+
+WARNING 1 [file system-00.top, line 137]:
+  You are using Ewald electrostatics in a system with net charge. This can
+  lead to severe artifacts, such as ions moving into regions with low
+  dielectric, due to the uniform background charge. We suggest to
+  neutralize your system with counter ions, possibly in combination with a
+  physiological salt concentration.
+
+Setting the LD random seed to 1879047677
+
+Generated 28 of the 28 non-bonded parameter combinations
+
+Generated 28 of the 28 1-4 parameter combinations
+
+Excluding 3 bonded neighbours molecule type 'ACE'
+
+Excluding 3 bonded neighbours molecule type 'SOL'
+
+++++ PLEASE READ AND CITE THE FOLLOWING REFERENCE ++++
+J. S. Hub, B. L. de Groot, H. Grubmueller, G. Groenhof
+Quantifying Artifacts in Ewald Simulations of Inhomogeneous Systems with a Net
+Charge
+J. Chem. Theory Comput. 10 (2014) pp. 381-393
+-------- -------- --- Thank You --- -------- --------
+
+Number of degrees of freedom in T-Coupling group rest is 786.00
+The integrator does not provide a ensemble temperature, there is no system ensemble temperature
+
+NOTE 3 [file /home/vojta/code/BayesicForceFields/bff/data/mdp/em.mdp]:
+  You are using geometric combination rules in LJ-PME, but your non-bonded
+  C6 parameters do not follow these rules. This will introduce very small
+  errors in the forces and energies in your simulations. If your system is
+  homogeneous, consider using dispersion correction for the total energy
+  and pressure.
+
+
+There were 3 NOTEs
+
+There was 1 WARNING
+
+GROMACS reminds you: "I Feel a Great Disturbance in the Force" (The Emperor Strikes Back)
+
+
+Cleaning up constraints and constant bonded interactions with virtual sites
+Analysing residue names:
+There are:     1    Protein residues
+There are:   128      Water residues
+Analysing Protein...
+
+The largest distance between excluded atoms is 0.332 nm between atom 4 and 6
+Calculating fourier grid dimensions for X Y Z
+Using a fourier grid of 14x14x14, spacing 0.112 0.112 0.112
+
+Estimate for the relative computational load of the PME mesh part: 0.48
+
+This run will generate roughly 0 Mb of data
+                      :-) GROMACS - gmx mdrun, 2024.3 (-:
+
+Executable:   /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj/bin/gmx
+Data prefix:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj
+Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare
+Command line:
+  gmx mdrun -s /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/0-em-00.tpr -deffnm /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/0-em-00 -nsteps -2
+
+Reading file /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/0-em-00.tpr, VERSION 2024.3 (single precision)
+
+NOTE: Parallelization is limited by the small number of atoms,
+      only starting 1 thread-MPI ranks.
+      You can use the -nt and/or -ntmpi option to optimize the number of threads.
+
+1 GPU selected for this run.
+Mapping of GPU IDs to the 1 GPU task in the 1 rank on this node:
+  PP:0
+PP tasks will do (non-perturbed) short-ranged interactions on the GPU
+PP task will update and constrain coordinates on the CPU
+Using 1 MPI thread
+Using 12 OpenMP threads 
+
+
+Steepest Descents:
+   Tolerance (Fmax)   =  1.00000e+02
+   Number of steps    =        10000
+
+writing lowest energy coordinates.
+
+Steepest Descents converged to Fmax < 100 in 2271 steps
+Potential Energy  = -7.4388350e+03
+Maximum force     =  7.1511292e+01 on atom 2
+Norm of force     =  1.2538719e+01
+
+GROMACS reminds you: "Sacrifices must be made" (Otto Lilienthal, dying after having crashed with his glider in 1896)
+
+                      :-) GROMACS - gmx grompp, 2024.3 (-:
+
+Executable:   /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj/bin/gmx
+Data prefix:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj
+Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare
+Command line:
+  gmx grompp -f /home/vojta/code/BayesicForceFields/bff/data/mdp/npt.mdp -c /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/0-em-00.gro -p /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/system-00.top -o /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/1-npt-00.tpr -maxwarn 1
+
+Ignoring obsolete mdp entry 'title'
+Generating 1-4 interactions: fudge = 1
+
+NOTE 1 [file system-00.top, line 137]:
+  System has non-zero total charge: -1.000000
+  Total charge should normally be an integer. See
+  https://manual.gromacs.org/current/user-guide/floating-point.html
+  for discussion on how close it should be to an integer.
+
+
+
+
+WARNING 1 [file system-00.top, line 137]:
+  You are using Ewald electrostatics in a system with net charge. This can
+  lead to severe artifacts, such as ions moving into regions with low
+  dielectric, due to the uniform background charge. We suggest to
+  neutralize your system with counter ions, possibly in combination with a
+  physiological salt concentration.
+
+Setting the LD random seed to -406901833
+
+Generated 28 of the 28 non-bonded parameter combinations
+
+Generated 28 of the 28 1-4 parameter combinations
+
+Excluding 3 bonded neighbours molecule type 'ACE'
+
+turning H bonds into constraints...
+
+Excluding 3 bonded neighbours molecule type 'SOL'
+
+turning H bonds into constraints...
+
+++++ PLEASE READ AND CITE THE FOLLOWING REFERENCE ++++
+J. S. Hub, B. L. de Groot, H. Grubmueller, G. Groenhof
+Quantifying Artifacts in Ewald Simulations of Inhomogeneous Systems with a Net
+Charge
+J. Chem. Theory Comput. 10 (2014) pp. 381-393
+-------- -------- --- Thank You --- -------- --------
+
+Number of degrees of freedom in T-Coupling group System is 783.00
+
+NOTE 2 [file /home/vojta/code/BayesicForceFields/bff/data/mdp/npt.mdp]:
+  You are using geometric combination rules in LJ-PME, but your non-bonded
+  C6 parameters do not follow these rules. This will introduce very small
+  errors in the forces and energies in your simulations. If your system is
+  homogeneous, consider using dispersion correction for the total energy
+  and pressure.
+
+
+NOTE 3 [file /home/vojta/code/BayesicForceFields/bff/data/mdp/npt.mdp]:
+  The optimal PME mesh load for parallel simulations is below 0.5
+  and for highly parallel simulations between 0.25 and 0.33,
+  for higher performance, increase the cut-off and the PME grid spacing.
+
+
+
+There were 3 NOTEs
+
+There was 1 WARNING
+
+GROMACS reminds you: "Sacrifices must be made" (Otto Lilienthal, dying after having crashed with his glider in 1896)
+
+
+Cleaning up constraints and constant bonded interactions with virtual sites
+Analysing residue names:
+There are:     1    Protein residues
+There are:   128      Water residues
+Analysing Protein...
+
+The largest distance between excluded atoms is 0.327 nm between atom 3 and 7
+
+Determining Verlet buffer for a tolerance of 0.005 kJ/mol/ps at 300 K
+
+Calculated rlist for 1x1 atom pair-list as 0.741 nm, buffer size 0.041 nm
+
+Set rlist, assuming 4x4 atom pair-list, to 0.707 nm, buffer size 0.007 nm
+
+Note that mdrun will redetermine rlist based on the actual pair-list setup
+Calculating fourier grid dimensions for X Y Z
+Using a fourier grid of 14x14x14, spacing 0.112 0.112 0.112
+
+Estimate for the relative computational load of the PME mesh part: 0.52
+
+This run will generate roughly 32 Mb of data
+                      :-) GROMACS - gmx mdrun, 2024.3 (-:
+
+Executable:   /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj/bin/gmx
+Data prefix:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj
+Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare
+Command line:
+  gmx mdrun -s /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/1-npt-00.tpr -deffnm /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/1-npt-00 -nsteps 0
+
+Reading file /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/1-npt-00.tpr, VERSION 2024.3 (single precision)
+
+NOTE: Parallelization is limited by the small number of atoms,
+      only starting 1 thread-MPI ranks.
+      You can use the -nt and/or -ntmpi option to optimize the number of threads.
+
+Overriding nsteps with value passed on the command line: 0 steps, 0 ps
+Changing nstlist from 10 to 25, rlist from 0.707 to 0.772
+
+
+Update groups can not be used for this system because atoms that are (in)directly constrained together are interdispersed with other atoms
+
+1 GPU selected for this run.
+Mapping of GPU IDs to the 1 GPU task in the 1 rank on this node:
+  PP:0
+PP tasks will do (non-perturbed) short-ranged and most bonded interactions on the GPU
+PP task will update and constrain coordinates on the CPU
+Using 1 MPI thread
+Using 12 OpenMP threads 
+
+starting mdrun 'Generic title'
+0 steps,      0.0 ps.
+
+Writing final coordinates.
+
+NOTE: 22 % of the run time was spent in pair search,
+      you might want to increase nstlist (this has no effect on accuracy)
+
+               Core t (s)   Wall t (s)        (%)
+       Time:        0.034        0.003     1174.5
+                 (ns/day)    (hour/ns)
+Performance:       59.968        0.400
+
+GROMACS reminds you: "Good judgement is the result of experience; experience is the result of bad judgement." (Mark Twain)
+
+                      :-) GROMACS - gmx grompp, 2024.3 (-:
+
+Executable:   /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj/bin/gmx
+Data prefix:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj
+Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare
+Command line:
+  gmx grompp -f /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/nvt-000.mdp -c /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/win-000.gro -p /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/system-00.top -o /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/2-nvt-000.tpr -maxwarn 1 -n /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/index-000.ndx
+
+Ignoring obsolete mdp entry 'title'
+Generating 1-4 interactions: fudge = 1
+
+NOTE 1 [file system-00.top, line 137]:
+  System has non-zero total charge: -1.000000
+  Total charge should normally be an integer. See
+  https://manual.gromacs.org/current/user-guide/floating-point.html
+  for discussion on how close it should be to an integer.
+
+
+
+
+WARNING 1 [file system-00.top, line 137]:
+  You are using Ewald electrostatics in a system with net charge. This can
+  lead to severe artifacts, such as ions moving into regions with low
+  dielectric, due to the uniform background charge. We suggest to
+  neutralize your system with counter ions, possibly in combination with a
+  physiological salt concentration.
+
+Setting the LD random seed to -78743173
+
+Generated 28 of the 28 non-bonded parameter combinations
+
+Generated 28 of the 28 1-4 parameter combinations
+
+Excluding 3 bonded neighbours molecule type 'ACE'
+
+turning H bonds into constraints...
+
+Excluding 3 bonded neighbours molecule type 'SOL'
+
+turning H bonds into constraints...
+
+++++ PLEASE READ AND CITE THE FOLLOWING REFERENCE ++++
+J. S. Hub, B. L. de Groot, H. Grubmueller, G. Groenhof
+Quantifying Artifacts in Ewald Simulations of Inhomogeneous Systems with a Net
+Charge
+J. Chem. Theory Comput. 10 (2014) pp. 381-393
+-------- -------- --- Thank You --- -------- --------
+
+Number of degrees of freedom in T-Coupling group System is 783.00
+
+NOTE 2 [file /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/nvt-000.mdp]:
+  You are using geometric combination rules in LJ-PME, but your non-bonded
+  C6 parameters do not follow these rules. This will introduce very small
+  errors in the forces and energies in your simulations. If your system is
+  homogeneous, consider using dispersion correction for the total energy
+  and pressure.
+
+
+NOTE 3 [file /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/nvt-000.mdp]:
+  The optimal PME mesh load for parallel simulations is below 0.5
+  and for highly parallel simulations between 0.25 and 0.33,
+  for higher performance, increase the cut-off and the PME grid spacing.
+
+
+
+There were 3 NOTEs
+
+There was 1 WARNING
+
+GROMACS reminds you: "Good judgement is the result of experience; experience is the result of bad judgement." (Mark Twain)
+
+
+Cleaning up constraints and constant bonded interactions with virtual sites
+
+The largest distance between excluded atoms is 0.328 nm between atom 3 and 7
+
+Determining Verlet buffer for a tolerance of 0.005 kJ/mol/ps at 300 K
+
+Calculated rlist for 1x1 atom pair-list as 0.741 nm, buffer size 0.041 nm
+
+Set rlist, assuming 4x4 atom pair-list, to 0.707 nm, buffer size 0.007 nm
+
+Note that mdrun will redetermine rlist based on the actual pair-list setup
+Calculating fourier grid dimensions for X Y Z
+Using a fourier grid of 14x14x14, spacing 0.112 0.112 0.112
+
+Estimate for the relative computational load of the PME mesh part: 0.52
+
+This run will generate roughly 7 Mb of data
+                      :-) GROMACS - gmx mdrun, 2024.3 (-:
+
+Executable:   /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj/bin/gmx
+Data prefix:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj
+Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare
+Command line:
+  gmx mdrun -s /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/2-nvt-000.tpr -deffnm /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/2-nvt-000 -nsteps 100000
+
+Reading file /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/2-nvt-000.tpr, VERSION 2024.3 (single precision)
+
+NOTE: Parallelization is limited by the small number of atoms,
+      only starting 1 thread-MPI ranks.
+      You can use the -nt and/or -ntmpi option to optimize the number of threads.
+
+Overriding nsteps with value passed on the command line: 100000 steps, 200 ps
+Changing nstlist from 10 to 25, rlist from 0.707 to 0.772
+
+
+Update groups can not be used for this system because atoms that are (in)directly constrained together are interdispersed with other atoms
+
+1 GPU selected for this run.
+Mapping of GPU IDs to the 1 GPU task in the 1 rank on this node:
+  PP:0
+PP tasks will do (non-perturbed) short-ranged and most bonded interactions on the GPU
+PP task will update and constrain coordinates on the CPU
+Using 1 MPI thread
+Using 12 OpenMP threads 
+
+starting mdrun 'Generic title'
+100000 steps,    200.0 ps.
+
+Writing final coordinates.
+
+               Core t (s)   Wall t (s)        (%)
+       Time:      261.376       21.781     1200.0
+                 (ns/day)    (hour/ns)
+Performance:      793.344        0.030
+
+GROMACS reminds you: "After a few talks we usually sit down to do some work... or drinking." (Mike Klein)
+
+                      :-) GROMACS - gmx grompp, 2024.3 (-:
+
+Executable:   /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj/bin/gmx
+Data prefix:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj
+Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare
+Command line:
+  gmx grompp -f /home/vojta/code/BayesicForceFields/bff/data/mdp/em.mdp -c /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/system-01.gro -p /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/system-01.top -o /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/0-em-01.tpr -maxwarn 1
+
+
+NOTE 1 [file /home/vojta/code/BayesicForceFields/bff/data/mdp/em.mdp]:
+  With Verlet lists the optimal nstlist is >= 10, with GPUs >= 20. Note
+  that with the Verlet scheme, nstlist has no effect on the accuracy of
+  your simulation.
+
+Generating 1-4 interactions: fudge = 1
+
+NOTE 2 [file system-01.top, line 149]:
+  System has non-zero total charge: 0.600000
+  Total charge should normally be an integer. See
+  https://manual.gromacs.org/current/user-guide/floating-point.html
+  for discussion on how close it should be to an integer.
+
+
+
+
+WARNING 1 [file system-01.top, line 149]:
+  You are using Ewald electrostatics in a system with net charge. This can
+  lead to severe artifacts, such as ions moving into regions with low
+  dielectric, due to the uniform background charge. We suggest to
+  neutralize your system with counter ions, possibly in combination with a
+  physiological salt concentration.
+
+Setting the LD random seed to -1344307201
+
+Generated 36 of the 36 non-bonded parameter combinations
+
+Generated 36 of the 36 1-4 parameter combinations
+
+Excluding 3 bonded neighbours molecule type 'ACE'
+
+Excluding 3 bonded neighbours molecule type 'CAL'
+
+Excluding 3 bonded neighbours molecule type 'SOL'
+
+++++ PLEASE READ AND CITE THE FOLLOWING REFERENCE ++++
+J. S. Hub, B. L. de Groot, H. Grubmueller, G. Groenhof
+Quantifying Artifacts in Ewald Simulations of Inhomogeneous Systems with a Net
+Charge
+J. Chem. Theory Comput. 10 (2014) pp. 381-393
+-------- -------- --- Thank You --- -------- --------
+
+Number of degrees of freedom in T-Coupling group rest is 789.00
+The integrator does not provide a ensemble temperature, there is no system ensemble temperature
+
+NOTE 3 [file /home/vojta/code/BayesicForceFields/bff/data/mdp/em.mdp]:
+  You are using geometric combination rules in LJ-PME, but your non-bonded
+  C6 parameters do not follow these rules. This will introduce very small
+  errors in the forces and energies in your simulations. If your system is
+  homogeneous, consider using dispersion correction for the total energy
+  and pressure.
+
+
+There were 3 NOTEs
+
+There was 1 WARNING
+
+GROMACS reminds you: "After a few talks we usually sit down to do some work... or drinking." (Mike Klein)
+
+
+Cleaning up constraints and constant bonded interactions with virtual sites
+Analysing residue names:
+There are:     1    Protein residues
+There are:     1      Other residues
+There are:   128      Water residues
+Analysing Protein...
+Analysing residues not classified as Protein/DNA/RNA/Water and splitting into groups...
+
+The largest distance between excluded atoms is 0.332 nm between atom 4 and 6
+Calculating fourier grid dimensions for X Y Z
+Using a fourier grid of 14x14x14, spacing 0.112 0.112 0.112
+
+Estimate for the relative computational load of the PME mesh part: 0.48
+
+This run will generate roughly 0 Mb of data
+                      :-) GROMACS - gmx mdrun, 2024.3 (-:
+
+Executable:   /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj/bin/gmx
+Data prefix:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj
+Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare
+Command line:
+  gmx mdrun -s /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/0-em-01.tpr -deffnm /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/0-em-01 -nsteps -2
+
+Reading file /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/0-em-01.tpr, VERSION 2024.3 (single precision)
+
+NOTE: Parallelization is limited by the small number of atoms,
+      only starting 1 thread-MPI ranks.
+      You can use the -nt and/or -ntmpi option to optimize the number of threads.
+
+1 GPU selected for this run.
+Mapping of GPU IDs to the 1 GPU task in the 1 rank on this node:
+  PP:0
+PP tasks will do (non-perturbed) short-ranged interactions on the GPU
+PP task will update and constrain coordinates on the CPU
+Using 1 MPI thread
+Using 12 OpenMP threads 
+
+
+Steepest Descents:
+   Tolerance (Fmax)   =  1.00000e+02
+   Number of steps    =        10000
+
+writing lowest energy coordinates.
+
+Steepest Descents converged to Fmax < 100 in 1592 steps
+Potential Energy  = -8.1650757e+03
+Maximum force     =  9.8363823e+01 on atom 255
+Norm of force     =  2.0398601e+01
+
+GROMACS reminds you: "Rat-tat-tat Ka boom boom" (The Smashing Pumpkins)
+
+                      :-) GROMACS - gmx grompp, 2024.3 (-:
+
+Executable:   /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj/bin/gmx
+Data prefix:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj
+Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare
+Command line:
+  gmx grompp -f /home/vojta/code/BayesicForceFields/bff/data/mdp/npt.mdp -c /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/0-em-01.gro -p /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/system-01.top -o /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/1-npt-01.tpr -maxwarn 1
+
+Ignoring obsolete mdp entry 'title'
+Generating 1-4 interactions: fudge = 1
+
+NOTE 1 [file system-01.top, line 149]:
+  System has non-zero total charge: 0.600000
+  Total charge should normally be an integer. See
+  https://manual.gromacs.org/current/user-guide/floating-point.html
+  for discussion on how close it should be to an integer.
+
+
+
+
+WARNING 1 [file system-01.top, line 149]:
+  You are using Ewald electrostatics in a system with net charge. This can
+  lead to severe artifacts, such as ions moving into regions with low
+  dielectric, due to the uniform background charge. We suggest to
+  neutralize your system with counter ions, possibly in combination with a
+  physiological salt concentration.
+
+Setting the LD random seed to -1644691461
+
+Generated 36 of the 36 non-bonded parameter combinations
+
+Generated 36 of the 36 1-4 parameter combinations
+
+Excluding 3 bonded neighbours molecule type 'ACE'
+
+turning H bonds into constraints...
+
+Excluding 3 bonded neighbours molecule type 'CAL'
+
+turning H bonds into constraints...
+
+Excluding 3 bonded neighbours molecule type 'SOL'
+
+turning H bonds into constraints...
+
+++++ PLEASE READ AND CITE THE FOLLOWING REFERENCE ++++
+J. S. Hub, B. L. de Groot, H. Grubmueller, G. Groenhof
+Quantifying Artifacts in Ewald Simulations of Inhomogeneous Systems with a Net
+Charge
+J. Chem. Theory Comput. 10 (2014) pp. 381-393
+-------- -------- --- Thank You --- -------- --------
+
+Number of degrees of freedom in T-Coupling group System is 786.00
+
+NOTE 2 [file /home/vojta/code/BayesicForceFields/bff/data/mdp/npt.mdp]:
+  You are using geometric combination rules in LJ-PME, but your non-bonded
+  C6 parameters do not follow these rules. This will introduce very small
+  errors in the forces and energies in your simulations. If your system is
+  homogeneous, consider using dispersion correction for the total energy
+  and pressure.
+
+
+NOTE 3 [file /home/vojta/code/BayesicForceFields/bff/data/mdp/npt.mdp]:
+  The optimal PME mesh load for parallel simulations is below 0.5
+  and for highly parallel simulations between 0.25 and 0.33,
+  for higher performance, increase the cut-off and the PME grid spacing.
+
+
+
+There were 3 NOTEs
+
+There was 1 WARNING
+
+GROMACS reminds you: "Rat-tat-tat Ka boom boom" (The Smashing Pumpkins)
+
+
+Cleaning up constraints and constant bonded interactions with virtual sites
+Analysing residue names:
+There are:     1    Protein residues
+There are:     1      Other residues
+There are:   128      Water residues
+Analysing Protein...
+Analysing residues not classified as Protein/DNA/RNA/Water and splitting into groups...
+
+The largest distance between excluded atoms is 0.329 nm between atom 4 and 6
+
+Determining Verlet buffer for a tolerance of 0.005 kJ/mol/ps at 300 K
+
+Calculated rlist for 1x1 atom pair-list as 0.741 nm, buffer size 0.041 nm
+
+Set rlist, assuming 4x4 atom pair-list, to 0.707 nm, buffer size 0.007 nm
+
+Note that mdrun will redetermine rlist based on the actual pair-list setup
+Calculating fourier grid dimensions for X Y Z
+Using a fourier grid of 14x14x14, spacing 0.112 0.112 0.112
+
+Estimate for the relative computational load of the PME mesh part: 0.52
+
+This run will generate roughly 32 Mb of data
+                      :-) GROMACS - gmx mdrun, 2024.3 (-:
+
+Executable:   /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj/bin/gmx
+Data prefix:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj
+Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare
+Command line:
+  gmx mdrun -s /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/1-npt-01.tpr -deffnm /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/1-npt-01 -nsteps 0
+
+Reading file /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/1-npt-01.tpr, VERSION 2024.3 (single precision)
+
+NOTE: Parallelization is limited by the small number of atoms,
+      only starting 1 thread-MPI ranks.
+      You can use the -nt and/or -ntmpi option to optimize the number of threads.
+
+Overriding nsteps with value passed on the command line: 0 steps, 0 ps
+Changing nstlist from 10 to 25, rlist from 0.707 to 0.772
+
+
+Update groups can not be used for this system because atoms that are (in)directly constrained together are interdispersed with other atoms
+
+1 GPU selected for this run.
+Mapping of GPU IDs to the 1 GPU task in the 1 rank on this node:
+  PP:0
+PP tasks will do (non-perturbed) short-ranged and most bonded interactions on the GPU
+PP task will update and constrain coordinates on the CPU
+Using 1 MPI thread
+Using 12 OpenMP threads 
+
+starting mdrun 'Generic title'
+0 steps,      0.0 ps.
+
+Writing final coordinates.
+
+               Core t (s)   Wall t (s)        (%)
+       Time:        0.127        0.011     1191.8
+                 (ns/day)    (hour/ns)
+Performance:       16.168        1.484
+
+GROMACS reminds you: "It Wouldn't Hurt to Wipe Once In a While" (Beavis and Butthead)
+
+                      :-) GROMACS - gmx grompp, 2024.3 (-:
+
+Executable:   /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj/bin/gmx
+Data prefix:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj
+Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare
+Command line:
+  gmx grompp -f /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/nvt-001.mdp -c /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/win-001.gro -p /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/system-01.top -o /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/2-nvt-001.tpr -maxwarn 1 -n /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/index-001.ndx
+
+Ignoring obsolete mdp entry 'title'
+Generating 1-4 interactions: fudge = 1
+
+NOTE 1 [file system-01.top, line 149]:
+  System has non-zero total charge: 0.600000
+  Total charge should normally be an integer. See
+  https://manual.gromacs.org/current/user-guide/floating-point.html
+  for discussion on how close it should be to an integer.
+
+
+
+
+WARNING 1 [file system-01.top, line 149]:
+  You are using Ewald electrostatics in a system with net charge. This can
+  lead to severe artifacts, such as ions moving into regions with low
+  dielectric, due to the uniform background charge. We suggest to
+  neutralize your system with counter ions, possibly in combination with a
+  physiological salt concentration.
+
+Setting the LD random seed to -503849491
+
+Generated 36 of the 36 non-bonded parameter combinations
+
+Generated 36 of the 36 1-4 parameter combinations
+
+Excluding 3 bonded neighbours molecule type 'ACE'
+
+turning H bonds into constraints...
+
+Excluding 3 bonded neighbours molecule type 'CAL'
+
+turning H bonds into constraints...
+
+Excluding 3 bonded neighbours molecule type 'SOL'
+
+turning H bonds into constraints...
+
+++++ PLEASE READ AND CITE THE FOLLOWING REFERENCE ++++
+J. S. Hub, B. L. de Groot, H. Grubmueller, G. Groenhof
+Quantifying Artifacts in Ewald Simulations of Inhomogeneous Systems with a Net
+Charge
+J. Chem. Theory Comput. 10 (2014) pp. 381-393
+-------- -------- --- Thank You --- -------- --------
+
+Pull group 1 'C2' has 1 atoms
+Pull group 2 'CAL' has 1 atoms
+Number of degrees of freedom in T-Coupling group System is 786.00
+
+NOTE 2 [file /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/nvt-001.mdp]:
+  You are using geometric combination rules in LJ-PME, but your non-bonded
+  C6 parameters do not follow these rules. This will introduce very small
+  errors in the forces and energies in your simulations. If your system is
+  homogeneous, consider using dispersion correction for the total energy
+  and pressure.
+
+Pull group  natoms  pbc atom  distance at start  reference at t=0
+       1         1         0
+       2         1         0       0.456 nm          0.350 nm
+
+NOTE 3 [file /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/nvt-001.mdp]:
+  The optimal PME mesh load for parallel simulations is below 0.5
+  and for highly parallel simulations between 0.25 and 0.33,
+  for higher performance, increase the cut-off and the PME grid spacing.
+
+
+
+There were 3 NOTEs
+
+There was 1 WARNING
+
+GROMACS reminds you: "It Wouldn't Hurt to Wipe Once In a While" (Beavis and Butthead)
+
+
+Cleaning up constraints and constant bonded interactions with virtual sites
+
+The largest distance between excluded atoms is 0.329 nm between atom 4 and 6
+
+Determining Verlet buffer for a tolerance of 0.005 kJ/mol/ps at 300 K
+
+Calculated rlist for 1x1 atom pair-list as 0.741 nm, buffer size 0.041 nm
+
+Set rlist, assuming 4x4 atom pair-list, to 0.707 nm, buffer size 0.007 nm
+
+Note that mdrun will redetermine rlist based on the actual pair-list setup
+Calculating fourier grid dimensions for X Y Z
+Using a fourier grid of 14x14x14, spacing 0.112 0.112 0.112
+
+Estimate for the relative computational load of the PME mesh part: 0.52
+
+This run will generate roughly 7 Mb of data
+                      :-) GROMACS - gmx mdrun, 2024.3 (-:
+
+Executable:   /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj/bin/gmx
+Data prefix:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj
+Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare
+Command line:
+  gmx mdrun -s /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/2-nvt-001.tpr -deffnm /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/2-nvt-001 -nsteps 100000
+
+Reading file /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/2-nvt-001.tpr, VERSION 2024.3 (single precision)
+
+NOTE: Parallelization is limited by the small number of atoms,
+      only starting 1 thread-MPI ranks.
+      You can use the -nt and/or -ntmpi option to optimize the number of threads.
+
+Overriding nsteps with value passed on the command line: 100000 steps, 200 ps
+Changing nstlist from 10 to 25, rlist from 0.707 to 0.772
+
+
+Update groups can not be used for this system because atoms that are (in)directly constrained together are interdispersed with other atoms
+
+1 GPU selected for this run.
+Mapping of GPU IDs to the 1 GPU task in the 1 rank on this node:
+  PP:0
+PP tasks will do (non-perturbed) short-ranged and most bonded interactions on the GPU
+PP task will update and constrain coordinates on the CPU
+Using 1 MPI thread
+Using 12 OpenMP threads 
+
+starting mdrun 'Generic title'
+100000 steps,    200.0 ps.
+
+Writing final coordinates.
+
+               Core t (s)   Wall t (s)        (%)
+       Time:      178.229       14.852     1200.0
+                 (ns/day)    (hour/ns)
+Performance:     1163.454        0.021
+
+GROMACS reminds you: "It's Because Of the Metric System" (Pulp Fiction)
+
+                      :-) GROMACS - gmx grompp, 2024.3 (-:
+
+Executable:   /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj/bin/gmx
+Data prefix:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj
+Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare
+Command line:
+  gmx grompp -f /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/nvt-002.mdp -c /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/win-002.gro -p /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/system-01.top -o /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/2-nvt-002.tpr -maxwarn 1 -n /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/index-002.ndx
+
+Ignoring obsolete mdp entry 'title'
+Generating 1-4 interactions: fudge = 1
+
+NOTE 1 [file system-01.top, line 149]:
+  System has non-zero total charge: 0.600000
+  Total charge should normally be an integer. See
+  https://manual.gromacs.org/current/user-guide/floating-point.html
+  for discussion on how close it should be to an integer.
+
+
+
+
+WARNING 1 [file system-01.top, line 149]:
+  You are using Ewald electrostatics in a system with net charge. This can
+  lead to severe artifacts, such as ions moving into regions with low
+  dielectric, due to the uniform background charge. We suggest to
+  neutralize your system with counter ions, possibly in combination with a
+  physiological salt concentration.
+
+Setting the LD random seed to -824776962
+
+Generated 36 of the 36 non-bonded parameter combinations
+
+Generated 36 of the 36 1-4 parameter combinations
+
+Excluding 3 bonded neighbours molecule type 'ACE'
+
+turning H bonds into constraints...
+
+Excluding 3 bonded neighbours molecule type 'CAL'
+
+turning H bonds into constraints...
+
+Excluding 3 bonded neighbours molecule type 'SOL'
+
+turning H bonds into constraints...
+
+++++ PLEASE READ AND CITE THE FOLLOWING REFERENCE ++++
+J. S. Hub, B. L. de Groot, H. Grubmueller, G. Groenhof
+Quantifying Artifacts in Ewald Simulations of Inhomogeneous Systems with a Net
+Charge
+J. Chem. Theory Comput. 10 (2014) pp. 381-393
+-------- -------- --- Thank You --- -------- --------
+
+Pull group 1 'C2' has 1 atoms
+Pull group 2 'CAL' has 1 atoms
+Number of degrees of freedom in T-Coupling group System is 786.00
+
+NOTE 2 [file /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/nvt-002.mdp]:
+  You are using geometric combination rules in LJ-PME, but your non-bonded
+  C6 parameters do not follow these rules. This will introduce very small
+  errors in the forces and energies in your simulations. If your system is
+  homogeneous, consider using dispersion correction for the total energy
+  and pressure.
+
+Pull group  natoms  pbc atom  distance at start  reference at t=0
+       1         1         0
+       2         1         0       0.456 nm          0.500 nm
+
+NOTE 3 [file /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/nvt-002.mdp]:
+  The optimal PME mesh load for parallel simulations is below 0.5
+  and for highly parallel simulations between 0.25 and 0.33,
+  for higher performance, increase the cut-off and the PME grid spacing.
+
+
+
+There were 3 NOTEs
+
+There was 1 WARNING
+
+GROMACS reminds you: "It's Because Of the Metric System" (Pulp Fiction)
+
+
+Cleaning up constraints and constant bonded interactions with virtual sites
+
+The largest distance between excluded atoms is 0.329 nm between atom 4 and 6
+
+Determining Verlet buffer for a tolerance of 0.005 kJ/mol/ps at 300 K
+
+Calculated rlist for 1x1 atom pair-list as 0.741 nm, buffer size 0.041 nm
+
+Set rlist, assuming 4x4 atom pair-list, to 0.707 nm, buffer size 0.007 nm
+
+Note that mdrun will redetermine rlist based on the actual pair-list setup
+Calculating fourier grid dimensions for X Y Z
+Using a fourier grid of 14x14x14, spacing 0.112 0.112 0.112
+
+Estimate for the relative computational load of the PME mesh part: 0.52
+
+This run will generate roughly 7 Mb of data
+                      :-) GROMACS - gmx mdrun, 2024.3 (-:
+
+Executable:   /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj/bin/gmx
+Data prefix:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj
+Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare
+Command line:
+  gmx mdrun -s /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/2-nvt-002.tpr -deffnm /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/2-nvt-002 -nsteps 100000
+
+Reading file /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/2-nvt-002.tpr, VERSION 2024.3 (single precision)
+
+NOTE: Parallelization is limited by the small number of atoms,
+      only starting 1 thread-MPI ranks.
+      You can use the -nt and/or -ntmpi option to optimize the number of threads.
+
+Overriding nsteps with value passed on the command line: 100000 steps, 200 ps
+Changing nstlist from 10 to 25, rlist from 0.707 to 0.772
+
+
+Update groups can not be used for this system because atoms that are (in)directly constrained together are interdispersed with other atoms
+
+1 GPU selected for this run.
+Mapping of GPU IDs to the 1 GPU task in the 1 rank on this node:
+  PP:0
+PP tasks will do (non-perturbed) short-ranged and most bonded interactions on the GPU
+PP task will update and constrain coordinates on the CPU
+Using 1 MPI thread
+Using 12 OpenMP threads 
+
+starting mdrun 'Generic title'
+100000 steps,    200.0 ps.
+
+Writing final coordinates.
+
+               Core t (s)   Wall t (s)        (%)
+       Time:      288.754       24.063     1200.0
+                 (ns/day)    (hour/ns)
+Performance:      718.124        0.033
+
+GROMACS reminds you: "A scientific truth does not triumph by convincing its opponents and making them see the light, but rather because its opponents eventually die and a new generation grows up that is familiar with it." (Max Planck)
+
+                      :-) GROMACS - gmx grompp, 2024.3 (-:
+
+Executable:   /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj/bin/gmx
+Data prefix:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj
+Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare
+Command line:
+  gmx grompp -f /home/vojta/code/BayesicForceFields/bff/data/mdp/em.mdp -c /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/system-00.gro -p /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/system-00.top -o /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/0-em-00.tpr -maxwarn 1
+
+
+NOTE 1 [file /home/vojta/code/BayesicForceFields/bff/data/mdp/em.mdp]:
+  With Verlet lists the optimal nstlist is >= 10, with GPUs >= 20. Note
+  that with the Verlet scheme, nstlist has no effect on the accuracy of
+  your simulation.
+
+Generating 1-4 interactions: fudge = 1
+
+NOTE 2 [file system-00.top, line 137]:
+  System has non-zero total charge: -1.000000
+  Total charge should normally be an integer. See
+  https://manual.gromacs.org/current/user-guide/floating-point.html
+  for discussion on how close it should be to an integer.
+
+
+
+
+WARNING 1 [file system-00.top, line 137]:
+  You are using Ewald electrostatics in a system with net charge. This can
+  lead to severe artifacts, such as ions moving into regions with low
+  dielectric, due to the uniform background charge. We suggest to
+  neutralize your system with counter ions, possibly in combination with a
+  physiological salt concentration.
+
+Setting the LD random seed to -612632539
+
+Generated 28 of the 28 non-bonded parameter combinations
+
+Generated 28 of the 28 1-4 parameter combinations
+
+Excluding 3 bonded neighbours molecule type 'ACE'
+
+Excluding 3 bonded neighbours molecule type 'SOL'
+
+++++ PLEASE READ AND CITE THE FOLLOWING REFERENCE ++++
+J. S. Hub, B. L. de Groot, H. Grubmueller, G. Groenhof
+Quantifying Artifacts in Ewald Simulations of Inhomogeneous Systems with a Net
+Charge
+J. Chem. Theory Comput. 10 (2014) pp. 381-393
+-------- -------- --- Thank You --- -------- --------
+
+Number of degrees of freedom in T-Coupling group rest is 786.00
+The integrator does not provide a ensemble temperature, there is no system ensemble temperature
+
+NOTE 3 [file /home/vojta/code/BayesicForceFields/bff/data/mdp/em.mdp]:
+  You are using geometric combination rules in LJ-PME, but your non-bonded
+  C6 parameters do not follow these rules. This will introduce very small
+  errors in the forces and energies in your simulations. If your system is
+  homogeneous, consider using dispersion correction for the total energy
+  and pressure.
+
+
+There were 3 NOTEs
+
+There was 1 WARNING
+
+GROMACS reminds you: "Now it's filled with hundreds and hundreds of chemicals" (Midlake)
+
+
+Cleaning up constraints and constant bonded interactions with virtual sites
+Analysing residue names:
+There are:     1    Protein residues
+There are:   128      Water residues
+Analysing Protein...
+
+The largest distance between excluded atoms is 0.332 nm between atom 4 and 6
+Calculating fourier grid dimensions for X Y Z
+Using a fourier grid of 14x14x14, spacing 0.112 0.112 0.112
+
+Estimate for the relative computational load of the PME mesh part: 0.48
+
+This run will generate roughly 0 Mb of data
+                      :-) GROMACS - gmx mdrun, 2024.3 (-:
+
+Executable:   /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj/bin/gmx
+Data prefix:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj
+Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare
+Command line:
+  gmx mdrun -s /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/0-em-00.tpr -deffnm /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/0-em-00 -nsteps -2
+
+Reading file /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/0-em-00.tpr, VERSION 2024.3 (single precision)
+
+NOTE: Parallelization is limited by the small number of atoms,
+      only starting 1 thread-MPI ranks.
+      You can use the -nt and/or -ntmpi option to optimize the number of threads.
+
+1 GPU selected for this run.
+Mapping of GPU IDs to the 1 GPU task in the 1 rank on this node:
+  PP:0
+PP tasks will do (non-perturbed) short-ranged interactions on the GPU
+PP task will update and constrain coordinates on the CPU
+Using 1 MPI thread
+Using 12 OpenMP threads 
+
+
+Steepest Descents:
+   Tolerance (Fmax)   =  1.00000e+02
+   Number of steps    =        10000
+
+writing lowest energy coordinates.
+
+Steepest Descents converged to Fmax < 100 in 1633 steps
+Potential Energy  = -7.2345698e+03
+Maximum force     =  9.3592606e+01 on atom 2
+Norm of force     =  1.6344193e+01
+
+GROMACS reminds you: "I don't believe in astrology; I'm a Sagittarian and we're skeptical." (Arthur C. Clarke)
+
+                      :-) GROMACS - gmx grompp, 2024.3 (-:
+
+Executable:   /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj/bin/gmx
+Data prefix:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj
+Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare
+Command line:
+  gmx grompp -f /home/vojta/code/BayesicForceFields/bff/data/mdp/npt.mdp -c /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/0-em-00.gro -p /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/system-00.top -o /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/1-npt-00.tpr -maxwarn 1
+
+Ignoring obsolete mdp entry 'title'
+Generating 1-4 interactions: fudge = 1
+
+NOTE 1 [file system-00.top, line 137]:
+  System has non-zero total charge: -1.000000
+  Total charge should normally be an integer. See
+  https://manual.gromacs.org/current/user-guide/floating-point.html
+  for discussion on how close it should be to an integer.
+
+
+
+
+WARNING 1 [file system-00.top, line 137]:
+  You are using Ewald electrostatics in a system with net charge. This can
+  lead to severe artifacts, such as ions moving into regions with low
+  dielectric, due to the uniform background charge. We suggest to
+  neutralize your system with counter ions, possibly in combination with a
+  physiological salt concentration.
+
+Setting the LD random seed to -2034765985
+
+Generated 28 of the 28 non-bonded parameter combinations
+
+Generated 28 of the 28 1-4 parameter combinations
+
+Excluding 3 bonded neighbours molecule type 'ACE'
+
+turning H bonds into constraints...
+
+Excluding 3 bonded neighbours molecule type 'SOL'
+
+turning H bonds into constraints...
+
+++++ PLEASE READ AND CITE THE FOLLOWING REFERENCE ++++
+J. S. Hub, B. L. de Groot, H. Grubmueller, G. Groenhof
+Quantifying Artifacts in Ewald Simulations of Inhomogeneous Systems with a Net
+Charge
+J. Chem. Theory Comput. 10 (2014) pp. 381-393
+-------- -------- --- Thank You --- -------- --------
+
+Number of degrees of freedom in T-Coupling group System is 783.00
+
+NOTE 2 [file /home/vojta/code/BayesicForceFields/bff/data/mdp/npt.mdp]:
+  You are using geometric combination rules in LJ-PME, but your non-bonded
+  C6 parameters do not follow these rules. This will introduce very small
+  errors in the forces and energies in your simulations. If your system is
+  homogeneous, consider using dispersion correction for the total energy
+  and pressure.
+
+
+NOTE 3 [file /home/vojta/code/BayesicForceFields/bff/data/mdp/npt.mdp]:
+  The optimal PME mesh load for parallel simulations is below 0.5
+  and for highly parallel simulations between 0.25 and 0.33,
+  for higher performance, increase the cut-off and the PME grid spacing.
+
+
+
+There were 3 NOTEs
+
+There was 1 WARNING
+
+GROMACS reminds you: "I don't believe in astrology; I'm a Sagittarian and we're skeptical." (Arthur C. Clarke)
+
+
+Cleaning up constraints and constant bonded interactions with virtual sites
+Analysing residue names:
+There are:     1    Protein residues
+There are:   128      Water residues
+Analysing Protein...
+
+The largest distance between excluded atoms is 0.328 nm between atom 3 and 7
+
+Determining Verlet buffer for a tolerance of 0.005 kJ/mol/ps at 300 K
+
+Calculated rlist for 1x1 atom pair-list as 0.741 nm, buffer size 0.041 nm
+
+Set rlist, assuming 4x4 atom pair-list, to 0.707 nm, buffer size 0.007 nm
+
+Note that mdrun will redetermine rlist based on the actual pair-list setup
+Calculating fourier grid dimensions for X Y Z
+Using a fourier grid of 14x14x14, spacing 0.112 0.112 0.112
+
+Estimate for the relative computational load of the PME mesh part: 0.52
+
+This run will generate roughly 32 Mb of data
+                      :-) GROMACS - gmx mdrun, 2024.3 (-:
+
+Executable:   /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj/bin/gmx
+Data prefix:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj
+Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare
+Command line:
+  gmx mdrun -s /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/1-npt-00.tpr -deffnm /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/1-npt-00 -nsteps 0
+
+Reading file /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/1-npt-00.tpr, VERSION 2024.3 (single precision)
+
+NOTE: Parallelization is limited by the small number of atoms,
+      only starting 1 thread-MPI ranks.
+      You can use the -nt and/or -ntmpi option to optimize the number of threads.
+
+Overriding nsteps with value passed on the command line: 0 steps, 0 ps
+Changing nstlist from 10 to 25, rlist from 0.707 to 0.772
+
+
+Update groups can not be used for this system because atoms that are (in)directly constrained together are interdispersed with other atoms
+
+1 GPU selected for this run.
+Mapping of GPU IDs to the 1 GPU task in the 1 rank on this node:
+  PP:0
+PP tasks will do (non-perturbed) short-ranged and most bonded interactions on the GPU
+PP task will update and constrain coordinates on the CPU
+Using 1 MPI thread
+Using 12 OpenMP threads 
+
+starting mdrun 'Generic title'
+0 steps,      0.0 ps.
+
+Writing final coordinates.
+
+NOTE: 11 % of the run time was spent in pair search,
+      you might want to increase nstlist (this has no effect on accuracy)
+
+               Core t (s)   Wall t (s)        (%)
+       Time:        0.076        0.006     1186.4
+                 (ns/day)    (hour/ns)
+Performance:       26.899        0.892
+
+GROMACS reminds you: "I don't believe in astrology; I'm a Sagittarian and we're skeptical." (Arthur C. Clarke)
+
+                      :-) GROMACS - gmx grompp, 2024.3 (-:
+
+Executable:   /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj/bin/gmx
+Data prefix:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj
+Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare
+Command line:
+  gmx grompp -f /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/nvt-000.mdp -c /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/win-000.gro -p /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/system-00.top -o /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/2-nvt-000.tpr -maxwarn 1 -n /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/index-000.ndx
+
+Ignoring obsolete mdp entry 'title'
+Generating 1-4 interactions: fudge = 1
+
+NOTE 1 [file system-00.top, line 137]:
+  System has non-zero total charge: -1.000000
+  Total charge should normally be an integer. See
+  https://manual.gromacs.org/current/user-guide/floating-point.html
+  for discussion on how close it should be to an integer.
+
+
+
+
+WARNING 1 [file system-00.top, line 137]:
+  You are using Ewald electrostatics in a system with net charge. This can
+  lead to severe artifacts, such as ions moving into regions with low
+  dielectric, due to the uniform background charge. We suggest to
+  neutralize your system with counter ions, possibly in combination with a
+  physiological salt concentration.
+
+Setting the LD random seed to 2146696685
+
+Generated 28 of the 28 non-bonded parameter combinations
+
+Generated 28 of the 28 1-4 parameter combinations
+
+Excluding 3 bonded neighbours molecule type 'ACE'
+
+turning H bonds into constraints...
+
+Excluding 3 bonded neighbours molecule type 'SOL'
+
+turning H bonds into constraints...
+
+++++ PLEASE READ AND CITE THE FOLLOWING REFERENCE ++++
+J. S. Hub, B. L. de Groot, H. Grubmueller, G. Groenhof
+Quantifying Artifacts in Ewald Simulations of Inhomogeneous Systems with a Net
+Charge
+J. Chem. Theory Comput. 10 (2014) pp. 381-393
+-------- -------- --- Thank You --- -------- --------
+
+Number of degrees of freedom in T-Coupling group System is 783.00
+
+NOTE 2 [file /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/nvt-000.mdp]:
+  You are using geometric combination rules in LJ-PME, but your non-bonded
+  C6 parameters do not follow these rules. This will introduce very small
+  errors in the forces and energies in your simulations. If your system is
+  homogeneous, consider using dispersion correction for the total energy
+  and pressure.
+
+
+NOTE 3 [file /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/nvt-000.mdp]:
+  The optimal PME mesh load for parallel simulations is below 0.5
+  and for highly parallel simulations between 0.25 and 0.33,
+  for higher performance, increase the cut-off and the PME grid spacing.
+
+
+
+There were 3 NOTEs
+
+There was 1 WARNING
+
+GROMACS reminds you: "I don't believe in astrology; I'm a Sagittarian and we're skeptical." (Arthur C. Clarke)
+
+
+Cleaning up constraints and constant bonded interactions with virtual sites
+
+The largest distance between excluded atoms is 0.327 nm between atom 3 and 7
+
+Determining Verlet buffer for a tolerance of 0.005 kJ/mol/ps at 300 K
+
+Calculated rlist for 1x1 atom pair-list as 0.741 nm, buffer size 0.041 nm
+
+Set rlist, assuming 4x4 atom pair-list, to 0.707 nm, buffer size 0.007 nm
+
+Note that mdrun will redetermine rlist based on the actual pair-list setup
+Calculating fourier grid dimensions for X Y Z
+Using a fourier grid of 14x14x14, spacing 0.112 0.112 0.112
+
+Estimate for the relative computational load of the PME mesh part: 0.52
+
+This run will generate roughly 7 Mb of data
+                      :-) GROMACS - gmx mdrun, 2024.3 (-:
+
+Executable:   /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj/bin/gmx
+Data prefix:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj
+Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare
+Command line:
+  gmx mdrun -s /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/2-nvt-000.tpr -deffnm /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/2-nvt-000 -nsteps 100000
+
+Reading file /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/2-nvt-000.tpr, VERSION 2024.3 (single precision)
+
+NOTE: Parallelization is limited by the small number of atoms,
+      only starting 1 thread-MPI ranks.
+      You can use the -nt and/or -ntmpi option to optimize the number of threads.
+
+Overriding nsteps with value passed on the command line: 100000 steps, 200 ps
+Changing nstlist from 10 to 25, rlist from 0.707 to 0.772
+
+
+Update groups can not be used for this system because atoms that are (in)directly constrained together are interdispersed with other atoms
+
+1 GPU selected for this run.
+Mapping of GPU IDs to the 1 GPU task in the 1 rank on this node:
+  PP:0
+PP tasks will do (non-perturbed) short-ranged and most bonded interactions on the GPU
+PP task will update and constrain coordinates on the CPU
+Using 1 MPI thread
+Using 12 OpenMP threads 
+
+starting mdrun 'Generic title'
+100000 steps,    200.0 ps.
+
+Writing final coordinates.
+
+               Core t (s)   Wall t (s)        (%)
+       Time:      261.981       21.832     1200.0
+                 (ns/day)    (hour/ns)
+Performance:      791.513        0.030
+
+GROMACS reminds you: "Microsecond Here I Come" (P.J. Van Maaren)
+
+                      :-) GROMACS - gmx grompp, 2024.3 (-:
+
+Executable:   /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj/bin/gmx
+Data prefix:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj
+Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare
+Command line:
+  gmx grompp -f /home/vojta/code/BayesicForceFields/bff/data/mdp/em.mdp -c /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/system-01.gro -p /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/system-01.top -o /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/0-em-01.tpr -maxwarn 1
+
+
+NOTE 1 [file /home/vojta/code/BayesicForceFields/bff/data/mdp/em.mdp]:
+  With Verlet lists the optimal nstlist is >= 10, with GPUs >= 20. Note
+  that with the Verlet scheme, nstlist has no effect on the accuracy of
+  your simulation.
+
+Generating 1-4 interactions: fudge = 1
+
+NOTE 2 [file system-01.top, line 149]:
+  System has non-zero total charge: 0.600000
+  Total charge should normally be an integer. See
+  https://manual.gromacs.org/current/user-guide/floating-point.html
+  for discussion on how close it should be to an integer.
+
+
+
+
+WARNING 1 [file system-01.top, line 149]:
+  You are using Ewald electrostatics in a system with net charge. This can
+  lead to severe artifacts, such as ions moving into regions with low
+  dielectric, due to the uniform background charge. We suggest to
+  neutralize your system with counter ions, possibly in combination with a
+  physiological salt concentration.
+
+Setting the LD random seed to -1073875714
+
+Generated 36 of the 36 non-bonded parameter combinations
+
+Generated 36 of the 36 1-4 parameter combinations
+
+Excluding 3 bonded neighbours molecule type 'ACE'
+
+Excluding 3 bonded neighbours molecule type 'CAL'
+
+Excluding 3 bonded neighbours molecule type 'SOL'
+
+++++ PLEASE READ AND CITE THE FOLLOWING REFERENCE ++++
+J. S. Hub, B. L. de Groot, H. Grubmueller, G. Groenhof
+Quantifying Artifacts in Ewald Simulations of Inhomogeneous Systems with a Net
+Charge
+J. Chem. Theory Comput. 10 (2014) pp. 381-393
+-------- -------- --- Thank You --- -------- --------
+
+Number of degrees of freedom in T-Coupling group rest is 789.00
+The integrator does not provide a ensemble temperature, there is no system ensemble temperature
+
+NOTE 3 [file /home/vojta/code/BayesicForceFields/bff/data/mdp/em.mdp]:
+  You are using geometric combination rules in LJ-PME, but your non-bonded
+  C6 parameters do not follow these rules. This will introduce very small
+  errors in the forces and energies in your simulations. If your system is
+  homogeneous, consider using dispersion correction for the total energy
+  and pressure.
+
+
+There were 3 NOTEs
+
+There was 1 WARNING
+
+GROMACS reminds you: "Microsecond Here I Come" (P.J. Van Maaren)
+
+
+Cleaning up constraints and constant bonded interactions with virtual sites
+Analysing residue names:
+There are:     1    Protein residues
+There are:     1      Other residues
+There are:   128      Water residues
+Analysing Protein...
+Analysing residues not classified as Protein/DNA/RNA/Water and splitting into groups...
+
+The largest distance between excluded atoms is 0.331 nm between atom 4 and 6
+Calculating fourier grid dimensions for X Y Z
+Using a fourier grid of 14x14x14, spacing 0.112 0.112 0.112
+
+Estimate for the relative computational load of the PME mesh part: 0.48
+
+This run will generate roughly 0 Mb of data
+                      :-) GROMACS - gmx mdrun, 2024.3 (-:
+
+Executable:   /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj/bin/gmx
+Data prefix:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj
+Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare
+Command line:
+  gmx mdrun -s /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/0-em-01.tpr -deffnm /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/0-em-01 -nsteps -2
+
+Reading file /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/0-em-01.tpr, VERSION 2024.3 (single precision)
+
+NOTE: Parallelization is limited by the small number of atoms,
+      only starting 1 thread-MPI ranks.
+      You can use the -nt and/or -ntmpi option to optimize the number of threads.
+
+1 GPU selected for this run.
+Mapping of GPU IDs to the 1 GPU task in the 1 rank on this node:
+  PP:0
+PP tasks will do (non-perturbed) short-ranged interactions on the GPU
+PP task will update and constrain coordinates on the CPU
+Using 1 MPI thread
+Using 12 OpenMP threads 
+
+
+Steepest Descents:
+   Tolerance (Fmax)   =  1.00000e+02
+   Number of steps    =        10000
+
+writing lowest energy coordinates.
+
+Steepest Descents converged to Fmax < 100 in 1864 steps
+Potential Energy  = -8.2584014e+03
+Maximum force     =  8.9607903e+01 on atom 2
+Norm of force     =  1.4781987e+01
+
+GROMACS reminds you: "My Heart is Just a Muscle In a Cavity" (F. Black)
+
+                      :-) GROMACS - gmx grompp, 2024.3 (-:
+
+Executable:   /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj/bin/gmx
+Data prefix:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj
+Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare
+Command line:
+  gmx grompp -f /home/vojta/code/BayesicForceFields/bff/data/mdp/npt.mdp -c /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/0-em-01.gro -p /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/system-01.top -o /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/1-npt-01.tpr -maxwarn 1
+
+Ignoring obsolete mdp entry 'title'
+Generating 1-4 interactions: fudge = 1
+
+NOTE 1 [file system-01.top, line 149]:
+  System has non-zero total charge: 0.600000
+  Total charge should normally be an integer. See
+  https://manual.gromacs.org/current/user-guide/floating-point.html
+  for discussion on how close it should be to an integer.
+
+
+
+
+WARNING 1 [file system-01.top, line 149]:
+  You are using Ewald electrostatics in a system with net charge. This can
+  lead to severe artifacts, such as ions moving into regions with low
+  dielectric, due to the uniform background charge. We suggest to
+  neutralize your system with counter ions, possibly in combination with a
+  physiological salt concentration.
+
+Setting the LD random seed to -268522337
+
+Generated 36 of the 36 non-bonded parameter combinations
+
+Generated 36 of the 36 1-4 parameter combinations
+
+Excluding 3 bonded neighbours molecule type 'ACE'
+
+turning H bonds into constraints...
+
+Excluding 3 bonded neighbours molecule type 'CAL'
+
+turning H bonds into constraints...
+
+Excluding 3 bonded neighbours molecule type 'SOL'
+
+turning H bonds into constraints...
+
+++++ PLEASE READ AND CITE THE FOLLOWING REFERENCE ++++
+J. S. Hub, B. L. de Groot, H. Grubmueller, G. Groenhof
+Quantifying Artifacts in Ewald Simulations of Inhomogeneous Systems with a Net
+Charge
+J. Chem. Theory Comput. 10 (2014) pp. 381-393
+-------- -------- --- Thank You --- -------- --------
+
+Number of degrees of freedom in T-Coupling group System is 786.00
+
+NOTE 2 [file /home/vojta/code/BayesicForceFields/bff/data/mdp/npt.mdp]:
+  You are using geometric combination rules in LJ-PME, but your non-bonded
+  C6 parameters do not follow these rules. This will introduce very small
+  errors in the forces and energies in your simulations. If your system is
+  homogeneous, consider using dispersion correction for the total energy
+  and pressure.
+
+
+NOTE 3 [file /home/vojta/code/BayesicForceFields/bff/data/mdp/npt.mdp]:
+  The optimal PME mesh load for parallel simulations is below 0.5
+  and for highly parallel simulations between 0.25 and 0.33,
+  for higher performance, increase the cut-off and the PME grid spacing.
+
+
+
+There were 3 NOTEs
+
+There was 1 WARNING
+
+GROMACS reminds you: "My Heart is Just a Muscle In a Cavity" (F. Black)
+
+
+Cleaning up constraints and constant bonded interactions with virtual sites
+Analysing residue names:
+There are:     1    Protein residues
+There are:     1      Other residues
+There are:   128      Water residues
+Analysing Protein...
+Analysing residues not classified as Protein/DNA/RNA/Water and splitting into groups...
+
+The largest distance between excluded atoms is 0.329 nm between atom 4 and 6
+
+Determining Verlet buffer for a tolerance of 0.005 kJ/mol/ps at 300 K
+
+Calculated rlist for 1x1 atom pair-list as 0.742 nm, buffer size 0.042 nm
+
+Set rlist, assuming 4x4 atom pair-list, to 0.707 nm, buffer size 0.007 nm
+
+Note that mdrun will redetermine rlist based on the actual pair-list setup
+Calculating fourier grid dimensions for X Y Z
+Using a fourier grid of 14x14x14, spacing 0.112 0.112 0.112
+
+Estimate for the relative computational load of the PME mesh part: 0.52
+
+This run will generate roughly 32 Mb of data
+                      :-) GROMACS - gmx mdrun, 2024.3 (-:
+
+Executable:   /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj/bin/gmx
+Data prefix:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj
+Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare
+Command line:
+  gmx mdrun -s /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/1-npt-01.tpr -deffnm /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/1-npt-01 -nsteps 0
+
+Reading file /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/1-npt-01.tpr, VERSION 2024.3 (single precision)
+
+NOTE: Parallelization is limited by the small number of atoms,
+      only starting 1 thread-MPI ranks.
+      You can use the -nt and/or -ntmpi option to optimize the number of threads.
+
+Overriding nsteps with value passed on the command line: 0 steps, 0 ps
+Changing nstlist from 10 to 25, rlist from 0.707 to 0.772
+
+
+Update groups can not be used for this system because atoms that are (in)directly constrained together are interdispersed with other atoms
+
+1 GPU selected for this run.
+Mapping of GPU IDs to the 1 GPU task in the 1 rank on this node:
+  PP:0
+PP tasks will do (non-perturbed) short-ranged and most bonded interactions on the GPU
+PP task will update and constrain coordinates on the CPU
+Using 1 MPI thread
+Using 12 OpenMP threads 
+
+starting mdrun 'Generic title'
+0 steps,      0.0 ps.
+
+Writing final coordinates.
+
+NOTE: 18 % of the run time was spent in pair search,
+      you might want to increase nstlist (this has no effect on accuracy)
+
+               Core t (s)   Wall t (s)        (%)
+       Time:        0.050        0.004     1181.2
+                 (ns/day)    (hour/ns)
+Performance:       40.597        0.591
+
+GROMACS reminds you: "My Heart is Just a Muscle In a Cavity" (F. Black)
+
+                      :-) GROMACS - gmx grompp, 2024.3 (-:
+
+Executable:   /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj/bin/gmx
+Data prefix:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj
+Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare
+Command line:
+  gmx grompp -f /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/nvt-001.mdp -c /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/win-001.gro -p /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/system-01.top -o /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/2-nvt-001.tpr -maxwarn 1 -n /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/index-001.ndx
+
+Ignoring obsolete mdp entry 'title'
+Generating 1-4 interactions: fudge = 1
+
+NOTE 1 [file system-01.top, line 149]:
+  System has non-zero total charge: 0.600000
+  Total charge should normally be an integer. See
+  https://manual.gromacs.org/current/user-guide/floating-point.html
+  for discussion on how close it should be to an integer.
+
+
+
+
+WARNING 1 [file system-01.top, line 149]:
+  You are using Ewald electrostatics in a system with net charge. This can
+  lead to severe artifacts, such as ions moving into regions with low
+  dielectric, due to the uniform background charge. We suggest to
+  neutralize your system with counter ions, possibly in combination with a
+  physiological salt concentration.
+
+Setting the LD random seed to -270680612
+
+Generated 36 of the 36 non-bonded parameter combinations
+
+Generated 36 of the 36 1-4 parameter combinations
+
+Excluding 3 bonded neighbours molecule type 'ACE'
+
+turning H bonds into constraints...
+
+Excluding 3 bonded neighbours molecule type 'CAL'
+
+turning H bonds into constraints...
+
+Excluding 3 bonded neighbours molecule type 'SOL'
+
+turning H bonds into constraints...
+
+++++ PLEASE READ AND CITE THE FOLLOWING REFERENCE ++++
+J. S. Hub, B. L. de Groot, H. Grubmueller, G. Groenhof
+Quantifying Artifacts in Ewald Simulations of Inhomogeneous Systems with a Net
+Charge
+J. Chem. Theory Comput. 10 (2014) pp. 381-393
+-------- -------- --- Thank You --- -------- --------
+
+Pull group 1 'C2' has 1 atoms
+Pull group 2 'CAL' has 1 atoms
+Number of degrees of freedom in T-Coupling group System is 786.00
+
+NOTE 2 [file /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/nvt-001.mdp]:
+  You are using geometric combination rules in LJ-PME, but your non-bonded
+  C6 parameters do not follow these rules. This will introduce very small
+  errors in the forces and energies in your simulations. If your system is
+  homogeneous, consider using dispersion correction for the total energy
+  and pressure.
+
+Pull group  natoms  pbc atom  distance at start  reference at t=0
+       1         1         0
+       2         1         0       0.300 nm          0.350 nm
+
+NOTE 3 [file /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/nvt-001.mdp]:
+  The optimal PME mesh load for parallel simulations is below 0.5
+  and for highly parallel simulations between 0.25 and 0.33,
+  for higher performance, increase the cut-off and the PME grid spacing.
+
+
+
+There were 3 NOTEs
+
+There was 1 WARNING
+
+GROMACS reminds you: "My Heart is Just a Muscle In a Cavity" (F. Black)
+
+
+Cleaning up constraints and constant bonded interactions with virtual sites
+
+The largest distance between excluded atoms is 0.329 nm between atom 4 and 6
+
+Determining Verlet buffer for a tolerance of 0.005 kJ/mol/ps at 300 K
+
+Calculated rlist for 1x1 atom pair-list as 0.742 nm, buffer size 0.042 nm
+
+Set rlist, assuming 4x4 atom pair-list, to 0.707 nm, buffer size 0.007 nm
+
+Note that mdrun will redetermine rlist based on the actual pair-list setup
+Calculating fourier grid dimensions for X Y Z
+Using a fourier grid of 14x14x14, spacing 0.112 0.112 0.112
+
+Estimate for the relative computational load of the PME mesh part: 0.52
+
+This run will generate roughly 7 Mb of data
+                      :-) GROMACS - gmx mdrun, 2024.3 (-:
+
+Executable:   /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj/bin/gmx
+Data prefix:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj
+Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare
+Command line:
+  gmx mdrun -s /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/2-nvt-001.tpr -deffnm /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/2-nvt-001 -nsteps 100000
+
+Reading file /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/2-nvt-001.tpr, VERSION 2024.3 (single precision)
+
+NOTE: Parallelization is limited by the small number of atoms,
+      only starting 1 thread-MPI ranks.
+      You can use the -nt and/or -ntmpi option to optimize the number of threads.
+
+Overriding nsteps with value passed on the command line: 100000 steps, 200 ps
+Changing nstlist from 10 to 25, rlist from 0.707 to 0.772
+
+
+Update groups can not be used for this system because atoms that are (in)directly constrained together are interdispersed with other atoms
+
+1 GPU selected for this run.
+Mapping of GPU IDs to the 1 GPU task in the 1 rank on this node:
+  PP:0
+PP tasks will do (non-perturbed) short-ranged and most bonded interactions on the GPU
+PP task will update and constrain coordinates on the CPU
+Using 1 MPI thread
+Using 12 OpenMP threads 
+
+starting mdrun 'Generic title'
+100000 steps,    200.0 ps.
+
+Writing final coordinates.
+
+               Core t (s)   Wall t (s)        (%)
+       Time:      187.223       15.602     1200.0
+                 (ns/day)    (hour/ns)
+Performance:     1107.559        0.022
+
+GROMACS reminds you: "It's just B I O L O G Y, can't you see?" (Joe Jackson)
+
+                      :-) GROMACS - gmx grompp, 2024.3 (-:
+
+Executable:   /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj/bin/gmx
+Data prefix:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj
+Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare
+Command line:
+  gmx grompp -f /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/nvt-002.mdp -c /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/win-002.gro -p /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/system-01.top -o /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/2-nvt-002.tpr -maxwarn 1 -n /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/index-002.ndx
+
+Ignoring obsolete mdp entry 'title'
+Generating 1-4 interactions: fudge = 1
+
+NOTE 1 [file system-01.top, line 149]:
+  System has non-zero total charge: 0.600000
+  Total charge should normally be an integer. See
+  https://manual.gromacs.org/current/user-guide/floating-point.html
+  for discussion on how close it should be to an integer.
+
+
+
+
+WARNING 1 [file system-01.top, line 149]:
+  You are using Ewald electrostatics in a system with net charge. This can
+  lead to severe artifacts, such as ions moving into regions with low
+  dielectric, due to the uniform background charge. We suggest to
+  neutralize your system with counter ions, possibly in combination with a
+  physiological salt concentration.
+
+Setting the LD random seed to -310649522
+
+Generated 36 of the 36 non-bonded parameter combinations
+
+Generated 36 of the 36 1-4 parameter combinations
+
+Excluding 3 bonded neighbours molecule type 'ACE'
+
+turning H bonds into constraints...
+
+Excluding 3 bonded neighbours molecule type 'CAL'
+
+turning H bonds into constraints...
+
+Excluding 3 bonded neighbours molecule type 'SOL'
+
+turning H bonds into constraints...
+
+++++ PLEASE READ AND CITE THE FOLLOWING REFERENCE ++++
+J. S. Hub, B. L. de Groot, H. Grubmueller, G. Groenhof
+Quantifying Artifacts in Ewald Simulations of Inhomogeneous Systems with a Net
+Charge
+J. Chem. Theory Comput. 10 (2014) pp. 381-393
+-------- -------- --- Thank You --- -------- --------
+
+Pull group 1 'C2' has 1 atoms
+Pull group 2 'CAL' has 1 atoms
+Number of degrees of freedom in T-Coupling group System is 786.00
+
+NOTE 2 [file /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/nvt-002.mdp]:
+  You are using geometric combination rules in LJ-PME, but your non-bonded
+  C6 parameters do not follow these rules. This will introduce very small
+  errors in the forces and energies in your simulations. If your system is
+  homogeneous, consider using dispersion correction for the total energy
+  and pressure.
+
+Pull group  natoms  pbc atom  distance at start  reference at t=0
+       1         1         0
+       2         1         0       0.300 nm          0.500 nm
+
+NOTE 3 [file /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/nvt-002.mdp]:
+  The optimal PME mesh load for parallel simulations is below 0.5
+  and for highly parallel simulations between 0.25 and 0.33,
+  for higher performance, increase the cut-off and the PME grid spacing.
+
+
+
+There were 3 NOTEs
+
+There was 1 WARNING
+
+GROMACS reminds you: "It's just B I O L O G Y, can't you see?" (Joe Jackson)
+
+
+Cleaning up constraints and constant bonded interactions with virtual sites
+
+The largest distance between excluded atoms is 0.329 nm between atom 4 and 6
+
+Determining Verlet buffer for a tolerance of 0.005 kJ/mol/ps at 300 K
+
+Calculated rlist for 1x1 atom pair-list as 0.742 nm, buffer size 0.042 nm
+
+Set rlist, assuming 4x4 atom pair-list, to 0.707 nm, buffer size 0.007 nm
+
+Note that mdrun will redetermine rlist based on the actual pair-list setup
+Calculating fourier grid dimensions for X Y Z
+Using a fourier grid of 14x14x14, spacing 0.112 0.112 0.112
+
+Estimate for the relative computational load of the PME mesh part: 0.52
+
+This run will generate roughly 7 Mb of data
+                      :-) GROMACS - gmx mdrun, 2024.3 (-:
+
+Executable:   /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj/bin/gmx
+Data prefix:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj
+Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare
+Command line:
+  gmx mdrun -s /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/2-nvt-002.tpr -deffnm /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/2-nvt-002 -nsteps 100000
+
+Reading file /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/2-nvt-002.tpr, VERSION 2024.3 (single precision)
+
+NOTE: Parallelization is limited by the small number of atoms,
+      only starting 1 thread-MPI ranks.
+      You can use the -nt and/or -ntmpi option to optimize the number of threads.
+
+Overriding nsteps with value passed on the command line: 100000 steps, 200 ps
+Changing nstlist from 10 to 25, rlist from 0.707 to 0.772
+
+
+Update groups can not be used for this system because atoms that are (in)directly constrained together are interdispersed with other atoms
+
+1 GPU selected for this run.
+Mapping of GPU IDs to the 1 GPU task in the 1 rank on this node:
+  PP:0
+PP tasks will do (non-perturbed) short-ranged and most bonded interactions on the GPU
+PP task will update and constrain coordinates on the CPU
+Using 1 MPI thread
+Using 12 OpenMP threads 
+
+starting mdrun 'Generic title'
+100000 steps,    200.0 ps.
+
+Writing final coordinates.
+
+               Core t (s)   Wall t (s)        (%)
+       Time:      201.169       16.764     1200.0
+                 (ns/day)    (hour/ns)
+Performance:     1030.777        0.023
+
+GROMACS reminds you: "It's Not Your Fault" (Pulp Fiction)
+

@@ -1,5 +1,4 @@
 tests/
-examples/
 __pycache__/
 .vscode/
 .ipynb_checkpoints

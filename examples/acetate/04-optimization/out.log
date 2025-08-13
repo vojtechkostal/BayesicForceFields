@@ -1,0 +1,122 @@
+=========================================
+     Byaesian Force Field Optimizer      
+=========================================
+
+> loading training set: in progress...
+> loading training set: Done. (0s)
+
+> molecule: ACE
+> parameters:
+  charge CC
+  charge CT3
+  charge HA3
+  charge OC
+
+> loading training trajectories:  0/10 (  0%) | 0s < NaN
+> loading training trajectories:  1/10 ( 10%) | 0s < 3s
+> loading training trajectories:  2/10 ( 20%) | 0s < 1s
+> loading training trajectories:  3/10 ( 30%) | 0s < 1s
+> loading training trajectories:  4/10 ( 40%) | 0s < 0s
+> loading training trajectories:  5/10 ( 50%) | 0s < 0s
+> loading training trajectories:  6/10 ( 60%) | 0s < 0s
+> loading training trajectories:  7/10 ( 70%) | 0s < 0s
+> loading training trajectories:  8/10 ( 80%) | 0s < 0s
+> loading training trajectories:  9/10 ( 90%) | 0s < 0s
+> loading training trajectories: 10/10 (100%) | 0s < 0s
+> loading training trajectories: 10/10 (100%) | Done. (0s)
+> saving samples into file: in progress
+> Saving samples into file: 10 | Done. (0s)
+
+> loading reference trajectories: in progress
+Settings from the training set willoverwrite the supplied ones.
+> loading reference trajectories: Done. (1s)
+
+> Optimizing LGP hyperparameters: rdf
+  > optimizing hyperparameters: stable learning rate search: in progres...
+  > optimizing hyperparameters: stable learning rate search: Done. | 5.0e-04
+  > optimizing hyperparameters: it. 0/20000 | loss: 840.163 | grad: 450.372/0.01
+  > optimizing hyperparameters: it. 100/20000 | loss: -548.753 | grad: 12.446/0.01
+  > optimizing hyperparameters: it. 200/20000 | loss: -551.447 | grad: 3.813/0.01
+  > optimizing hyperparameters: it. 300/20000 | loss: -551.795 | grad: 1.676/0.01
+  > optimizing hyperparameters: it. 400/20000 | loss: -551.870 | grad: 0.832/0.01
+  > optimizing hyperparameters: it. 500/20000 | loss: -551.889 | grad: 0.436/0.01
+  > optimizing hyperparameters: it. 600/20000 | loss: -551.895 | grad: 0.235/0.01
+  > optimizing hyperparameters: it. 700/20000 | loss: -551.896 | grad: 0.129/0.01
+  > optimizing hyperparameters: it. 800/20000 | loss: -551.897 | grad: 0.071/0.01
+  > optimizing hyperparameters: it. 900/20000 | loss: -551.897 | grad: 0.039/0.01
+  > optimizing hyperparameters: it. 1000/20000 | loss: -551.897 | grad: 0.021/0.01
+  > optimizing hyperparameters: it. 1100/20000 | loss: -551.897 | grad: 0.012/0.01
+  > optimizing hyperparameters: Done.
+  > LGP committee: 0/1
+  > LGP committee: 1/1
+  > LGP committee: 1 (100%) | MAPE = 8.73%
+
+> Optimizing LGP hyperparameters: hb
+  > optimizing hyperparameters: stable learning rate search: in progres...
+  > optimizing hyperparameters: stable learning rate search: Done. | 5.0e-03
+  > optimizing hyperparameters: it. 0/20000 | loss: 143.184 | grad: 124.198/0.01
+  > optimizing hyperparameters: it. 100/20000 | loss: 12.713 | grad: 1.215/0.01
+  > optimizing hyperparameters: it. 200/20000 | loss: 12.108 | grad: 1.011/0.01
+  > optimizing hyperparameters: it. 300/20000 | loss: 11.667 | grad: 0.864/0.01
+  > optimizing hyperparameters: it. 400/20000 | loss: 11.357 | grad: 0.708/0.01
+  > optimizing hyperparameters: it. 500/20000 | loss: 11.155 | grad: 0.561/0.01
+  > optimizing hyperparameters: it. 600/20000 | loss: 11.031 | grad: 0.437/0.01
+  > optimizing hyperparameters: it. 700/20000 | loss: 10.955 | grad: 0.342/0.01
+  > optimizing hyperparameters: it. 800/20000 | loss: 10.908 | grad: 0.274/0.01
+  > optimizing hyperparameters: it. 900/20000 | loss: 10.878 | grad: 0.224/0.01
+  > optimizing hyperparameters: it. 1000/20000 | loss: 10.857 | grad: 0.185/0.01
+  > optimizing hyperparameters: it. 1100/20000 | loss: 10.842 | grad: 0.155/0.01
+  > optimizing hyperparameters: it. 1200/20000 | loss: 10.832 | grad: 0.130/0.01
+  > optimizing hyperparameters: it. 1300/20000 | loss: 10.825 | grad: 0.110/0.01
+  > optimizing hyperparameters: it. 1400/20000 | loss: 10.820 | grad: 0.092/0.01
+  > optimizing hyperparameters: it. 1500/20000 | loss: 10.816 | grad: 0.078/0.01
+  > optimizing hyperparameters: it. 1600/20000 | loss: 10.814 | grad: 0.066/0.01
+  > optimizing hyperparameters: it. 1700/20000 | loss: 10.812 | grad: 0.056/0.01
+  > optimizing hyperparameters: it. 1800/20000 | loss: 10.810 | grad: 0.048/0.01
+  > optimizing hyperparameters: it. 1900/20000 | loss: 10.809 | grad: 0.040/0.01
+  > optimizing hyperparameters: it. 2000/20000 | loss: 10.809 | grad: 0.034/0.01
+  > optimizing hyperparameters: it. 2100/20000 | loss: 10.808 | grad: 0.029/0.01
+  > optimizing hyperparameters: it. 2200/20000 | loss: 10.808 | grad: 0.025/0.01
+  > optimizing hyperparameters: it. 2300/20000 | loss: 10.808 | grad: 0.021/0.01
+  > optimizing hyperparameters: it. 2400/20000 | loss: 10.807 | grad: 0.018/0.01
+  > optimizing hyperparameters: it. 2500/20000 | loss: 10.807 | grad: 0.015/0.01
+  > optimizing hyperparameters: it. 2600/20000 | loss: 10.807 | grad: 0.013/0.01
+  > optimizing hyperparameters: it. 2700/20000 | loss: 10.807 | grad: 0.011/0.01
+  > optimizing hyperparameters: Done.
+  > LGP committee: 0/1
+  > LGP committee: 1/1
+  > LGP committee: 1 (100%) | MAPE = 8.76%
+
+> Optimizing LGP hyperparameters: restr
+  > optimizing hyperparameters: stable learning rate search: in progres...
+  > optimizing hyperparameters: stable learning rate search: Done. | 5.0e-04
+  > optimizing hyperparameters: it. 0/20000 | loss: 1169.363 | grad: 882.860/0.01
+  > optimizing hyperparameters: it. 100/20000 | loss: 157.175 | grad: 15.591/0.01
+  > optimizing hyperparameters: it. 200/20000 | loss: 154.914 | grad: 1.777/0.01
+  > optimizing hyperparameters: it. 300/20000 | loss: 154.861 | grad: 0.486/0.01
+  > optimizing hyperparameters: it. 400/20000 | loss: 154.856 | grad: 0.174/0.01
+  > optimizing hyperparameters: it. 500/20000 | loss: 154.856 | grad: 0.065/0.01
+  > optimizing hyperparameters: it. 600/20000 | loss: 154.855 | grad: 0.025/0.01
+  > optimizing hyperparameters: Done.
+  > LGP committee: 0/1
+  > LGP committee: 1/1
+  > LGP committee: 1 (100%) | MAPE = 15.53%
+
+> Optimizing parameters: ACE
+  > MCMC:      0/100000
+  > MCMC:   1000/100000 | 111 it/s | chain:  20%, fluct:   0%
+  > MCMC:   2000/100000 | 112 it/s | chain:  29%, fluct:   3%
+  > MCMC:   3000/100000 | 112 it/s | chain:  40%, fluct:   6%
+  > MCMC:   4000/100000 | 113 it/s | chain:  54%, fluct:  13%
+  > MCMC:   5000/100000 | 113 it/s | chain:  65%, fluct:   9%
+  > MCMC:   6000/100000 | 113 it/s | chain:  78%, fluct:  19%
+  > MCMC:   7000/100000 | 114 it/s | chain:  90%, fluct:  12%
+  > MCMC:   8000/100000 | 114 it/s | chain: 100%, fluct:  18%
+  > MCMC:   9000/100000 | 114 it/s | chain: 100%, fluct:  35%
+  > MCMC:  10000/100000 | 114 it/s | chain: 100%, fluct:  25%
+  > MCMC:  11000/100000 | 114 it/s | chain: 100%, fluct:  66%
+  > MCMC:  12000/100000 | 114 it/s | chain: 100%, fluct:  43%
+  > MCMC:  13000/100000 | 114 it/s | chain: 100%, fluct:  40%
+  > MCMC:  14000/100000 | 114 it/s | chain: 100%, fluct:  29%
+  > MCMC:  15000/100000 | 114 it/s | chain: 100%, fluct: 100%
+  > MCMC: Done. (15000 it. & 2m 10s)

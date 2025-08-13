@@ -1,0 +1,12 @@
+#include "/home/vojta/code/amo/data/ff/defaults.itp"
+#include "./ace-atomtypes.itp"
+#include "/home/vojta/code/amo/data/ff/water/ecc80/atomtypes.itp"
+#include "/home/vojta/code/amo/data/ff/water/ecc80/water.itp"
+#include "./ace.itp"
+
+[ system ]
+Aqueous acetate
+
+[ molecules ]
+ACE        1
+SOL      128

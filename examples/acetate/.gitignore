@@ -1,0 +1,14 @@
+./01-prepare/gmx.log
+./01-prepare/cp2k
+./01-prepare/prepare
+./01-prepare/train
+
+./03-training-trjs/trainset/
+
+./04-optimization/hyper*
+./04-optimization/*.log
+./04-optimization/*.npz
+./04-optimization/*.npy
+./04-optimization/*.h5
+./04-optimization/priors.yaml
+./04-optimization/specs.yaml

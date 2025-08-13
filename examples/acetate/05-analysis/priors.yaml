@@ -1,0 +1,18 @@
+charge CT3 Normal:
+- -0.3499999940395355
+- 0.25999999046325684
+charge HA3 Normal:
+- 0.0
+- 0.11999999731779099
+charge OC Normal:
+- -0.550000011920929
+- 0.10000000149011612
+nuisance hb Normal:
+- -2.0
+- 2.0
+nuisance rdf Normal:
+- -2.0
+- 2.0
+nuisance restr Normal:
+- -2.0
+- 2.0
