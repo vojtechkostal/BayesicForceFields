@@ -24,10 +24,10 @@ def load_config(fn_config: str) -> dict:
         elif key == 'results_dir':
             results_dir = Path(config[key]).resolve()
             config[key] = results_dir
-    
+
     fn_log = config.get('fn_log', 'out.log')
     config['fn_log'] = Path(fn_log).resolve()
-    
+
     aimd_keys = ['fn_coord', 'fn_topol', 'fn_trj']
     for key in aimd_keys:
         resolved_paths = []
@@ -41,7 +41,7 @@ def load_config(fn_config: str) -> dict:
     aimd_lengths = [len(config['aimd'][key]) for key in aimd_keys]
     if len(set(aimd_lengths)) != 1:
         raise ValueError("AIMD configuration lists must have the same length.")
-    
+
     if config['ffmd'].get('fn_in'):
         fn_in = Path(config['ffmd']['fn_in']).resolve()
         if not fn_in.exists():
@@ -57,7 +57,7 @@ def load_config(fn_config: str) -> dict:
             if config['lgp']['fn_hyper'].get(key):
                 fn = Path(config['lgp']['fn_hyper'][key]).resolve()
                 config['lgp']['fn_hyper'][key] = fn
-    
+
     return config
 
 
