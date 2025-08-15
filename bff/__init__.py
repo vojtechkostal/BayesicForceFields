@@ -3,6 +3,8 @@ import platform
 
 if platform.system() == "Darwin":
     os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"  # For macOS compatibility with OpenMP
+    os.environ["OMP_NUM_THREADS"] = "1"  # Limit OpenMP threads to 1
+    os.environ["MKL_NUM_THREADS"] = "1"  # Limit MKL threads to 1
 
 from . import bff
 from . import postprocessing
