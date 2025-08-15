@@ -3,27 +3,17 @@ name = "BayesicForceFields"
 version = "0.1.0"
 description = "Bayesian optimization of molecular force fields"
 authors = [
-  { name="Your Name", email="vojtakostal8@gmail.com" }
+  { name="Vojtech Kostal", email="vojtakostal8@gmail.com" }
 ]
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
-dependencies = [
-    "numpy",
-    "scipy",
-    "pyyaml",
-    "mdanalysis",
-    "emcee",
-    "parmed",
-    "ipywidgets",
-    "ipykernel"
-]
 
 [project.scripts]
 bff = "bff.cli:app"
 
 [build-system]
-requires = ["setuptools>=61", "wheel", "numpy", "pip"]
+requires = ["setuptools>=61", "wheel", "pip"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]

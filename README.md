@@ -21,8 +21,9 @@ LGP's hyperparameters are optimized and their uncertainty can be propagated to t
 ## Instalation
 1. Clone this repository and (preferably) create and activate a new environment as:
 ```sh
-mamba env create -n bff python
-mamba activate bff
+cd BayesicForceFields
+mamba env create -f ./environment.yml
+mamba activate bffdev
 ```
  > [!WARNING]
 The package requires `PyTorch` to be installed and it benefits hugely from the GPU acceleration.
