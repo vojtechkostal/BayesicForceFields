@@ -1,0 +1,14 @@
+name: bffdev
+channels:
+  - conda-forge
+dependencies:
+  - python
+  - numpy
+  - scipy
+  - pyyaml
+  - mdanalysis
+  - emcee
+  - parmed
+  - ipywidgets
+  - ipykernel
+  - typer
