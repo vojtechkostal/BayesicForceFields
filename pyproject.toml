@@ -23,7 +23,7 @@ dependencies = [
 bff = "bff.cli:app"
 
 [build-system]
-requires = ["setuptools>=61", "wheel"]
+requires = ["setuptools>=61", "wheel", "numpy", "pip"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]

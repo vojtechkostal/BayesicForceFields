@@ -21,7 +21,7 @@ LGP's hyperparameters are optimized and their uncertainty can be propagated to t
 ## Instalation
 1. Clone this repository and (preferably) create and activate a new environment as:
 ```sh
-mamba env create -f bff
+mamba env create -n bff python
 mamba activate bff
 ```
  > [!WARNING]
