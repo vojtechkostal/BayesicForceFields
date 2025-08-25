@@ -12,3 +12,7 @@ acetate/04-optimization/*.npy
 acetate/04-optimization/*.h5
 acetate/04-optimization/priors.yaml
 acetate/04-optimization/specs.yaml
+
+acetate/05-analysis/*.h5
+acetate/05-analysis/*.yaml
+acetate/05-analysis/*.npy
