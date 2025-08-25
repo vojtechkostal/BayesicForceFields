@@ -253,6 +253,7 @@ class Optimizer:
         committee: int = 1,
         test_fraction: float = 0.2,
         device: str = 'cuda:0',
+        obs_factor: int = 1,
         **kwargs
     ) -> None:
 
@@ -281,6 +282,9 @@ class Optimizer:
             Device to use for computations ('cuda:0', 'cpu' or 'mps').
             Default is 'cpu' (faster for single-input batch during
             gradient-based optimizartion).
+        obs_factor : int, optional
+            Factor by which to multiply the number of observations for each QoI.
+            Default is 1.
         kwargs : dict, optional
             Additional keyword arguments for the `optimize_lgp` funciton.
         """
@@ -295,6 +299,7 @@ class Optimizer:
         for q in self.QoI:
             self.logger.info(f'> Optimizing LGP hyperparameters: {q}')
             sl = self.train_data.y_slices.get(q, slice(None))
+            n_observations = self.train_data.observations.get(q, None) * obs_factor
             committee_qoi = lgp_hyperopt(
                 X=self.train_data.X,
                 y=self.train_data.y[:, sl],
@@ -303,7 +308,7 @@ class Optimizer:
                 test_fraction=test_fraction,
                 n_hyper=n_hyper,
                 committee=committee,
-                observations=self.train_data.observations.get(q, None),
+                observations=n_observations,
                 device=device,
                 logger=self.logger,
                 opt_kwargs=kwargs,
