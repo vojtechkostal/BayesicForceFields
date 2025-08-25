@@ -19,18 +19,21 @@ LGP's hyperparameters are optimized and their uncertainty can be propagated to t
 * [Matplotlib](https://matplotlib.org/) (Plotting)
 
 ## Instalation
-1. Clone this repository and (preferably) create and activate a new environment as:
+1. Clone this repository and (preferably) create and activate a new environment using `mamba` or `conda` as:
 ```sh
 cd BayesicForceFields
 mamba env create -f ./environment.yml
 mamba activate bffdev
 ```
+
+3. install the package:
  > [!WARNING]
 The package requires `PyTorch` to be installed and it benefits hugely from the GPU acceleration.
 However, the GPU-enabled PyTorch installation cannot be automatized so at this point, please install PyTorch using one of the options here: https://pytorch.org/get-started/locally/.
-Also, the code needs `Gromacs` installation to be accesible to run force-field MDs.
 
-3. install the package:
+ > [!WARNING]
+Also, the code needs `Gromacs` installation to be accesible to run force-field MDs during the initial setup and during generation of the training set.
+
 ```sh
 pip install .
 ```
@@ -71,14 +74,9 @@ cd ../04-optimization
 bff optimize config.yaml
 ```
 
-or
-
-```python
-
-```
+or you can open a jupyter notebook in the `05-analysis` directory and run the optimization interactively.
 
 5. Visualization
-   
-
+Using the afforementioned jupyter notebook, you can either use the interactive code there or you can load the generated files and visualize results.
 
 ## Config files
