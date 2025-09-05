@@ -3,12 +3,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+import torch
 from torch.distributions import Normal, Uniform
 from scipy.stats.qmc import LatinHypercube
 
 from .bayes.utils import initialize_backend
-from .io.utils import (load_yaml, save_yaml, extract_tarball, load_md_files)
-from .io.mdp import get_restraints
+from .io.utils import load_yaml, save_yaml, extract_train_dir
 from .tools import sigmoid
 
 
@@ -25,213 +25,285 @@ def lookup(filename, directories):
     )
 
 
-@dataclass
-class TrajectoryData:
-    rdf: dict
-    hb: dict
-    restr: dict
+class QoI:
+    """Container for quantities of interest (QoI)."""
 
+    def __init__(self, **kwargs):
+        self.add(**kwargs)
 
-class TrainData:
-
-    def __init__(self, train_dir: str | Path) -> None:
-        """Initialize TrainData with training directories."""
-
-        self.train_dir = Path(train_dir).resolve()
-        self.fn_specs = None
-        self.restraints = None
-        self.fn_topol = None
-        self.fn_coords = None
-        self.samples = None
-        self.scores = None
-        self.settings = None
-        self.qoi = None
-        self.reference = None
-        self.valid_hb = set()
-        self.extract()
-
-    def extract(self) -> None:
-        """Extract and load data from training directories."""
-        self.train_dir = self._process_directory(self.train_dir)
-        fn_specs, mdps, topols, coords, sample_data = load_md_files(
-            self.train_dir
-        )
-
-        self.fn_specs = fn_specs
-        self.restraints = [get_restraints(mdp) for mdp in mdps]
-        self.fn_topol = topols
-        self.fn_coords = coords
-        self.samples = sample_data
-
-    def _process_directory(self, directory: Path) -> Path:
-        """Process a directory or extract it if it's a tarball."""
-        if directory.is_dir():
-            return directory
-        elif directory.suffix == ".gz":
-            extracted_dir = directory.parent / directory.stem.replace(
-                ".tar", ""
-            )
-            if not extracted_dir.exists():
-                extract_tarball(directory)
-            return extracted_dir
-        else:
-            raise ValueError(
-                f"Invalid input: {directory} - must be a directory or "
-                f".tar.gz file"
-            )
-
-    def _flatten_feature(self, sample: list[TrajectoryData]) -> list:
-        rdf = np.array([g for s in sample for r, g in s.rdf.values()])
-        hb = np.array([s.hb.get(name, 0) for s in sample for name in self.valid_hb])
-        restr = np.array([prob for s in sample for _, prob in s.restr.values()])
-
-        return rdf.flatten(), hb.flatten(), restr.flatten()
+    def add(self, **kwargs):
+        self.__dict__.update(kwargs)
 
     @property
-    def X(self) -> np.ndarray:
-        """Return an array of parameters from all samples."""
+    def names(self) -> list[str]:
+        return list(self.__dict__)
+
+    @property
+    def observations(self) -> dict[str, int]:
+        return {
+            name: len(getattr(self, name))
+            for name in self.names
+        }
+
+    # def flatten
+
+    def __repr__(self):
+        return f"QoI: {', '.join(self.names)}"
+
+
+@dataclass
+class TrainSetInfo:
+    """
+    Information about the training set.
+    """
+    train_dir: Path
+    specs: dict | None
+    samples: dict | None
+    fn_topol: list[Path]
+    fn_coord: list[Path]
+    restraints: list[dict]
+    settings: dict | None
+
+    @classmethod
+    def from_dir(cls, train_dir: str | Path):
+        train_dir = Path(train_dir).resolve()
+        specs, samples, fn_topol, fn_coord, restraints = extract_train_dir(train_dir)
+        return cls(train_dir, specs, samples, fn_topol, fn_coord, restraints, None)
+
+    @property
+    def hashes(self) -> list[str]:
+        return list(self.samples.keys() or {})
+
+    @property
+    def inputs(self) -> dict[str, dict]:
         return np.array([sample["params"] for sample in self.samples.values()])
 
     @property
-    def y(self) -> np.ndarray:
-        if not self.qoi:
-            raise ValueError("Features not loaded. Call load_features() first.")
-        y_raw = [np.r_[self._flatten_feature(sample)] for sample in self.qoi]
-        return np.stack(y_raw)
+    def n_samples(self) -> int:
+        return len(self.samples or {})
 
     @property
-    def y_true(self) -> np.ndarray:
-        """Return the true values of the features and corresponding slices."""
-        if not self.reference:
-            raise ValueError("Reference not loaded. Call load_reference() first.")
+    def fn_trj(self) -> list[list[Path]]:
+        return [
+            [self.train_dir / trj for trj in s["fn_trj"]]
+            for s in (self.samples or {}).values()
+        ]
 
-        features = self._flatten_feature(self.reference)
+    def setup_settings(self, settings: dict | None):
+        self.settings = settings or {}
 
-        return np.concatenate(features)
+
+class TrainData:
+    def __init__(
+        self,
+        inputs: np.ndarray | list | str | Path,
+        outputs: dict[str, np.ndarray] | str | Path,
+        outputs_ref: dict[str, np.ndarray] | str | Path,
+        observations: dict[str, int] | str | Path,
+        settings: dict | str | Path = None
+    ) -> None:
+
+        self.X = self._load_array(inputs)
+        self.y = self._load_dict(outputs)
+        self.y_ref = self._load_dict(outputs_ref)
+        self.observations = self._load_dict(observations)
+        self.settings = self._load_dict(settings) if settings is not None else {}
+
+    @staticmethod
+    def _load_array(x: np.ndarray | str | Path) -> np.ndarray:
+        if isinstance(x, (str, Path)):
+            return np.load(x)
+        else:
+            return np.asarray(x)
+
+    @staticmethod
+    def _load_dict(d: dict | str | Path) -> dict:
+        if isinstance(d, (str, Path)):
+            d = Path(d).resolve()
+            if d.suffix == '.npz':
+                return {
+                    k: v.item() if v.ndim == 0 else v
+                    for k, v in np.load(d).items()
+                }
+            elif d.suffix in {'.yml', '.yaml'}:
+                return load_yaml(d)
+            else:
+                raise ValueError(f"Unsupported file format: {d.suffix}")
+        elif isinstance(d, dict):
+            return d
 
     @property
-    def y_slices(self) -> dict[str, slice]:
-        if not self.reference:
-            raise ValueError("Reference not loaded. Call load_reference() first.")
-
-        features = self._flatten_feature(self.reference)
-
-        keys = ['rdf', 'hb', 'restr']
-        lengths = list(map(len, features))
-        offsets = np.cumsum([0] + lengths[:-1])
-
-        return {
-            key: slice(offset, offset + length)
-            for key, offset, length, in zip(keys, offsets, lengths)
-        }
-
-    @property
-    def observations(self):
-
-        # Determine observation numbers
-        n_rdf = sum([len(trj.rdf) for trj in self.reference])
-        n_hb = len(self.valid_hb)
-        n_restr = sum(len(trj.restr) for trj in self.reference)
-
-        return {'rdf': n_rdf, 'hb': n_hb, 'restr': n_restr}
+    def qoi_names(self) -> set[str]:
+        return set(self.y_ref.keys())
 
     @property
     def rdf_sigmoid_mean(self) -> np.ndarray:
-        rs = [sigmoid(r) for trj in self.reference for r, g in trj.rdf.values()]
-        return np.array(rs).flatten()
+        """Create a sigmoid function for concatenated RDFs."""
+        n_bins = self.settings['rdf_kwargs']['n_bins']
+        r0, r1 = self.settings['rdf_kwargs']['r_range']
+        dr_half = (r1 - r0) / (2 * n_bins)
+        r = np.linspace(r0, r1, n_bins, endpoint=False) + dr_half
+        n_rdf = self.y_ref['rdf'].size // n_bins
+        return np.tile(sigmoid(r), n_rdf)
 
-    @property
-    def trajectories(self) -> list[list[str]]:
-        """Return a list of trajectory file paths for all samples."""
-        return [
-            [self.train_dir / t for t in sample["fn_trj"]]
-            for sample in self.samples.values()
-        ]
+    def write(self, fn_base: str | Path) -> None:
+        fn_base = Path(fn_base).resolve()
 
-    @property
-    def hashes(self):
-        return self.samples.keys()
+        # save X separately as .npy
+        fn_inputs = fn_base.with_name(fn_base.name + "-inputs.npy")
+        np.save(fn_inputs, self.X, allow_pickle=False)
 
-    @property
-    def n_samples(self):
-        return len(self.samples)
+        # save dict-like data as compressed npz
+        files = {
+            "-train.npz": self.y,
+            "-ref.npz": self.y_ref,
+            "-observations.npz": self.observations,
+        }
+        for suffix, data in files.items():
+            np.savez_compressed(fn_base.with_name(fn_base.name + suffix),
+                                **data, allow_pickle=False)
 
-    def load_qoi(self, features: str | Path | list, settings: dict = None) -> None:
-        """Load features from a file or dictionary."""
-        if isinstance(features, (str, Path)):
-            # features = load_json(str(features))
-            features = np.load(features, allow_pickle=True)
-            settings = features['settings'].item()
-            qoi_hashed = features['samples'].item()
-            qoi = list(qoi_hashed.values())
-            if self.hashes != qoi_hashed.keys():
-                raise ValueError(
-                    "Supplied features do not match the training samples."
-                )
-        elif isinstance(features, list):
-            qoi = features
-            if not settings:
-                raise ValueError(
-                    "Settings must be provided when loading features from a list."
-                )
-        else:
-            raise TypeError("Features must be a file path or list.")
+        # save yaml settings
+        fn_settings = fn_base.with_name(fn_base.name + "-settings.yaml")
+        save_yaml(self.settings or {}, fn_settings)
 
-        self.qoi = qoi
-        self.settings = settings
 
-    def load_reference(self, reference: list[TrajectoryData]) -> None:
-        """Load reference data."""
-        if not isinstance(reference, list):
-            raise TypeError("Reference must be a list of TrajectoryData.")
-        if not all(isinstance(r, TrajectoryData) for r in reference):
-            raise TypeError("All items in reference must be TrajectoryData.")
-        if not isinstance(reference, list):
-            reference = [reference]
+# class TrainData:
+#     def __init__(
+#         self,
+#         inputs: np.ndarray | list,
+#         data: np.ndarray,
+#         reference: np.ndarray | list
+#     ) -> None:
+#         if len(inputs) != len(data):
+#             raise ValueError("Number of samples in inputs and data do not match.")
+#         if data.shape[1] != len(reference):
+#             raise ValueError("Number of features in data and reference do not match.")
 
-        self.reference = reference
-        self.valid_hb = np.unique([k for trj in self.reference for k in trj.hb])
+#         self._inputs = inputs
+#         self.qoi = data
+#         self.qoi_reference = reference
 
-    def write_features(self, fn_out: str | Path) -> None:
-        """Write features into a JSON file."""
-        if not self.qoi:
-            raise ValueError("No QoI to write.")
+#     @property
+#     def qoi_names(self) -> set[str]:
+#         return {name for s in self.qoi_reference for name in s.names}
 
-        qoi_hashed = dict(zip(self.hashes, self.qoi))
-        data = {'settings': self.settings} | {'samples': qoi_hashed}
-        fn_out = Path(fn_out).resolve()
-        fn_out.parent.mkdir(parents=True, exist_ok=True)
-        # save_json(data, fn_out)
-        np.savez_compressed(fn_out, **data)
+#     @property
+#     def X(self) -> np.ndarray:
+#         """Parameters from all samples."""
+#         return np.asarray(self._inputs)
 
-    def __repr__(self) -> str:
-        """Return a string representation of the TrainData instance."""
-        return (f"{self.n_samples} samples")
+#     @property
+#     def y(self) -> np.ndarray:
+#         """Rows = samples, columns = flattened features."""
+#         flatten_samples = [self._flatten_qoi(sample) for sample in self.qoi]
+#         return {
+#             qoi: np.array([s[qoi] for s in flatten_samples])
+#             for qoi in self.qoi_names
+#         }
+
+#     @property
+#     def y_true(self) -> list[float]:
+#         """Flat list of reference QoI values."""
+#         return {
+#             qoi: np.array(v)
+#             for qoi, v in self._flatten_qoi(self.qoi_reference).items()
+#         }
+
+#     @property
+#     def observations(self) -> dict[str, int]:
+#         """Total number of observations for each QoI."""
+
+#         observations = defaultdict(int)
+#         for i in self.qoi_reference:
+#             for name, n in i.observations.items():
+#                 observations[name] += n
+#         if "hb" in observations.keys():
+#             observations["hb"] = len(self._valid_hb)
+#         if "restr" in observations.keys() and "rdf" in observations.keys():
+#             observations["restr"] = observations["rdf"]
+
+#         return observations
+
+#     @property
+#     def n_samples(self) -> int:
+#         return self.qoi.shape[0]
+
+#     @property
+#     def _valid_hb(self) -> np.ndarray:
+#         return np.unique([
+#             hb_name
+#             for s in self.qoi_reference if hasattr(s, "hb")
+#             for hb_name in s.hb
+#         ])
+
+#     @property
+#     def rdf_sigmoid_mean(self) -> np.ndarray:
+#         """Sigmoid mean to transform RDFs."""
+#         rs = [sigmoid(r) for trj in self.qoi_reference for r, g in trj.rdf.values()]
+#         return np.array(rs).flatten()
+
+#     def _flatten_qoi(self, sample: list[QoI]) -> dict[str, list]:
+#         """Group QoI values without flattening."""
+#         blocks = {attr: [] for attr in self.qoi_names}
+#         for s in sample:
+#             for attr in self.qoi_names:
+#                 if not hasattr(s, attr):
+#                     continue
+#                 val = getattr(s, attr)
+#                 if attr in {"rdf", "restr"}:
+#                     for _, (_, y) in val.items():
+#                         blocks[attr].extend(y)
+#                 elif attr == "hb":
+#                     blocks[attr].extend(
+#                         s.hb.get(hb_name, 0)
+#                         for hb_name in self._valid_hb
+#                     )
+#                 else:
+#                     blocks[attr].extend(val)
+#         return blocks
+
+#     def __repr__(self):
+#         return (
+#             f"{self.n_samples} samples\n"
+#             f"QoI: {self.qoi_names}"
+#         )
 
 
 class Bounds:
     def __init__(self, bounds: dict) -> None:
-        self.bounds = bounds
+        """
+        bounds : dict
+            Mapping parameter name -> (lower, upper)
+        """
+        self._bounds = bounds
+        # store keys and values as arrays
+        self._params = np.array(list(bounds.keys()))
+        self._values = np.array(list(bounds.values()), dtype=float)
 
     @property
-    def params(self):
-        return np.array(list(self.bounds.keys()))
+    def params(self) -> np.ndarray:
+        return self._params
 
     @property
-    def values(self):
-        return np.array(list(self.bounds.values()))
+    def values(self) -> np.ndarray:
+        return self._values
 
     @property
-    def lower(self):
-        return self.values[:, 0]
+    def lower(self) -> np.ndarray:
+        return self._values[:, 0]
 
     @property
-    def upper(self):
-        return self.values[:, 1]
+    def upper(self) -> np.ndarray:
+        return self._values[:, 1]
 
     def __repr__(self) -> str:
-        """Return a string representation of the Bounds object."""
-        return f"{self.bounds}"
+        return f"Bounds({self._bounds})"
+
+    def __str__(self) -> str:
+        lines = [f"{p}: [{l:.3f}, {u:.3f}]"
+                 for p, (l, u) in self._bounds.items()]
+        return "Bounds:\n" + "\n".join(lines)
 
 
 class Specs:
@@ -295,16 +367,16 @@ class Specs:
     @property
     def n_params_implicit(self):
         """Number of parameters excluding the implicit charge."""
-        return len(self.bounds_implicit.bounds)
+        return self.bounds_implicit.params.size
 
     @property
     def n_params_explicit(self):
         """Number of parameters excluding the implicit charge."""
-        return len(self.bounds_explicit.bounds)
+        return self.bounds_explicit.params.size
 
     @property
     def bounds_implicit(self):
-        bounds_copy = self._bounds.bounds.copy()
+        bounds_copy = self._bounds._bounds.copy()
         bounds_copy.pop(self.implicit_param, None)
         return Bounds(bounds_copy)
 
@@ -325,18 +397,25 @@ class Specs:
             for p in self.bounds_implicit.params
         ])
 
-    def test_sample(self, params):
-        params = np.asarray(params)
-        for param, (lower, upper) in zip(params, self.bounds_implicit.values):
-            if not (lower <= param <= upper):
-                return False
+    def is_valid(self, params):
+        if isinstance(params, list):
+            params = np.array(params)
+        elif isinstance(params, torch.Tensor):
+            params = params.cpu().numpy()
 
-        # Check the implicit charge
+        if params.ndim == 1:
+            params = params[np.newaxis, :]
+
+        lbe, ube = self.bounds_implicit.values.T
         lbi, ubi = self.implicit_param_bounds
-        q_explicit = np.sum(params * self.constraint_matrix)
-        q_implicit = self.total_charge - q_explicit
 
-        return lbi <= q_implicit <= ubi
+        valid_explicit = ((params > lbe) & (params < ube)).all(axis=1)
+
+        q_explicit = np.sum(params * self.constraint_matrix, axis=1)
+        q_implicit = self.total_charge - q_explicit
+        valid_implicit = (q_implicit >= lbi) & (q_implicit <= ubi)
+
+        return valid_explicit & valid_implicit
 
     def __repr__(self) -> str:
         """Return a string representation of the Specs instance."""
@@ -345,7 +424,7 @@ class Specs:
             f"mol_resname={self.mol_resname}, "
             f"implicit_atomtype={self.implicit_atomtype}, "
             f"total_charge={self.total_charge}, "
-            f"bounds={self.bounds_explicit.bounds})"
+            f"bounds={self.bounds_explicit})"
         )
 
 

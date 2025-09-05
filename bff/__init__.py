@@ -6,7 +6,7 @@ if platform.system() == "Darwin":
     os.environ["OMP_NUM_THREADS"] = "1"  # Limit OpenMP threads to 1
     os.environ["MKL_NUM_THREADS"] = "1"  # Limit MKL threads to 1
 
-from .bff import Optimizer
+from .bff import BFFOptimizer
 from . import postprocessing
 from . import qoi
 from . import data
@@ -19,7 +19,7 @@ from . import bayes
 __version__ = "0.1.0"
 
 __all__ = [
-    "Optimizer",
+    "BFFOptimizer",
     "postprocessing",
     "qoi",
     "data",

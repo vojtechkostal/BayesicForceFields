@@ -1,9 +1,9 @@
 import sys
-import os
-
-from ..bff import Optimizer
-
 from pathlib import Path
+
+from ..bff import BFFOptimizer
+from ..structures import TrainData
+from ..io.logs import Logger
 from ..io.utils import load_yaml
 
 
@@ -12,77 +12,54 @@ def load_config(fn_config: str) -> dict:
     fn_config = Path(fn_config).resolve()
     config = load_yaml(fn_config)
 
-    required_keys = ['train_dir', 'results_dir', 'aimd', 'ffmd', 'QoI', 'lgp', 'mcmc']
+    required_keys = ['fn_train', 'fn_specs']
+    required_train_fn = ['inputs', 'outputs', 'outputs_ref', 'observations']
     for key in required_keys:
         if key not in config:
-            raise ValueError(f"Missing required key in configuration: {key}")
-        if key in 'train_dir':
-            train_dir = Path(config[key]).resolve()
-            if not train_dir.exists():
-                raise FileNotFoundError(f"Training directory not found: {train_dir}")
-            config[key] = train_dir
-        elif key == 'results_dir':
-            results_dir = Path(config[key]).resolve()
-            config[key] = results_dir
+            raise ValueError(f"Missing required key in configuration: '{key}'")
+        elif key == 'fn_train':
+            if not isinstance(config[key], list):
+                raise ValueError(
+                    "'fn_train' must be a list of training data file paths.")
+            for i, train_files in enumerate(config[key]):
+                if not isinstance(train_files, dict):
+                    raise ValueError(
+                        "Each entry in 'fn_train' must be a dictionary of file paths.")
+                for req_fn in required_train_fn:
+                    if req_fn not in train_files:
+                        raise ValueError(
+                            f"Missing required key '{req_fn}'"
+                            f" in training data entry {i}."
+                        )
+                    train_files[req_fn] = Path(train_files[req_fn]).resolve()
+                    if not train_files[req_fn].exists():
+                        raise FileNotFoundError(
+                            f"File not found: {train_files[req_fn]}")
+        elif key == 'fn_specs':
+            config[key] = Path(config[key]).resolve()
+            if not config[key].exists():
+                raise FileNotFoundError(f"File not found: {config[key]}")
 
-    fn_log = config.get('fn_log', 'out.log')
-    config['fn_log'] = Path(fn_log).resolve()
-
-    aimd_keys = ['fn_coord', 'fn_topol', 'fn_trj']
-    for key in aimd_keys:
-        resolved_paths = []
-        if key not in config['aimd']:
-            raise ValueError(f"Missing required key in AIMD configuration: {key}")
-        for fn in config['aimd'][key]:
-            resolved_path = Path(fn).resolve()
-            if not resolved_path.exists():
-                raise FileNotFoundError(f"File not found: {resolved_path}")
-            resolved_paths.append(resolved_path)
-    aimd_lengths = [len(config['aimd'][key]) for key in aimd_keys]
-    if len(set(aimd_lengths)) != 1:
-        raise ValueError("AIMD configuration lists must have the same length.")
-
-    if config['ffmd'].get('fn_in'):
-        fn_in = Path(config['ffmd']['fn_in']).resolve()
-        if not fn_in.exists():
-            raise FileNotFoundError(f"File not found: {fn_in}")
-        config['ffmd']['fn_in'] = fn_in
-    if config['ffmd'].get('fn_out'):
-        fn_out = config['results_dir'] / config['ffmd']['fn_out']
-        config['ffmd']['fn_out'] = fn_out
-
-    if config['lgp'].get('fn_hyper'):
-        keys = ['rdf', 'hb', 'restr']
-        for key in keys:
-            if config['lgp']['fn_hyper'].get(key):
-                fn = Path(config['lgp']['fn_hyper'][key]).resolve()
-                config['lgp']['fn_hyper'][key] = fn
+    fn_log = config.get('fn_log', './out.log')
+    fn_log = Path(fn_log).resolve()
+    if not fn_log.parent.exists():
+        raise ValueError(f"Directory does not exist: {fn_log.parent}")
+    config['fn_log'] = fn_log
 
     return config
 
 
 def main(fn_config):
 
-    os.environ["OMP_NUM_THREADS"] = "1"
-
-    # Load the configuration file
     config = load_config(fn_config)
 
-    # Modify relative to absolute paths
-    config['results_dir'].mkdir(parents=True, exist_ok=True)
+    logger = Logger(name='optimize', fn_log=config['fn_log'])
 
-    # Initialize the sampler
-    optimizer = Optimizer(config['train_dir'], fn_log=config['fn_log'])
+    train_data = [TrainData(**files) for files in config['fn_train']]
+    optimizer = BFFOptimizer(*train_data, specs=config['fn_specs'], logger=logger)
 
-    # Load reference and training set -> evaluate the training set
-    optimizer.load_train(**config['ffmd'], **config['settings'])
-    optimizer.load_reference(**config['aimd'], **config['settings'])
-
-    # Train the model
-    optimizer.setup_lgp(**config['lgp'])
-
-    # Run the Bayesian inference
-    optimizer.run(**config['mcmc'])
+    optimizer.setup_LGP(**config.get('lgp', {}))
+    optimizer.run(**config.get('mcmc', {}))
 
 
 if __name__ == "__main__":

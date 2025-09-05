@@ -4,9 +4,7 @@ from matplotlib.colors import ListedColormap
 import numpy as np
 
 from scipy.stats import gaussian_kde
-
 from .structures import Specs, OptimizationResults
-from .bayes.utils import valid_bounds
 
 
 def draw_samples(
@@ -55,7 +53,7 @@ def draw_samples(
         is_within_confint = np.all(
             np.logical_and(sample >= confint[0], sample <= confint[1])
         )
-        if is_within_confint and valid_bounds(sample, specs):
+        if is_within_confint and specs.is_valid(sample):
             samples_out[i] = sample
             i += 1
         attempts += 1
@@ -88,7 +86,7 @@ def plot_distributions(
             continue
         atomtype = param.split()[1]
         posterior = results.chain_explicit_[:, results.atomtypes.index(atomtype)]
-        bound = results.bounds_explicit.bounds[param]
+        bound = results.bounds_explicit._bounds[param]
 
         x_min = bound[0] - 0.2
         x_max = bound[1] + 0.2
