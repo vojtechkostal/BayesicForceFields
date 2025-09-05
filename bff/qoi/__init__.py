@@ -1,11 +1,11 @@
 from . import hbonds
 from . import restraints
 from . import rdf
-from . import trajectory
+from . import analysis
 
 __all__ = [
     "hbonds",
     "restraints",
     "rdf",
-    "trajectory",
+    "analysis",
 ]

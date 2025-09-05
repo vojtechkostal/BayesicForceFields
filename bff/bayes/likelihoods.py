@@ -1,6 +1,5 @@
 import torch
 from .kernels import gaussian_kernel
-from .utils import valid_bounds
 from ..structures import Specs
 
 
@@ -55,7 +54,10 @@ def loo_log_likelihood(
 
     # Compute the terms for the log likelihood
     norm = torch.sqrt(Kdd_inv_diagonal + 1e-9).unsqueeze(1)
-    term_1 = (Kdd_inv @ y).transpose(1, 2) / norm
+    try:
+        term_1 = (Kdd_inv @ y).transpose(1, 2) / norm
+    except RuntimeError:
+        print(Kdd_inv.dtype, y.dtype, norm.dtype)
     term_1 = 1 / (2 * n_samples) * torch.sum(term_1**2, dim=(1, 2))
 
     term_2 = n_y / (2 * n_samples) * torch.sum(log_Kdd_inv_ii, dim=1)
@@ -68,10 +70,9 @@ def loo_log_likelihood(
 
 def gaussian_log_likelihood(
     theta: torch.Tensor,
-    y_true: torch.Tensor,
-    sl_true: dict[slice],
+    y_true: dict,
     surrogate: dict,
-    specs: Specs
+    specs: Specs = None,
 ) -> torch.Tensor:
 
     """Compute the gaussian log likelihood.
@@ -80,10 +81,8 @@ def gaussian_log_likelihood(
     ----------
     theta : torch.Tensor
         Parameters of the surrogate model, shape (n_samples, n_params + n_sigma).
-    y_true : torch.Tensor
-        True values for the observations, shape (n_observations,).
-    sl_true : dict[slice]
-        Dictionary mapping quantities of interest (QoI) to slices of `y_true`.
+    y_true : dict
+        True values for the observations, keys are the QoI.
     surrogate : object
         Surrogate model with a `predict` method.
     specs : Specs
@@ -103,25 +102,22 @@ def gaussian_log_likelihood(
     params, sigma = theta[:, :n_params], theta[:, n_params:]
 
     # Check if the parameters are within the valid bounds
-    mask = valid_bounds(params, specs)
-    params = params[mask]
-    sigma = sigma[mask]
-
-    # Ensure y_true is a 2D tensor and expand it to match the batch size
-    batch_size = len(theta)
-    y_true = y_true.unsqueeze(0) if y_true.ndim == 1 else y_true
-    y_true = y_true.expand(batch_size, -1).to(device)[mask]
+    if specs is not None:
+        mask = specs.is_valid(params)
+        params = params[mask]
+        sigma = sigma[mask]
+    else:
+        mask = slice(None)
 
     # Compute the log-likelihod
-    log_likelihood = torch.full((batch_size, ), -torch.inf, device=device)
+    log_likelihood = torch.full((len(theta), ), -torch.inf, device=device)
     if mask.any():
         log_like_valid = torch.zeros(mask.sum(), device=device)
         for (qoi, model), sigma_exp in zip(surrogate.items(), sigma.exp().T):
-            y_trial_qoi = model.predict(params)
-            sl = sl_true[qoi]
+            y_trial = model.predict(params)
             N = model.observations
 
-            diff = y_true[:, sl] - y_trial_qoi
+            diff = y_true[qoi] - y_trial
             ssq = torch.sum(diff**2, dim=1)
             log_like_valid += -0.5 * ssq / sigma_exp**2 - N * torch.log(sigma_exp)
 

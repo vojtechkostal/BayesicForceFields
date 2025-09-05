@@ -1,12 +1,12 @@
 import emcee
 import torch
 import numpy as np
-from torch.distributions import Normal, Uniform
 from functools import partial
 from pathlib import Path
 
 from .gaussian_process import LocalGaussianProcess, LGPCommittee
 from .likelihoods import loo_log_likelihood, gaussian_log_likelihood
+from .priors import define_param_priors, define_hyper_priors, log_prior
 from ..io.utils import load_yaml, save_yaml
 from .utils import (
     initialize_backend, initialize_walkers,
@@ -14,98 +14,6 @@ from .utils import (
     train_test_split,
     find_map, laplace_approximation
 )
-
-
-def define_param_priors(
-    param_bounds: dict[list], QoI: dict, dist_type: str
-) -> dict[list]:
-    """
-    Define priors for the model parameters and nuisance parameters.
-
-    Parameters
-    ----------
-    param_bounds : dict[list]
-        Dict of tuples defining the bounds for each parameter.
-    QoI : dict
-        Dictionary of quantities of interest (QoI).
-    dist_type : str
-        Type of distribution for the priors, either 'normal' or 'uniform'.
-
-    Returns
-    -------
-    dict
-        Dict of prior distributions for the parameters and nuisance parameters.
-    """
-
-    if dist_type == 'normal':
-        param_priors = {
-            param: Normal(np.mean(bound), 1 / 5 * np.diff(bound)[0])
-            for param, bound in param_bounds.bounds.items()
-        }
-    elif dist_type == 'uniform':
-        param_priors = {
-            param: Uniform(bound[0], bound[1], validate_args=False)
-            for param, bound in param_bounds.bounds.items()
-        }
-    else:
-        raise ValueError(
-            f'Unknown prior type "{dist_type}". '
-            'Options are "normal" or "uniform".'
-        )
-
-    nuisance_priors = {f'nuisance {q}': Normal(-2, 2) for q in QoI}
-
-    return param_priors | nuisance_priors
-
-
-def define_hyper_priors(n_params) -> list[Normal]:
-    """
-    Define Gaussian priors for model parameters:
-    - `lengths` (per parameter): N(-2, 2)
-    - `width`: N(-2, 2)
-    - `noise`: N(-2, 3)
-
-    Parameters
-    ----------
-        n_params : int
-            Number of model parameters (length scales).
-
-    Returns
-    -------
-        List[Normal]
-            List of Normal distributions representing the priors.
-    """
-
-    lengths_priors = {f'length {i}': Normal(-2, 2) for i in range(n_params)}
-    width_prior = {'width': Normal(-2, 2)}
-    sigma_prior = {'sigma': Normal(-2, 3)}
-    return lengths_priors | width_prior | sigma_prior
-
-
-def log_prior(
-    theta: torch.Tensor, priors: list[torch.distributions.Distribution]
-) -> torch.Tensor:
-    """
-    Compute the log prior probabilities for the parameters.
-
-    Parameters
-    ----------
-    theta : torch.Tensor
-        Tensor of shape (n_samples, n_params) containing parameter values.
-    priors : list of torch.distributions.Distribution
-        List of prior distributions for each parameter.
-
-    Returns
-    -------
-    torch.Tensor
-        Log prior probabilities for each parameter set.
-    """
-
-    device = theta.device
-    log_probabilities = [
-        p.log_prob(theta[:, i]).to(device) for i, p in enumerate(priors)
-    ]
-    return torch.stack(log_probabilities, dim=1).sum(dim=1)
 
 
 def log_posterior(
@@ -144,11 +52,18 @@ def log_posterior(
     if theta.dim() == 1:
         theta = theta.unsqueeze(0)
 
-    log_likelihood = log_likelihood_fn(theta)
-    log_likelihood = torch.where(
-        torch.isnan(log_likelihood), -torch.inf, log_likelihood)
+    if theta.isnan().any():
+        log_prob = torch.full((theta.shape[0],), -1e10, device=device)
+        if theta._grad_fn:
+            log_prob = log_prob.requires_grad_()
 
-    log_prob = log_prior(theta, priors) + log_likelihood
+    else:
+        log_likelihood = log_likelihood_fn(theta)
+        log_likelihood = torch.where(
+            torch.isnan(log_likelihood), -torch.inf, log_likelihood)
+
+        log_prob = log_prior(theta, priors) + log_likelihood
+
     if log_prob.ndim == 1:
         log_prob = log_prob.squeeze(0)
     if numpy_output:
@@ -160,8 +75,7 @@ def initialize_mcmc_sampler(
     surrogate: object,
     specs: object,
     QoI: list[str],
-    y_true: np.ndarray | torch.Tensor,
-    sl_true: dict[slice],
+    y_true: dict,
     n_walkers: int = None,
     priors_disttype: str = 'normal',
     fn_backend: str = 'backend.h5',
@@ -180,12 +94,8 @@ def initialize_mcmc_sampler(
         Object that contains specifications of the system.
     QoI : list[str]
         List of quantities of interest (QoI) to be optimized.
-    observations : list[int]
-        List of number of observations used in the likelihood function.
-    y_true : np.ndarray | torch.Tensor
-        True target values for the model.
-    sl_true : dict[slice]
-        Dictionary mapping quantities of interest (QoI) to slices of `y_true`.
+    y_true : dict
+        True target values for the model for all QoI.
     n_walkers : int, optional
         Number of walkers in the MCMC sampler.
         If None, defaults to 5 times the number of parameters.
@@ -209,7 +119,7 @@ def initialize_mcmc_sampler(
     """
 
     # Define priors based on the implicit parameter bounds
-    priors = define_param_priors(specs.bounds_implicit, QoI, priors_disttype)
+    priors = define_param_priors(specs.bounds_implicit._bounds, QoI, priors_disttype)
 
     # Initialize backend
     n_dim = len(priors)
@@ -224,12 +134,11 @@ def initialize_mcmc_sampler(
         backend.reset(n_walkers, n_dim)
         p0 = initialize_walkers(priors, n_walkers, specs)
 
-    y_true = check_tensor(y_true, device)
+    y_true = {qoi: check_tensor(y, device) for qoi, y in y_true.items()}
 
     log_likelihood = partial(
         gaussian_log_likelihood,
         y_true=y_true,
-        sl_true=sl_true,
         surrogate=surrogate,
         specs=specs
     )
@@ -330,6 +239,7 @@ def lgp_hyperopt(
 
         X_hyper = check_tensor(X_train[:n_hyper], device='cpu')
         y_hyper = check_tensor(y_train[:n_hyper], device='cpu')
+        y_mean = check_tensor(y_mean, device='cpu')
 
         priors = define_hyper_priors(X.shape[1])
         # p0 = initialize_walkers(priors, 1).squeeze(0)
@@ -363,11 +273,11 @@ def lgp_hyperopt(
         sigmas = hyper_samples[:, -1]
 
     # Create committee of LGPs
-    logger.info(f'  > LGP committee: {0}/{committee}', overwrite=True)
+    logger.info(f'Committee: 0/{committee}', level=2, overwrite=True)
     lgps = []
     for i, (l, w, s) in enumerate(zip(lengths, widths, sigmas), start=1):
         lgps.append(LocalGaussianProcess(X_train, y_train, y_mean, l, w, s, device))
-        logger.info(f'  > LGP committee: {i}/{committee}', overwrite=True)
+        logger.info(f'Committee: {i}/{committee}', level=2, overwrite=True)
 
     lgp_committee = LGPCommittee(lgps, observations)
 
@@ -375,7 +285,8 @@ def lgp_hyperopt(
     lgp_committee.validate(X_test, y_test)
 
     logger.info(
-        f'  > LGP committee: {committee} (100%) | MAPE = {lgp_committee.error:.2f}%'
+        f'Committee: {committee} (100%) | MAPE = {lgp_committee.error:.2f}%',
+        level=2
     )
 
     # Save hyperparameters if a file is specified

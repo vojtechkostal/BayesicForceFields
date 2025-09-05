@@ -65,6 +65,7 @@ class LocalGaussianProcess:
             'sigma': self.sigma.cpu().numpy().item()
         }
 
+    @torch.no_grad()
     def predict(self, Xi):
         """
         Predict outputs for given input points.
@@ -83,7 +84,7 @@ class LocalGaussianProcess:
         Kid = gaussian_kernel(Xi, self.X_train, self.lengths, self.width)
         mean = self.y_mean + (Kid @ self.Kdd_inv) @ (self.y_train - self.y_mean)
 
-        return mean
+        return mean.clamp(0, None)
 
     def __repr__(self) -> str:
         hp = self.hyperparameters

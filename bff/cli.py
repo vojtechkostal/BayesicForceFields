@@ -25,8 +25,13 @@ def help():
     typer.echo("\nAvailable commands:")
     typer.echo("  initialize   Creates the system")
     typer.echo("  runsims      Run MDs (training or validation).")
-    typer.echo("  optimize     Runs the Bayesian inference of the force field parameters.")
+    typer.echo("  analyze_qoi  Analyze the QoI from simulations.")
+    typer.echo(
+        "  optimize     Runs the Bayesian inference"
+        " of the force field parameters."
+    )
     typer.echo("  version      Show package version.")
+    typer.echo("  help         Show this help message.")
 
 
 def run_workflow(
@@ -71,6 +76,20 @@ def runsims(
 
     from bff.workflows.runsims import main as runsims_main
     run_workflow(fn_config, runsims_main, "runsims")
+
+
+@app.command()
+def analyze(
+    fn_config: Optional[Path] = typer.Argument(
+        None, help="Path to the configuration file (required)."
+    )
+):
+    """
+    Analyze the Quantity of Interest (QoI) from simulation data
+    as configured in the given config file.
+    """
+    from bff.workflows.analyze_qoi import main as analyze_qoi_main
+    run_workflow(fn_config, analyze_qoi_main, "analyze_qoi")
 
 
 @app.command()

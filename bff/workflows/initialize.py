@@ -49,7 +49,7 @@ def load_config(config: str | Path) -> None:
     for key in required_keys:
         if key not in config:
             raise ValueError(f"Missing required key in config: {key}")
-    
+
     # Check if gromacs executable is available
     check_gmx_available(config['gmx_cmd'])
 
@@ -83,7 +83,7 @@ def load_config(config: str | Path) -> None:
                 raise ValueError(
                     f"Invalid box dimensions: {box}. "
                     f"Must contain either 3 or 6 values.")
-            
+
     return config
 
 
