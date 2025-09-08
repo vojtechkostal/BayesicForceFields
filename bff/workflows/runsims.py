@@ -276,7 +276,8 @@ def print_train_summary(config, logger):
     logger.info(f"molecule name: {config['mol_resname']}", level=1)
     logger.info("parameters:", level=1)
     for name, b in config['bounds'].items():
-        if name.split()[1] == config['implicit_atomtype']:
+        param, atomtype = name.split()
+        if atomtype == config['implicit_atomtype'] and param == 'charge':
             logger.info(f"    {name}: {b} (implicit)", level=2)
         else:
             logger.info(f"    {name}: {b}", level=2)
