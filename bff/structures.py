@@ -637,7 +637,7 @@ class RandomParamsGenerator(Specs):
         super().__init__(specs)
         if (
             not hasattr(self, 'bounds_implicit') or
-            not hasattr(self.bounds_implicit, 'bounds') or
+            not hasattr(self.bounds_implicit, '_bounds') or
             not hasattr(self.bounds_implicit, 'values')
         ):
             raise AttributeError(
@@ -645,7 +645,7 @@ class RandomParamsGenerator(Specs):
                 "or missing required attributes ('bounds', 'values')."
             )
 
-        n_dim = len(self.bounds_implicit.bounds)
+        n_dim = len(self.bounds_implicit._bounds)
         self.sampler = LatinHypercube(n_dim)
         self.lbe, self.ube = self.bounds_implicit.values.T
         self.lbi, self.ubi = getattr(
@@ -657,7 +657,7 @@ class RandomParamsGenerator(Specs):
                 "initialized."
             )
 
-        if len(self.constraint_matrix) != len(self.bounds_implicit.bounds):
+        if len(self.constraint_matrix) != len(self.bounds_implicit._bounds):
             raise ValueError(
                 "The constraint matrix must match the\
                     number of implicit parameters."
