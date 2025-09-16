@@ -14,17 +14,10 @@ def load_config(fn_config: str) -> dict:
     fn_config = Path(fn_config).resolve()
     config = load_yaml(fn_config)
 
-    required_keys = [
-        'fn_log', 'fn_qoi', 'aimd', 'ffmd', 'settings'
-    ]
+    required_keys = ['aimd', 'ffmd']
     for key in required_keys:
         if key not in config:
             raise ValueError(f"Missing required key in configuration: {key}")
-        elif key == 'fn_qoi':
-            config[key] = Path(config[key]).resolve()
-        elif key == 'fn_log':
-            fn_log = Path(config[key]).resolve()
-            config[key] = fn_log
 
     aimd_keys = ['fn_coord', 'fn_topol', 'fn_trj']
     for key in aimd_keys:
@@ -39,6 +32,24 @@ def load_config(fn_config: str) -> dict:
     aimd_lengths = [len(config['aimd'][key]) for key in aimd_keys]
     if len(set(aimd_lengths)) != 1:
         raise ValueError("AIMD configuration lists must have the same length.")
+
+    if not config['ffmd'].get('trainset_dir'):
+        raise ValueError("Missing 'trainset_dir' in FFMD configuration.")
+    config['ffmd']['trainset_dir'] = Path(config['ffmd']['trainset_dir']).resolve()
+    if not config['ffmd']['trainset_dir'].exists():
+        raise FileNotFoundError(f"Trainset directory not found: {config['ffmd']['trainset_dir']}")
+
+    if 'results_dir' not in config:
+        config['results_dir'] = fn_config.parent
+    config['results_dir'] = Path(config['results_dir']).resolve()
+    config['results_dir'].mkdir(parents=True, exist_ok=True)
+
+    if 'base_name' not in config:
+        config['base_name'] = 'qoi'
+    
+    if 'fn_log' not in config:
+        config['fn_log'] = 'out.log'
+    config['fn_log'] = config['results_dir'] / config['fn_log']
 
     return config
 
@@ -72,8 +83,8 @@ def _infer_observations(
         for name, n in i.observations.items():
             observations[name] = observations.get(name, 0) + n
 
-    if "hb" in observations:
-        observations["hb"] = len(valid_hb)
+    #if "hb" in observations:
+    #    observations["hb"] = len(valid_hb)
 
     if "restr" in observations and "rdf" in observations:
         observations["restr"] = observations["rdf"]
@@ -133,11 +144,10 @@ def main(fn_config: str) -> None:
         settings=settings
     )
 
-    fn_base = Path(config['fn_qoi']).with_suffix('')
+    fn_base = config['results_dir'] / config['base_name']
     train_data.write(fn_base)
-    Specs(trainset_info.specs).save(fn_base.with_name('specs.yml'))
+    Specs(trainset_info.specs).save(fn_base.with_name(fn_base.name + '-specs.yml'))
     if config.get('write_raw_qoi', False):
-        fn_base = Path(config['fn_qoi']).with_suffix('')
         fn_qoi_train = fn_base.with_name(fn_base.name + '-train.raw.json')
         fn_qoi_ref = fn_base.with_name(fn_base.name + '-ref.raw.json')
 
