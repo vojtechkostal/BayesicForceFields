@@ -1,0 +1,24 @@
+hbond_kwargs:
+  angle_cutoff: 150
+  distance_cutoff: 3.5
+  start: 0
+  step: 1
+  stop: null
+rdf_kwargs:
+  n_bins: 200
+  pbc: true
+  r_range:
+  - 1
+  - 7
+  smooth: false
+  start: null
+  step: null
+  stop: null
+restraint_kwargs:
+  T: 300
+  nbins: 200
+  smooth: true
+  start: 0
+  step: 1
+  stop: null
+  unbias: false

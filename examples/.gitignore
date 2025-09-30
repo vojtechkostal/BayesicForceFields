@@ -1,18 +1,13 @@
-acetate/01-prepare/gmx.log
-acetate/01-prepare/cp2k
 acetate/01-prepare/prepare
-acetate/01-prepare/train
 
-acetate/03-training-trjs/trainset/
+acetate/05-optimization/*.h5
+acetate/05-optimization/*.yaml
+acetate/05-optimization/*.yml
+acetate/05-optimization/*.log
+acetate/05-optimization/*.npy
 
-acetate/04-optimization/hyper*
-acetate/04-optimization/*.log
-acetate/04-optimization/*.npz
-acetate/04-optimization/*.npy
-acetate/04-optimization/*.h5
-acetate/04-optimization/priors.yaml
-acetate/04-optimization/specs.yaml
-
-acetate/05-analysis/*.h5
-acetate/05-analysis/*.yaml
-acetate/05-analysis/*.npy
+acetate/05-optimization-interactive/*.h5
+acetate/05-optimization-interactive/*.yaml
+acetate/05-optimization-interactive/*.yml
+acetate/05-optimization-interactive/*.log
+acetate/05-optimization-interactive/*.npy

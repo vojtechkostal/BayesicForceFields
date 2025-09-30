@@ -2,16 +2,16 @@
 ;	File 'mdout.mdp' was generated
 ;	By user: vojta (1001)
 ;	On host: ada
-;	At date: Sat Sep 27 14:35:51 2025
+;	At date: Sat Sep 27 15:04:44 2025
 ;
 ;	Created by:
 ;	                     :-) GROMACS - gmx grompp, 2024.3 (-:
 ;	
 ;	Executable:   /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj/bin/gmx
 ;	Data prefix:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj
-;	Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare
+;	Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/03-training-trjs/trainset
 ;	Command line:
-;	  gmx grompp -f /home/vojta/code/BayesicForceFields/bff/data/mdp/nvt.mdp -c /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/system-002.gro -p /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/system-02.top -o /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/2-nvt-002.tpr -maxwarn 1 -n /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/prepare/index-002.ndx
+;	  gmx grompp -f /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/train/nvt-002.mdp -c /home/vojta/code/BayesicForceFields/examples/acetate/03-training-trjs/trainset/md-9b05a1e5e461cbcf-2.gro -p /home/vojta/code/BayesicForceFields/examples/acetate/03-training-trjs/trainset/md-9b05a1e5e461cbcf-002.top -n /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/train/index-002.ndx -o /home/vojta/code/BayesicForceFields/examples/acetate/03-training-trjs/trainset/md-9b05a1e5e461cbcf-2.tpr -maxwarn 2
 
 ; VARIOUS PREPROCESSING OPTIONS
 ; Preprocessor information: use cpp syntax.
@@ -175,7 +175,7 @@ annealing-temp           =
 ; GENERATE VELOCITIES FOR STARTUP RUN
 gen-vel                  = no
 gen-temp                 = 300
-gen-seed                 = 2128164799
+gen-seed                 = -3195218
 
 ; OPTIONS FOR BONDS    
 constraints              = h-bonds
@@ -213,7 +213,43 @@ wall-density             =
 wall-ewald-zfac          = 3
 
 ; COM PULLING          
-pull                     = no
+pull                     = yes
+; Cylinder radius for dynamic reaction force groups (nm)
+pull-cylinder-r          = 1.5
+pull-constr-tol          = 1e-06
+pull-print-com           = no
+pull-print-ref-value     = no
+pull-print-components    = no
+pull-nstxout             = 50
+pull-nstfout             = 50
+pull-pbc-ref-prev-step-com = no
+pull-xout-average        = no
+pull-fout-average        = no
+; Number of pull groups 
+pull-ngroups             = 2
+; Number of pull coordinates
+pull-ncoords             = 1
+; Group and coordinate parameters
+pull-group1-name         = C2
+pull-group1-weights      = 
+pull-group1-pbcatom      = 0
+pull-group2-name         = CAL
+pull-group2-weights      = 
+pull-group2-pbcatom      = 0
+pull-coord1-type         = umbrella
+pull-coord1-potential-provider = 
+pull-coord1-expression   = 
+pull-coord1-dx           = 1e-09
+pull-coord1-geometry     = distance
+pull-coord1-groups       = 1 2
+pull-coord1-dim          = Y Y Y
+pull-coord1-origin       = 0.0 0.0 0.0
+pull-coord1-vec          = 0.0 0.0 0.0
+pull-coord1-start        = no
+pull-coord1-init         = 0.5
+pull-coord1-rate         = 0.0
+pull-coord1-k            = 20000
+pull-coord1-kB           = 20000
 
 ; AWH biasing          
 awh                      = no
