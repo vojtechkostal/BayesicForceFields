@@ -1,8 +1,10 @@
 acetate/01-prepare/prepare
 
 acetate/05-optimization/*.h5
-acetate/05-optimization/*.yaml
-acetate/05-optimization/*.yml
+acetate/05-optimization/hyperparams*.yaml
+acetate/05-optimization/hyperparams*.yml
+acetate/05-optimization/priors*.yml
+acetate/05-optimization/priors*.yaml
 acetate/05-optimization/*.log
 acetate/05-optimization/*.npy
 

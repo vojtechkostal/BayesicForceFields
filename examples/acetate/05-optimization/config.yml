@@ -1,0 +1,28 @@
+fn_log: out.log
+fn_train:
+  - inputs: ../04-qoi/qoi-inputs.npy
+    outputs: ../04-qoi/qoi-train.npz
+    outputs_ref: ../04-qoi/qoi-ref.npz
+    observations: ../04-qoi/qoi-observations.npz
+    settings: ../04-qoi/qoi-settings.yaml
+fn_specs: ../04-qoi/qoi-specs.yml
+lgp:
+  QoI:
+    - rdf
+    - hb
+    - restr
+  n_max: 200
+  fn_hyper:
+    rdf: hyperparams-rdf.yml
+    hb: hyperparams-hb.yml
+    restr: hyperparams-restr.yml
+  committee: 1
+  test_fraction: 0.2
+  device: cuda:0
+mcmc:
+  priors_type: normal
+  max_iter: 100000
+  fn_backend: mcmc.h5
+  fn_priors: priors.yml
+  fn_tau: tau.npy
+  device: cuda:0
