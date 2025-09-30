@@ -278,9 +278,9 @@ def print_train_summary(config, logger):
     for name, b in config['bounds'].items():
         param, atomtype = name.split()
         if atomtype == config['implicit_atomtype'] and param == 'charge':
-            logger.info(f"    {name}: {b} (implicit)", level=2)
+            logger.info(f"{name}: {b} (implicit)", level=2)
         else:
-            logger.info(f"    {name}: {b}", level=2)
+            logger.info(f"{name}: {b}", level=2)
     logger.info(f"total charge: {config['total_charge']}\n", level=1)
 
 
