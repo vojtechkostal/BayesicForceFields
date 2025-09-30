@@ -1,5 +1,4 @@
 import argparse
-# import os
 import subprocess
 import numpy as np
 import parmed as pmd
@@ -44,8 +43,8 @@ def load_config(config: str | Path) -> None:
     fn_log = config.get('fn_log')
     config['fn_log'] = fn_log
 
-    required_keys = ['fn_topol', 'restr_sel', 'restr_x0', 'restr_k',
-                     'fn_mol', 'charge', 'mult', 'nsteps_nvt', 'project', 'gmx_cmd']
+    required_keys = ['fn_topol', 'fn_mol', 'charge', 'mult',
+                     'nsteps_nvt', 'project', 'gmx_cmd']
     for key in required_keys:
         if key not in config:
             raise ValueError(f"Missing required key in config: {key}")
@@ -54,9 +53,18 @@ def load_config(config: str | Path) -> None:
     check_gmx_available(config['gmx_cmd'])
 
     # Ensure lists have the same length
-    list_keys = ['fn_topol', 'restr_sel', 'restr_x0', 'restr_k', 'charge', 'mult']
+    list_keys = ['fn_topol', 'fn_mol', 'restraints', 'charge', 'mult']
     length = len(config['fn_topol'])
     for key in list_keys:
+        if key == 'restraints':
+            if not config.get(key):
+                config[key] = [None] * length
+        if key == 'fn_mol':
+            if isinstance(config[key], str):
+                config[key] = [config[key]] * length
+        if key in ['charge', 'mult']:
+            if isinstance(config[key], int):
+                config[key] = [config[key]] * length
         if len(config[key]) != length:
             raise ValueError(
                 f"Inconsistent list length for {key}: expected {length}, "
@@ -66,6 +74,17 @@ def load_config(config: str | Path) -> None:
     # Ensure `fn_mol` is a list
     if isinstance(config['fn_mol'], str):
         config['fn_mol'] = [config['fn_mol']] * length
+
+    if config.get('nsteps_npt') is None:
+        config['nsteps_npt'] = [0] * length
+    elif isinstance(config.get('nsteps_npt'), int):
+        config['nsteps_npt'] = [config['nsteps_npt']] * length
+    else:
+        if len(config['nsteps_npt']) != length:
+            raise ValueError(
+                f"Inconsistent list length for nsteps_npt: expected {length}, "
+                f"got {len(config['nsteps_npt'])}"
+            )
 
     # Ensure `box` has the correct structure
     if 'box' not in config or config['box'] is None:
@@ -79,10 +98,48 @@ def load_config(config: str | Path) -> None:
         for i, box in enumerate(config['box']):
             if isinstance(box, list) and len(box) in {3, 6}:
                 config['box'][i] = box + [90, 90, 90] if len(box) == 3 else box
+                config['nsteps_npt'][i] = 0
             else:
                 raise ValueError(
                     f"Invalid box dimensions: {box}. "
                     f"Must contain either 3 or 6 values.")
+
+    if config.get('nsteps_npt') is None:
+        config['nsteps_npt'] = [0] * length
+    elif isinstance(config.get('nsteps_npt'), int):
+        config['nsteps_npt'] = [config['nsteps_npt']] * length
+    else:
+        if len(config['nsteps_npt']) != length:
+            raise ValueError(
+                f"Inconsistent list length for nsteps_npt: expected {length}, "
+                f"got {len(config['nsteps_npt'])}"
+            )
+
+    if config.get('nsteps_nvt') is None:
+        config['nsteps_nvt'] = [100000] * length
+    elif isinstance(config.get('nsteps_nvt'), int):
+        config['nsteps_nvt'] = [config['nsteps_nvt']] * length
+    else:
+        if len(config['nsteps_nvt']) != length:
+            raise ValueError(
+                f"Inconsistent list length for nsteps_nvt: expected {length}, "
+                f"got {len(config['nsteps_nvt'])}"
+            )
+
+    # Ensure MDP files are lists of correct length
+    mdp_keys = ['fn_mdp_em', 'fn_mdp_npt', 'fn_mdp_nvt']
+    for key in mdp_keys:
+        if key not in config or config[key] is None:
+            config[key] = [get_fn_mdp(key.split('_')[-1] + '.mdp')] * length
+        elif isinstance(config[key], str):
+            config[key] = [Path(config[key]).resolve()] * length
+        elif len(config[key]) != length:
+            raise ValueError(
+                f"Inconsistent list length for {key}: expected {length}, "
+                f"got {len(config[key])}"
+            )
+        else:
+            config[key] = [Path(f).resolve() for f in config[key]]
 
     return config
 
@@ -275,174 +332,154 @@ def get_fn_mdp(fn: str) -> Path:
 
 
 def main(fn_config: str) -> None:
-
-    # Load the config file
     config = load_config(fn_config)
+    logger = Logger("initialize", config['fn_log'])
+    logger.info("", level=0)
+    logger.info(f"=== Initializing project: {config['project']} ===\n", level=0)
 
-    # Set up logging
-    fn_log = config['fn_log']
-    logger = Logger(fn_log)
-    logger.info(f"> Initializing project: {config['project']}")
-
-    # Create directories
     prep_dir, train_dir, cp2k_dir = setup_directories()
 
-    # Process the topology files
-    grouped = process_topologies(config)
+    # Storage for unique topologies -> cached data
+    done_topologies: dict[str, dict] = {fn: None for fn in set(config['fn_topol'])}
 
-    # Iterate over topologies
-    i = 0
-    for (fn_topol, restr_specs), fn_mol, box, charge, mult in zip(
-        grouped.items(
-        ), config['fn_mol'], config['box'], config['charge'], config['mult']
+    n_total = len(config['fn_topol'])
+    for i, (fn_topol, fn_mol, charge, mult, restraint, box) in enumerate(
+        zip(config['fn_topol'], config['fn_mol'], config['charge'],
+            config['mult'], config['restraints'], config['box'])
     ):
-        logger.info(f"> Processing topology {i}: {fn_topol}:")
-        restr_sel = restr_specs['sel']
-        restr_x0 = np.array(restr_specs['x0'], dtype=float)
-        restr_k = np.array(restr_specs['k'], dtype=float)
+        logger.info(f"System: {i + 1}/{n_total}", level=1)
 
-        # Create system
-        logger.info("  > Inserting molecules", overwrite=True)
-        fn_system = prep_dir / f'system-{i:02d}.gro'
-        u, topol = create_box(fn_topol, fn_mol, fn_out=fn_system, box=box)
-        fn_topol_processed = fn_system.with_suffix('.top')
-        topol.save(str(fn_topol_processed))
-        logger.info("  > Inserting molecules: Done")
+        # --- EM + NpT equilibration (only once per unique topology) ---
+        if done_topologies[fn_topol] is None:
+            j = config['fn_topol'].index(fn_topol)
+            fn_coord = prep_dir / f'topol-{j:02d}.gro'
 
-        # Adjust maxwarn based on total charge
-        q = sum(atom.charge for atom in topol.atoms)
-        maxwarn = 1 if not np.isclose(q, 0, atol=1e-4) else 0
+            logger.info("Creating box: in progress...", overwrite=True, level=2)
+            u, topol = create_box(fn_topol, fn_mol, fn_out=fn_coord, box=box)
+            logger.info("Creating box: Done.", level=2)
 
-        # Run energy minimization
-        logger.info("  > Energy minimization", overwrite=True)
-        deffnm_em = prep_dir / f'0-em-{i:02d}'
-        if config.get('fn_mdp_em'):
-            fn_mdp_em = config.get('fn_mdp_em')[i]
-        else:
-            fn_mdp_em = get_fn_mdp('em.mdp')
-        run_md(
-            name=deffnm_em,
-            fn_mdp=fn_mdp_em,
-            fn_topol=fn_topol_processed,
-            fn_coord=fn_system,
-            fn_ndx=None,
-            n_steps=-2,
-            maxwarn=maxwarn
-        )
-        logger.info("  > Energy minimization: Done")
-        (train_dir / 'em.mdp').write_text(fn_mdp_em.read_text())
+            fn_topol_processed = fn_coord.with_suffix('.top')
+            topol.save(str(fn_topol_processed))
+            q = sum(atom.charge for atom in topol.atoms)
+            maxwarn = 1 if not np.isclose(q, 0, atol=1e-4) else 0
 
-        # Run NPT equilibration
-        deffnm_npt = prep_dir / f'1-npt-{i:02d}'
-        n = config['nsteps_npt'] if box is None else 0
-        logger.info("  > NpT equilibration", overwrite=True)
-        if config.get('fn_mdp_npt') is not None:
-            fn_mdp_npt = config.get('fn_mdp_npt')[i]
-        else:
-            fn_mdp_npt = get_fn_mdp('npt.mdp')
-        run_md(
-            name=deffnm_npt,
-            fn_mdp=fn_mdp_npt,
-            fn_topol=fn_topol_processed,
-            fn_coord=deffnm_em.with_suffix('.gro'),
-            fn_ndx=None,
-            n_steps=n,
-            maxwarn=maxwarn
-        )
-        if n > 0:
-            logger.info("  > NpT equilibration: Done")
-        else:
-            logger.info("  > NpT equilibration: skipped (box defined)")
+            # Energy minimization
+            deffnm_em = prep_dir / f'0-em-{j:02d}'
+            fn_mdp_em = config['fn_mdp_em'][i]
+            logger.info("Energy minimization: in progress...", overwrite=True, level=2)
+            run_md(deffnm_em, fn_mdp_em, fn_topol_processed, fn_coord,
+                   fn_ndx=None, n_steps=-2, maxwarn=maxwarn)
+            logger.info("Energy minimization: Done.", level=2)
+            (train_dir / 'em.mdp').write_text(fn_mdp_em.read_text())
 
-        # Compute average box size
-        u = mda.Universe(
-            deffnm_npt.with_suffix('.tpr'), deffnm_npt.with_suffix('.xtc'),
-            to_guess=('elements', 'masses')
-        )
-        t = trans.unwrap(u.atoms)
-        u.trajectory.add_transformations(t)
-        discard = int(u.trajectory.n_frames * 0.2)
-        box_avg = get_average_box(
-            u, start=discard) if box is None else np.array(box)
-
-        # Iterate over restraint windows
-        for sel, x0, k in zip(restr_sel, restr_x0, restr_k):
-            if config.get('fn_mdp_nvt') is not None:
-                fn_mdp_nvt = config.get('fn_mdp_nvt')[i]
+            # NpT equilibration
+            deffnm_npt = prep_dir / f'1-npt-{j:02d}'
+            n_steps = config['nsteps_npt'][i]
+            if n_steps > 0:
+                fn_mdp_npt = config['fn_mdp_npt'][i]
+                logger.info(
+                    "NpT equilibration: in progress...", overwrite=True, level=2)
+                run_md(
+                    deffnm_npt, fn_mdp_npt, fn_topol_processed,
+                    deffnm_em.with_suffix('.gro'),
+                    fn_ndx=None, n_steps=n_steps, maxwarn=maxwarn)
+                u = mda.Universe(deffnm_npt.with_suffix('.tpr'),
+                                 deffnm_npt.with_suffix('.xtc'),
+                                 to_guess=('elements', 'masses'))
+                u.trajectory.add_transformations(trans.unwrap(u.atoms))
+                discard = int(u.trajectory.n_frames * 0.2)
+                box_avg = get_average_box(u, start=discard)
+                logger.info("NpT equilibration: Done.", level=2)
+                fn_coord = deffnm_npt.with_suffix('.gro')
             else:
-                fn_mdp_nvt = get_fn_mdp('nvt.mdp')
-            fn_nvt_local = prep_dir / f'nvt-{i:03d}.mdp'
-            fn_ndx = prep_dir / f'index-{i:03d}.ndx'
-
-            if sel[0] is not None:
-                message = f"  > NVT equilibration: {i} | restr: {sel} x0: {x0} k: {k}"
-                make_ndx(u, sel, fn_out=fn_ndx)
-                fn_out = prep_dir / f'win-{i:03d}.gro'
-                create_restraint_window(u, sel, x0, box_avg, fn_out)
-                insert_pull_code(fn_mdp_nvt, sel, x0, k, fn_nvt_local)
-            else:
-                message = f"  > NVT equilibration: {i} | restr: None"
-                fn_out = prep_dir / f'win-{i:03d}.gro'
-                make_ndx(u, None, fn_out=fn_ndx)
-                with mda.Writer(fn_out, 'w') as w:
-                    ts = u.trajectory[-1]
-                    ts.dimensions = box_avg
-                    w.write(u.atoms)
-                fn_nvt_local.write_text(fn_mdp_nvt.read_text())
-            logger.info(message, overwrite=True)
-
-            # Run NVT equilibration
-            deffnm_nvt = prep_dir / f'2-nvt-{i:03d}'
-            run_md(
-                name=deffnm_nvt,
-                fn_mdp=fn_nvt_local,
-                fn_topol=fn_topol_processed,
-                fn_coord=fn_out,
-                fn_ndx=fn_ndx,
-                n_steps=config['nsteps_nvt'],
-                maxwarn=maxwarn
-            )
-            (train_dir /
-             f'nvt-{i:03d}.mdp').write_text(fn_nvt_local.read_text())
-            (train_dir / f'win-{i:03d}.gro').write_text(
-                deffnm_nvt.with_suffix('.gro').read_text())
-
-            # Copy index and topology files to the train directory
-            (train_dir / fn_ndx.name).write_text(fn_ndx.read_text())
-            (train_dir /
-             f'topol-{i:03d}.top').write_text(fn_topol_processed.read_text())
-
-            # Prepare CP2K input
-            win_dir = cp2k_dir / f'win-{i:03d}'
-            win_dir.mkdir(exist_ok=True)
-            remove_vsites(u, win_dir / 'pos.xyz')
-            strip_topol(str(fn_topol_processed), str(deffnm_nvt) + '.gro',
-                        str(win_dir / 'topol.top'), str(win_dir / 'pos.gro'))
-
-            atom_indices = get_restraint_atom_indices(
-                str(win_dir / 'pos.gro'), sel)
-            restraint_info = [
-                {'atoms': ' '.join(i.astype(str)), 'target': x0_, 'k': k_ / 2}
-                for i, x0_, k_ in zip(atom_indices, x0, k)
-            ]
-
-            for specs in [{'eq': True, 'restart': False, 'fn': 'md-eq-start.inp'},
-                          {'eq': True, 'restart': True, 'fn': 'md-eq-restart.inp'},
-                          {'eq': False, 'restart': True, 'fn': 'md-prod.inp'}]:
-                make_cp2k_input(
-                    config['project'],
-                    charge,
-                    mult,
-                    box_avg[:3].astype(str),
-                    win_dir / 'pos.xyz',
-                    restraint_info,
-                    specs['eq'],
-                    specs['restart'],
-                    win_dir / specs['fn']
+                logger.info("NpT equilibration: skipped (box defined)", level=2)
+                box_avg = np.array(box)
+                u = mda.Universe(
+                    deffnm_em.with_suffix('.tpr'),
+                    deffnm_em.with_suffix('.gro'),
+                    to_guess=('elements', 'masses')
                 )
+                fn_coord = deffnm_em.with_suffix('.gro')
 
-            i += 1
-            logger.info(message + ': Done')
+            done_topologies[fn_topol] = {
+                'fn_topol_processed': fn_topol_processed,
+                'fn_coord': fn_coord,
+                'universe': u,
+                'box': box_avg,
+                'maxwarn': maxwarn,
+            }
+
+        # --- NVT equilibration (for all systems) ---
+        topol_data = done_topologies[fn_topol]
+        fn_topol_processed = topol_data['fn_topol_processed']
+        u = topol_data['universe']
+        box = topol_data['box']
+        maxwarn = topol_data['maxwarn']
+
+        fn_mdp_nvt = config['fn_mdp_nvt'][i]
+        fn_nvt_local = prep_dir / f'nvt-{i:03d}.mdp'
+        fn_ndx = prep_dir / f'index-{i:03d}.ndx'
+        fn_coord = prep_dir / f'system-{i:03d}.gro'
+        fn_topol_local = fn_topol_processed.with_name(f'system-{i:02d}.top')
+        fn_topol_local.write_text(fn_topol_processed.read_text())
+
+        if restraint:
+            atoms, x0, k = restraint['atoms'], restraint['x0'], restraint['k']
+            create_restraint_window(u, atoms, x0, box, fn_coord)
+            insert_pull_code(fn_mdp_nvt, atoms, x0, k, fn_nvt_local)
+            make_ndx(u, atoms, fn_out=fn_ndx)
+        else:
+            atoms, x0, k = [], [], []
+            make_ndx(u, None, fn_out=fn_ndx)
+            with mda.Writer(fn_coord, 'w') as w:
+                ts = u.trajectory[-1]
+                ts.dimensions = box
+                w.write(u.atoms)
+            fn_nvt_local.write_text(fn_mdp_nvt.read_text())
+
+        deffnm_nvt = prep_dir / f'2-nvt-{i:03d}'
+        logger.info("NVT equilibration: in progress...", overwrite=True, level=2)
+        run_md(deffnm_nvt, fn_mdp_nvt, fn_topol_local, fn_coord,
+               fn_ndx, n_steps=config['nsteps_nvt'][i], maxwarn=maxwarn)
+        logger.info("NVT equilibration: Done.", level=2)
+
+        # Save training artifacts
+        for src, dst in [
+            (fn_nvt_local, train_dir / f'nvt-{i:03d}.mdp'),
+            (fn_coord, train_dir / f'system-{i:03d}.gro'),
+            (fn_ndx, train_dir / fn_ndx.name),
+            (fn_topol_local, train_dir / f'topol-{i:03d}.top'),
+        ]:
+            dst.write_text(src.read_text())
+
+        # --- CP2K input preparation ---
+        logger.info("CP2k input: in progress...", overwrite=True, level=2)
+        cp2k_win_dir = cp2k_dir / f'win-{i:03d}'
+        cp2k_win_dir.mkdir(exist_ok=True)
+
+        remove_vsites(u, cp2k_win_dir / 'pos.xyz')
+        strip_topol(str(fn_topol_processed), str(deffnm_nvt) + '.gro',
+                    str(cp2k_win_dir / 'topol.top'), str(cp2k_win_dir / 'pos.gro'))
+
+        atom_indices = get_restraint_atom_indices(
+            str(cp2k_win_dir / 'pos.gro'), atoms)
+        restraint_info = [
+            {'atoms': ' '.join(map(str, idx)), 'target': x0_, 'k': k_ / 2}
+            for idx, x0_, k_ in zip(atom_indices, x0, k)
+        ]
+
+        for specs in [
+            {'eq': True, 'restart': False, 'fn': 'md-eq-start.inp'},
+            {'eq': True, 'restart': True,  'fn': 'md-eq-restart.inp'},
+            {'eq': False, 'restart': True, 'fn': 'md-prod.inp'},
+        ]:
+            make_cp2k_input(config['project'], charge, mult,
+                            box[:3].astype(str), cp2k_win_dir / 'pos.xyz',
+                            restraint_info, specs['eq'], specs['restart'],
+                            cp2k_win_dir / specs['fn'])
+
+        logger.info("CP2k input: Done.", level=2)
+        logger.info("", level=0)
 
 
 if __name__ == "__main__":
