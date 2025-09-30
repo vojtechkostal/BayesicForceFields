@@ -37,7 +37,8 @@ def load_config(fn_config: str) -> dict:
         raise ValueError("Missing 'trainset_dir' in FFMD configuration.")
     config['ffmd']['trainset_dir'] = Path(config['ffmd']['trainset_dir']).resolve()
     if not config['ffmd']['trainset_dir'].exists():
-        raise FileNotFoundError(f"Trainset directory not found: {config['ffmd']['trainset_dir']}")
+        raise FileNotFoundError(
+            f"Trainset directory not found: {config['ffmd']['trainset_dir']}")
 
     if 'results_dir' not in config:
         config['results_dir'] = fn_config.parent
@@ -46,7 +47,7 @@ def load_config(fn_config: str) -> dict:
 
     if 'base_name' not in config:
         config['base_name'] = 'qoi'
-    
+
     if 'fn_log' not in config:
         config['fn_log'] = 'out.log'
     config['fn_log'] = config['results_dir'] / config['fn_log']
@@ -83,7 +84,7 @@ def _infer_observations(
         for name, n in i.observations.items():
             observations[name] = observations.get(name, 0) + n
 
-    #if "hb" in observations:
+    # if "hb" in observations:
     #    observations["hb"] = len(valid_hb)
 
     if "restr" in observations and "rdf" in observations:
@@ -137,16 +138,16 @@ def main(fn_config: str) -> None:
     observations = _infer_observations(qoi_ref, valid_hb)
 
     train_data = TrainData(
-        X=trainset_info.inputs,
-        y=y_train,
-        y_ref=y_true,
+        inputs=trainset_info.inputs,
+        outputs=y_train,
+        outputs_ref=y_true,
         observations=observations,
         settings=settings
     )
 
     fn_base = config['results_dir'] / config['base_name']
     train_data.write(fn_base)
-    Specs(trainset_info.specs).save(fn_base.with_name(fn_base.name + '-specs.yml'))
+    Specs(trainset_info.specs).save(fn_base.with_name(fn_base.name + '-specs.yaml'))
     if config.get('write_raw_qoi', False):
         fn_qoi_train = fn_base.with_name(fn_base.name + '-train.raw.json')
         fn_qoi_ref = fn_base.with_name(fn_base.name + '-ref.raw.json')
