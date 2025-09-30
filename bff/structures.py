@@ -6,6 +6,7 @@ import numpy as np
 import torch
 from torch.distributions import Normal, Uniform
 from scipy.stats.qmc import LatinHypercube
+from scipy.stats import gaussian_kde
 
 from .bayes.utils import initialize_backend
 from .io.utils import load_yaml, save_yaml, extract_train_dir
@@ -166,108 +167,6 @@ class TrainData:
         # save yaml settings
         fn_settings = fn_base.with_name(fn_base.name + "-settings.yaml")
         save_yaml(self.settings or {}, fn_settings)
-
-
-# class TrainData:
-#     def __init__(
-#         self,
-#         inputs: np.ndarray | list,
-#         data: np.ndarray,
-#         reference: np.ndarray | list
-#     ) -> None:
-#         if len(inputs) != len(data):
-#             raise ValueError("Number of samples in inputs and data do not match.")
-#         if data.shape[1] != len(reference):
-#             raise ValueError("Number of features in data and reference do not match.")
-
-#         self._inputs = inputs
-#         self.qoi = data
-#         self.qoi_reference = reference
-
-#     @property
-#     def qoi_names(self) -> set[str]:
-#         return {name for s in self.qoi_reference for name in s.names}
-
-#     @property
-#     def X(self) -> np.ndarray:
-#         """Parameters from all samples."""
-#         return np.asarray(self._inputs)
-
-#     @property
-#     def y(self) -> np.ndarray:
-#         """Rows = samples, columns = flattened features."""
-#         flatten_samples = [self._flatten_qoi(sample) for sample in self.qoi]
-#         return {
-#             qoi: np.array([s[qoi] for s in flatten_samples])
-#             for qoi in self.qoi_names
-#         }
-
-#     @property
-#     def y_true(self) -> list[float]:
-#         """Flat list of reference QoI values."""
-#         return {
-#             qoi: np.array(v)
-#             for qoi, v in self._flatten_qoi(self.qoi_reference).items()
-#         }
-
-#     @property
-#     def observations(self) -> dict[str, int]:
-#         """Total number of observations for each QoI."""
-
-#         observations = defaultdict(int)
-#         for i in self.qoi_reference:
-#             for name, n in i.observations.items():
-#                 observations[name] += n
-#         if "hb" in observations.keys():
-#             observations["hb"] = len(self._valid_hb)
-#         if "restr" in observations.keys() and "rdf" in observations.keys():
-#             observations["restr"] = observations["rdf"]
-
-#         return observations
-
-#     @property
-#     def n_samples(self) -> int:
-#         return self.qoi.shape[0]
-
-#     @property
-#     def _valid_hb(self) -> np.ndarray:
-#         return np.unique([
-#             hb_name
-#             for s in self.qoi_reference if hasattr(s, "hb")
-#             for hb_name in s.hb
-#         ])
-
-#     @property
-#     def rdf_sigmoid_mean(self) -> np.ndarray:
-#         """Sigmoid mean to transform RDFs."""
-#         rs = [sigmoid(r) for trj in self.qoi_reference for r, g in trj.rdf.values()]
-#         return np.array(rs).flatten()
-
-#     def _flatten_qoi(self, sample: list[QoI]) -> dict[str, list]:
-#         """Group QoI values without flattening."""
-#         blocks = {attr: [] for attr in self.qoi_names}
-#         for s in sample:
-#             for attr in self.qoi_names:
-#                 if not hasattr(s, attr):
-#                     continue
-#                 val = getattr(s, attr)
-#                 if attr in {"rdf", "restr"}:
-#                     for _, (_, y) in val.items():
-#                         blocks[attr].extend(y)
-#                 elif attr == "hb":
-#                     blocks[attr].extend(
-#                         s.hb.get(hb_name, 0)
-#                         for hb_name in self._valid_hb
-#                     )
-#                 else:
-#                     blocks[attr].extend(val)
-#         return blocks
-
-#     def __repr__(self):
-#         return (
-#             f"{self.n_samples} samples\n"
-#             f"QoI: {self.qoi_names}"
-#         )
 
 
 class Bounds:
@@ -549,6 +448,26 @@ class OptimizationResults(MCMCResults, Specs):
     def labels_explicit_(self):
         """Generate labels for the explicit parameters."""
         return self._get_labels('explicit')
+    
+    @property
+    def map(self):
+        """Return maximum a posteriori (MAP) estimates for all parameters."""
+        param_modes, nuisance_modes = [], []
+
+        for param, label in zip(self.chain_implicit_.T, self.labels_implicit_):
+            x = np.linspace(param.min(), param.max(), 1000)
+            density = gaussian_kde(param)
+            mode = x[np.argmax(density(x))]
+            if "sigma_" in label:
+                nuisance_modes.append(mode)
+            else:
+                param_modes.append(mode)
+
+        q_implicit = self.total_charge - np.sum(param_modes * self.constraint_matrix)
+        param_modes_all = np.insert(param_modes, self.implicit_param_pos, q_implicit)
+        map_all = np.concat((param_modes_all, nuisance_modes))
+        
+        return dict(zip(self.labels_explicit_, map_all))
 
     def _get_labels(self, kind):
         if kind == 'implicit':
