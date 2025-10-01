@@ -222,8 +222,7 @@ def plot_corner(
                     0.5, 1, quantiles_label,
                     transform=ax.transAxes,
                     ha='center',
-                    va='bottom',
-                    fontsize=10
+                    va='bottom'
                 )
             elif i > j:
                 x, y = samples[::10, j], samples[::10, i]
