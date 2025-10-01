@@ -1,11 +1,17 @@
 fn_log: out.log
 fn_train:
-  - inputs: ../04-qoi/qoi-inputs.npy
-    outputs: ../04-qoi/qoi-train.npz
-    outputs_ref: ../04-qoi/qoi-ref.npz
-    observations: ../04-qoi/qoi-observations.npz
+  - inputs: ../04-qoi/qoi-train-inputs.npy
+    outputs:
+      rdf: ../04-qoi/qoi-train-rdf.npy
+      hb: ../04-qoi/qoi-train-hb.npy
+      restr: ../04-qoi/qoi-train-restr.npy
+    outputs_ref:
+      rdf: ../04-qoi/qoi-ref-rdf.npy
+      hb: ../04-qoi/qoi-ref-hb.npy
+      restr: ../04-qoi/qoi-ref-restr.npy
+    observations: ../04-qoi/qoi-observations.yaml
     settings: ../04-qoi/qoi-settings.yaml
-fn_specs: ../04-qoi/qoi-specs.yml
+fn_specs: ../04-qoi/qoi-specs.yaml
 lgp:
   QoI:
     - rdf
