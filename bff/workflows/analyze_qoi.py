@@ -12,6 +12,7 @@ from ..structures import QoI, TrainData, Specs
 def load_config(fn_config: str) -> dict:
 
     fn_config = Path(fn_config).resolve()
+    base_dir = fn_config.parent
     config = load_yaml(fn_config)
 
     required_keys = ['aimd', 'ffmd']
@@ -21,36 +22,29 @@ def load_config(fn_config: str) -> dict:
 
     aimd_keys = ['fn_coord', 'fn_topol', 'fn_trj']
     for key in aimd_keys:
-        resolved_paths = []
         if key not in config['aimd']:
             raise ValueError(f"Missing required key in AIMD configuration: {key}")
-        for fn in config['aimd'][key]:
-            resolved_path = Path(fn).resolve()
-            if not resolved_path.exists():
-                raise FileNotFoundError(f"File not found: {resolved_path}")
-            resolved_paths.append(resolved_path)
+        for i, fn in enumerate(config['aimd'][key]):
+            config['aimd'][key][i] = (base_dir / fn).resolve()
+
     aimd_lengths = [len(config['aimd'][key]) for key in aimd_keys]
     if len(set(aimd_lengths)) != 1:
         raise ValueError("AIMD configuration lists must have the same length.")
 
     if not config['ffmd'].get('trainset_dir'):
         raise ValueError("Missing 'trainset_dir' in FFMD configuration.")
-    config['ffmd']['trainset_dir'] = Path(config['ffmd']['trainset_dir']).resolve()
+    config['ffmd']['trainset_dir'] = (base_dir / config['ffmd']['trainset_dir']).resolve()
     if not config['ffmd']['trainset_dir'].exists():
         raise FileNotFoundError(
             f"Trainset directory not found: {config['ffmd']['trainset_dir']}")
 
-    if 'results_dir' not in config:
-        config['results_dir'] = fn_config.parent
-    config['results_dir'] = Path(config['results_dir']).resolve()
-    config['results_dir'].mkdir(parents=True, exist_ok=True)
-
     if 'base_name' not in config:
-        config['base_name'] = 'qoi'
+        config['base_name'] = './qoi'
+    config['base_name'] = (base_dir / config['base_name']).resolve()
 
     if 'fn_log' not in config:
         config['fn_log'] = 'out.log'
-    config['fn_log'] = config['results_dir'] / config['fn_log']
+    config['fn_log'] = (base_dir / config['fn_log']).resolve()
 
     return config
 
@@ -98,8 +92,7 @@ def main(fn_config: str) -> None:
     config = load_config(fn_config)
     logger = Logger(name='analyze_qoi', fn_log=config['fn_log'])
 
-    logger.info("Analysing Quantities of Interest (QoI)", level=0)
-    logger.info("======================================\n", level=0)
+    logger.info("=== Quantities of Interest (QoI) Analysis ===\n", level=0)
 
     settings = get_all_settings(config['settings'])
 
@@ -110,6 +103,7 @@ def main(fn_config: str) -> None:
     logger.info("", level=0)
     logger.info("Reference QoI: in progress...", level=1, overwrite=True)
     t0 = time.time()
+
     qoi_ref = analyze_all_trajectories(
         **config['aimd'],
         **settings,
@@ -145,7 +139,7 @@ def main(fn_config: str) -> None:
         settings=settings
     )
 
-    fn_base = config['results_dir'] / config['base_name']
+    fn_base = config['base_name']
     train_data.write(fn_base)
     Specs(trainset_info.specs).save(fn_base.with_name(fn_base.name + '-specs.yaml'))
     if config.get('write_raw_qoi', False):
