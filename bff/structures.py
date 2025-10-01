@@ -118,6 +118,14 @@ class TrainData:
             else settings
         )
 
+        assert len(self.X) == len(next(iter(self.y.values()))), (
+            "Number of input samples does not match number of output samples."
+        )
+
+        assert self.y.keys() == self.y_ref.keys(), (
+            "Output keys do not match reference output keys."
+        )
+
     @staticmethod
     def _load_array(x: np.ndarray | str | Path) -> np.ndarray:
         if isinstance(x, (str, Path)):
@@ -172,9 +180,16 @@ class TrainData:
 
         # Save YAML files
         save_yaml(self.settings or {},
-                fn_base.with_name(fn_base.name + "-settings.yaml"))
+                  fn_base.with_name(fn_base.name + "-settings.yaml"))
         save_yaml(self.observations or {},
-                fn_base.with_name(fn_base.name + "-observations.yaml"))
+                  fn_base.with_name(fn_base.name + "-observations.yaml"))
+
+    def __repr__(self):
+        return (
+            "TrainData\n"
+            f"n_samples: {len(self.X)}\n"
+            f"QoIs: {', '.join(self.qoi_names)}"
+        )
 
 
 class Bounds:
@@ -324,16 +339,6 @@ class Specs:
 
         return valid_explicit & valid_implicit
 
-    def __repr__(self) -> str:
-        """Return a string representation of the Specs instance."""
-        return (
-            f"Specs(atomtype_counts={self.atomtype_counts}, "
-            f"mol_resname={self.mol_resname}, "
-            f"implicit_atomtype={self.implicit_atomtype}, "
-            f"total_charge={self.total_charge}, "
-            f"bounds={self.bounds_explicit})"
-        )
-
 
 class MCMCResults:
 
@@ -456,7 +461,7 @@ class OptimizationResults(MCMCResults, Specs):
     def labels_explicit_(self):
         """Generate labels for the explicit parameters."""
         return self._get_labels('explicit')
-    
+
     @property
     def map(self):
         """Return maximum a posteriori (MAP) estimates for all parameters."""
@@ -474,7 +479,7 @@ class OptimizationResults(MCMCResults, Specs):
         q_implicit = self.total_charge - np.sum(param_modes * self.constraint_matrix)
         param_modes_all = np.insert(param_modes, self.implicit_param_pos, q_implicit)
         map_all = np.concat((param_modes_all, nuisance_modes))
-        
+
         return dict(zip(self.labels_explicit_, map_all))
 
     def _get_labels(self, kind):
