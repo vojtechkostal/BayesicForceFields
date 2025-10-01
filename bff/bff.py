@@ -48,7 +48,7 @@ class BFFOptimizer:
         self.QoI = None
         self.specs = Specs(specs) if not isinstance(specs, Specs) else specs
 
-        self.logger.info("=== Bayesian Force Field Optimizer ===\n", level=0)
+        self.logger.info("=== Bayesian Force Field Optimization ===\n", level=0)
 
     @property
     def _all_qoi(self) -> list[str]:
