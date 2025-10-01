@@ -98,8 +98,8 @@ class TrainData:
     def __init__(
         self,
         inputs: np.ndarray | list | str | Path,
-        outputs: dict[str, np.ndarray] | str | Path,
-        outputs_ref: dict[str, np.ndarray] | str | Path,
+        outputs: dict[str, np.ndarray],
+        outputs_ref: dict[str, np.ndarray],
         observations: dict[str, int] | str | Path,
         settings: dict | str | Path = None
     ) -> None:
@@ -107,8 +107,16 @@ class TrainData:
         self.X = self._load_array(inputs)
         self.y = self._load_dict(outputs)
         self.y_ref = self._load_dict(outputs_ref)
-        self.observations = self._load_dict(observations)
-        self.settings = self._load_dict(settings) if settings is not None else {}
+        self.observations = (
+            load_yaml(observations)
+            if isinstance(observations, (str, Path))
+            else observations
+        )
+        self.settings = (
+            load_yaml(settings)
+            if isinstance(settings, (str, Path))
+            else settings
+        )
 
     @staticmethod
     def _load_array(x: np.ndarray | str | Path) -> np.ndarray:
@@ -118,20 +126,16 @@ class TrainData:
             return np.asarray(x)
 
     @staticmethod
-    def _load_dict(d: dict | str | Path) -> dict:
-        if isinstance(d, (str, Path)):
-            d = Path(d).resolve()
-            if d.suffix == '.npz':
-                return {
-                    k: v.item() if v.ndim == 0 else v
-                    for k, v in np.load(d).items()
-                }
-            elif d.suffix in {'.yml', '.yaml'}:
-                return load_yaml(d)
-            else:
-                raise ValueError(f"Unsupported file format: {d.suffix}")
-        elif isinstance(d, dict):
-            return d
+    def _load_dict(d: dict) -> dict:
+        loaded_dict = {}
+        for qoi, data in d.items():
+            if isinstance(data, (str, Path)):
+                data = np.load(data)
+                if data.ndim == 0:
+                    data = data.item()
+            loaded_dict[qoi] = np.asarray(data)
+
+        return loaded_dict
 
     @property
     def qoi_names(self) -> set[str]:
@@ -150,23 +154,27 @@ class TrainData:
     def write(self, fn_base: str | Path) -> None:
         fn_base = Path(fn_base).resolve()
 
-        # save X separately as .npy
-        fn_inputs = fn_base.with_name(fn_base.name + "-inputs.npy")
-        np.save(fn_inputs, self.X, allow_pickle=False)
+        # Helper to save .npy files
+        def save_npy(suffix: str, array):
+            np.save(fn_base.with_name(fn_base.name + suffix), array,
+                    allow_pickle=False)
 
-        # save dict-like data as compressed npz
-        files = {
-            "-train.npz": self.y,
-            "-ref.npz": self.y_ref,
-            "-observations.npz": self.observations,
-        }
-        for suffix, data in files.items():
-            np.savez_compressed(fn_base.with_name(fn_base.name + suffix),
-                                **data, allow_pickle=False)
+        # Save inputs
+        save_npy("-train-inputs.npy", self.X)
 
-        # save yaml settings
-        fn_settings = fn_base.with_name(fn_base.name + "-settings.yaml")
-        save_yaml(self.settings or {}, fn_settings)
+        # Save outputs
+        for qoi, data in self.y.items():
+            save_npy(f"-train-{qoi}.npy", data)
+
+        # Save references
+        for qoi, data in self.y_ref.items():
+            save_npy(f"-ref-{qoi}.npy", data)
+
+        # Save YAML files
+        save_yaml(self.settings or {},
+                fn_base.with_name(fn_base.name + "-settings.yaml"))
+        save_yaml(self.observations or {},
+                fn_base.with_name(fn_base.name + "-observations.yaml"))
 
 
 class Bounds:
