@@ -67,6 +67,7 @@ cd ../03-training-trjs
 bff runsims config-local.yaml
 ```
 
+###### WARNING HERE, NOTEBOOK NAMES HAVE CHANGED IN MY INSTALLATION #####
 4. Infer the most likely set of force-field charges that reproduce the reference data.
 This step can be executed either via command line as the steps above (usefull when working on a cluster) but it also can be done in a jupyter notebook which is convenient for the subsequent visualization and analysis.
 ```sh
