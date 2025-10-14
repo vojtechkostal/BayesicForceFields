@@ -48,7 +48,7 @@ The parameterization uses data from a triplet of simulations: 1. aqueous species
 1. Create the systems
 ```sh
 cd ./examples/acetate/01-prepare
-bff initialize config.yaml
+bff initialize config.yml
 ```
 Generates the necessary files and directories for both reference (CP2K) and training (GROMACS) trajectories.
 This step also includes initial NpT equilibration for all systems.
