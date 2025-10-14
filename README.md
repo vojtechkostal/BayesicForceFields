@@ -18,7 +18,7 @@ LGP's hyperparameters are optimized and their uncertainty can be propagated to t
 * [PyYAML](https://pypi.org/project/PyYAML/) (handling .yaml files)
 * [Matplotlib](https://matplotlib.org/) (Plotting)
 
-## Instalation
+## Installation
 1. Clone this repository and (preferably) create and activate a new environment using `mamba` or `conda` as:
 ```sh
 cd BayesicForceFields
