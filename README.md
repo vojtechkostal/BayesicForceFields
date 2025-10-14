@@ -5,8 +5,8 @@
 Bayesic Force Fields (BFF) is a Python package designed for optimizing parameters of fixed-charge force fields for molecular dynamics, specifically the `charges`, and van der Waals parameters `sigma` and `epsilon`.
 The optimization is based on structural data derived from reference trajectories, typically obtained through *ab initio* molecular dynamics simulations in order to effectively account for the `electronic polarization effects`.
 
-The optimization uses the `Bayesian inference` driven by Markov Chain Monte Carlo (MCMC) sampling with `Local Gaussian process (LGP)` as a surrogate model replacing running the (usually) costly MD simulations.
-LGP's hyperparameters are optimized and their uncertainty can be propagated to the posterior.
+The optimization uses `Bayesian inference` driven by Markov Chain Monte Carlo (MCMC) sampling with a `Local Gaussian process (LGP)` as a surrogate model for the (usually) costly MD simulations.
+The LGP hyperparameters are optimized and their uncertainty can be propagated to the posterior.
 
 ## Dependencies (non-standard)
 
