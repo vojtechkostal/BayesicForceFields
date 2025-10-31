@@ -8,36 +8,49 @@ class Logger:
     """
     A logging utility that supports logging to a file
     or console without duplicate output.
-
-    Parameters
-    ----------
-    fn_log : str, optional
-        Path to the log file. If None, logs are printed to the console.
-    width : int, default=100
-        Ensures full overwriting of progress messages in the console.
-    verbose : bool, default=True
-        Whether to print messages to stdout when logging to file.
     """
 
     def __init__(
-        self, fn_log: str = None, width: int = 100, verbose: bool = True
+        self, name: str, fn_log: str = None, width: int = 100, verbose: bool = True
     ) -> None:
+
+        """
+        Parameters
+        ----------
+        name : str
+            Name of the logger.
+        fn_log : str, optional
+            Filename to log messages to. If None, logs to console.
+        width : int, default=100
+            Width for message formatting.
+        verbose : bool, default=True
+            If False, suppresses logging output.
+        """
+
         self.fn_log = fn_log
         self.width = width
         self.verbose = verbose
-        self.logger = logging.getLogger("custom_logger")
+
+        self.logger = logging.getLogger(name)
         self.logger.setLevel(logging.INFO)
 
         # Remove old handlers if re-running in Jupyter
-        self.logger.handlers.clear()
+        if self.logger.hasHandlers():
+            self.logger.handlers.clear()
 
-        if self.fn_log:
-            # Only add file handler if logging to file
-            handler = logging.FileHandler(self.fn_log)
-            handler.setFormatter(logging.Formatter("%(message)s"))
-            self.logger.addHandler(handler)
+        formatter = logging.Formatter("%(message)s")
 
-    def info(self, message: str, overwrite: bool = False) -> None:
+        if fn_log:
+            handler = logging.FileHandler(fn_log)
+        else:
+            handler = logging.StreamHandler()
+            handler.terminator = ""
+        handler.setFormatter(formatter)
+        self.logger.addHandler(handler)
+
+        self.logger.propagate = False  # Prevent double logging
+
+    def info(self, message: str, level: int, overwrite: bool = False) -> None:
         """
         Logs a message to a file or console, optionally overwriting the console output.
 
@@ -48,15 +61,21 @@ class Logger:
         overwrite : bool, default=False
             If True, the message overwrites the previous console output (stdout only).
         """
-        if self.fn_log:
-            self.logger.info(message)  # Always log to file if specified
 
-        # Handle stdout printing separately
-        if self.verbose and self.fn_log is None:
-            if overwrite:
-                print(message.ljust(self.width), end='\r', flush=True)
+        if self.verbose:
+            if level < 1:
+                start = ''
+            elif level == 1:
+                start = '> '
             else:
-                print(message.ljust(self.width), flush=True)
+                start = ' ' * 2 * (level - 1) + '- '
+            message = start + f"{message}".ljust(self.width)
+            if self.fn_log:
+                self.logger.info(message)  # Always log to file if specified
+
+            else:
+                terminator = '\r' if overwrite else '\n'
+                self.logger.info(message + terminator)  # Log to logger (console)
 
 
 def print_progress(
@@ -77,18 +96,21 @@ def print_progress(
     logger : Logger, optional
         Logger instance for logging progress messages.
     """
+
     start_time = time.time()
     pad = len(str(total))
+    logger = logger or Logger('progress')
 
     progress_template = (
-        "> loading training trajectories: {i:>{pad}}/{total} "
+        "Training QoI: {i:>{pad}}/{total} "
         "({percent:3.0f}%) | {elapsed} < {eta}"
     )
 
     progress_str = progress_template.format(
         i=0, pad=pad, total=total, percent=0, elapsed='0s', eta='NaN'
     )
-    logger.info(progress_str, overwrite=True)
+
+    logger.info(progress_str, level=1, overwrite=True)
 
     for i, item in enumerate(iterable, 1):
         yield item
@@ -105,8 +127,7 @@ def print_progress(
                 eta=format_time(eta)
             )
 
-            if logger is not None:
-                logger.info(progress_str, overwrite=True)
+            logger.info(progress_str, level=1, overwrite=True)
 
         i += 1
 
@@ -119,7 +140,6 @@ def print_progress_mcmc(
     min_chain_length: int = 100,
     rtol: float = 0.01,
     logger: Logger = None,
-    title: str = 'MCMC',
     **kwargs
 ) -> None:
     """
@@ -144,8 +164,6 @@ def print_progress_mcmc(
         for the MCMC sampling to be considered converged.
     logger : Logger, optional
         Logger instance for logging progress messages.
-    title : str, default='MCMC'
-        Title for the progress messages.
     **kwargs
         Additional arguments passed to the sampler's `sample` method.
     """
@@ -156,16 +174,17 @@ def print_progress_mcmc(
         p0, iterations=max_iter, progress=False, store=True, **kwargs
     )
     pad = len(str(max_iter))
+    logger = logger or Logger('mcmc')
 
     for i, sample in enumerate(generator, start=1):
         it = sampler.iteration
         if it >= max_iter:
-            logger.info(f"  > {title}: Did not converge in {it} iterations.")
+            logger.info(f"MCMC did not converge in {it} iterations.", level=2)
             break
 
         if i == 1:
-            progress_str = f"  > {title}: {0:>{pad}}/{max_iter}".rjust(pad)
-            logger.info(progress_str, overwrite=True)
+            progress_str = f"it. {0:>{pad}}/{max_iter}".rjust(pad)
+            logger.info(progress_str, level=1, overwrite=True)
 
         # Check convergence every `stride` steps
         if it % stride == 0:
@@ -177,16 +196,20 @@ def print_progress_mcmc(
             it_per_sec = int((i + 1) / elapsed_time) if elapsed_time > 0 else 0
 
             logger.info(
-                f"  > {title}: {it:>{pad}}/{max_iter}".rjust(pad) + ' | '
+                f"it. {it:>{pad}}/{max_iter}".rjust(pad) + " | "
                 f"{it_per_sec} it/s | "
-                f"chain: {100 * progress_chain:3.0f}%, "
-                f"fluct: {100 * progress_fluct:3.0f}%",
+                "convergence: "
+                f"length = {100 * progress_chain:3.0f}%, "
+                f"fluctuations = {100 * progress_fluct:3.0f}%",
+                level=1,
                 overwrite=True
             )
 
             if converged:
                 t1 = time.time()
-                logger.info(f"  > {title}: Done. ({it} it. & {format_time(t1 - t0)})")
+                logger.info(
+                    f"MCMC converged in {it} it. & {format_time(t1 - t0)}", level=1
+                )
                 break
 
 
@@ -214,7 +237,7 @@ def mcmc_convergence(
     return converged, progress_chain, progress_fluct, tau_new
 
 
-def format_time(seconds):
+def format_time(seconds: float) -> str:
     """Format seconds as hours, minutes, and seconds."""
     hours, remainder = divmod(seconds, 3600)
     minutes, seconds = divmod(remainder, 60)

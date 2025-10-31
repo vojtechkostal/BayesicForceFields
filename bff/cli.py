@@ -25,8 +25,13 @@ def help():
     typer.echo("\nAvailable commands:")
     typer.echo("  initialize   Creates the system")
     typer.echo("  runsims      Run MDs (training or validation).")
-    typer.echo("  optimize     Runs the Bayesian inference of the force field parameters.")
+    typer.echo("  analyze_qoi  Analyze the QoI from simulations.")
+    typer.echo(
+        "  optimize     Runs the Bayesian inference"
+        " of the force field parameters."
+    )
     typer.echo("  version      Show package version.")
+    typer.echo("  help         Show this help message.")
 
 
 def run_workflow(
@@ -74,7 +79,21 @@ def runsims(
 
 
 @app.command()
-def optimize(
+def analyze(
+    fn_config: Optional[Path] = typer.Argument(
+        None, help="Path to the configuration file (required)."
+    )
+):
+    """
+    Analyze the Quantity of Interest (QoI) from simulation data
+    as configured in the given config file.
+    """
+    from bff.workflows.analyze_qoi import main as analyze_qoi_main
+    run_workflow(fn_config, analyze_qoi_main, "analyze_qoi")
+
+
+@app.command()
+def learn(
     fn_config: Optional[Path] = typer.Argument(
         None, help="Path to the configuration file (required)."
     )
@@ -82,8 +101,8 @@ def optimize(
     """
     Run molecular simulations as configured in the given config file.
     """
-    from bff.workflows.optimize import main as optimize_main
-    run_workflow(fn_config, optimize_main, "optimize")
+    from bff.workflows.learn import main as learn_main
+    run_workflow(fn_config, learn_main, "optimize")
 
 
 if __name__ == "__main__":

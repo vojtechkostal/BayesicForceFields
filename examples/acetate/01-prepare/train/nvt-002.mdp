@@ -1,0 +1,57 @@
+title                     = Water
+; Run parameters
+integrator                = md
+nsteps                    = 500000
+dt                        = 0.002
+
+; Output control
+nstxout                   = 0
+nstvout                   = 0
+nstenergy                 = 500
+nstlog                    = 500
+nstxout-compressed        = 5000
+
+; Bond parameters
+continuation              = no
+constraint-algorithm      = lincs
+constraints               = h-bonds
+
+; Nonbonded settings
+cutoff-scheme             = Verlet
+nstlist                   = 10
+rlist                     = 0.6
+
+; vdW settings
+vdwtype                   = PME
+rvdw                      = 0.7
+vdw-modifier              = Potential-Shift
+
+; Electrostatics
+coulombtype               = PME
+rcoulomb                  = 0.7
+
+; Temperature coupling
+tcoupl                    = v-rescale
+tau-t                     = 1.0
+ref-t                     = 300
+tc-grps                   = system
+
+; Pressure coupling
+pcoupl                    = no
+pcoupltype                = isotropic
+tau-p                     = 1.0
+ref-p                     = 1.0
+compressibility           = 4.5e-05
+pull                      = yes
+pull-ncoords              = 1
+pull-ngroups              = 2
+pull-group1-name          = C2
+pull-group2-name          = CAL
+pull-coord1-type          = umbrella
+pull-coord1-geometry      = distance
+pull-coord1-dim           = Y Y Y
+pull-coord1-groups        = 1 2
+pull-coord1-start         = no
+pull-coord1-init          = 0.5
+pull-coord1-rate          = 0.0
+pull-coord1-k             = 20000

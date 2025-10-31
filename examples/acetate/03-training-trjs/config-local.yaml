@@ -10,9 +10,9 @@ gromacs:
     - ../01-prepare/train/nvt-001.mdp
     - ../01-prepare/train/nvt-002.mdp
   fn_coordinates:
-    - ../01-prepare/train/win-000.gro
-    - ../01-prepare/train/win-001.gro
-    - ../01-prepare/train/win-002.gro
+    - ../01-prepare/train/system-000.gro
+    - ../01-prepare/train/system-001.gro
+    - ../01-prepare/train/system-002.gro
   fn_topol:
     - ../01-prepare/train/topol-000.top
     - ../01-prepare/train/topol-001.top
@@ -22,9 +22,9 @@ gromacs:
     - ../01-prepare/train/index-001.ndx
     - ../01-prepare/train/index-002.ndx
   n_steps:
-    - 55000
-    - 55000
-    - 55000
+    - 200000
+    - 200000
+    - 200000
 bounds:
   charge CC: [0.0, 1.0]
   charge OC: [-0.8, -0.3]
@@ -35,7 +35,7 @@ total_charge: -0.80
 n_samples: 10
 compress: false
 cleanup: true
-store: false
+store: ['xtc']
 python: python3.13
 gmx_cmd: gmx
 job_scheduler: local

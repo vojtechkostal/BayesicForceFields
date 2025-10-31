@@ -22,9 +22,9 @@ gromacs:
     - ../01-prepare/train/index-001.ndx
     - ../01-prepare/train/index-002.ndx
   n_steps:
-    - 55000
-    - 55000
-    - 55000
+    - 200000
+    - 200000
+    - 200000
 bounds:
   charge CC: [0.0, 1.0]
   charge OC: [-0.8, -0.3]
@@ -35,14 +35,14 @@ total_charge: -0.80
 n_samples: 10
 compress: false
 cleanup: true
-store: false
+store: ['xtc']
 python: python3.13
 gmx_cmd: gmx
 job_scheduler: slurm
 slurm:
   max_parallel_jobs: 1500
   preamble:
-    job-name: hpo4-train
+    job-name: ace
     nodes: 1
     ntasks-per-node: 1
     cpus-per-task: 1

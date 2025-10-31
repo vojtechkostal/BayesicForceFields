@@ -21,6 +21,7 @@ def smape(y_true: torch.tensor, y_pred: torch.tensor) -> float:
 
     return torch.mean(abs_diff / norm)
 
+
 def initialize_backend(fn_backend: str):
     """Initialize the backend for the MCMC sampler."""
     return emcee.backends.HDFBackend(fn_backend)
@@ -55,38 +56,17 @@ def initialize_walkers(
         stds = torch.tensor([p.scale for p in priors.values()])
         p0 = torch.normal(means.expand(n_walkers, -1), stds.expand(n_walkers, -1))
     else:
-        n_params = len(specs.bounds_implicit.bounds)
+        n_params = specs.n_params_implicit
         n_dim = len(priors)
 
         p0 = torch.empty((n_walkers, n_dim))
         count = 0
         while count < n_walkers:
             p0_trial = torch.tensor([p.sample().item() for p in priors.values()])
-            if valid_bounds(p0_trial[:n_params].unsqueeze(0), specs):
+            if specs.is_valid(p0_trial[:n_params]):
                 p0[count] = p0_trial
                 count += 1
     return p0
-
-
-def valid_bounds(params: torch.Tensor, specs: object) -> torch.Tensor:
-    """
-    Check if all the samples fall within explicit and implicit constraints.
-    Assumes params is a 2D torch tensor of shape (batch_size, n_params)
-    """
-    lbe, ube = torch.tensor(specs.bounds_implicit.values).T
-    lbi, ubi = torch.tensor(specs.implicit_param_bounds)
-
-    params = check_tensor(params, device=lbe.device)
-
-    valid_explicit = ((params > lbe) & (params < ube)).all(dim=1)
-
-    constraint_matrix = torch.tensor(
-        specs.constraint_matrix, dtype=params.dtype, device=params.device)
-    q_explicit = torch.sum(params * constraint_matrix, dim=1)
-    q_implicit = specs.total_charge - q_explicit
-    valid_implicit = (q_implicit >= lbi) & (q_implicit <= ubi)
-
-    return valid_explicit & valid_implicit
 
 
 def check_tensor(x, device):
@@ -229,20 +209,13 @@ def find_map(
     logger: callable = None
 ):
 
-    logger.info(
-        '  > optimizing hyperparameters: stable learning rate search: in progres...',
-        overwrite=True
-    )
+    logger.info("learning rate search: in progres...", level=2, overwrite=True)
+
     lr_opt = 0.5 * find_max_stable_lr(fn, x0, learning_rates=lr)
     if lr_opt is not None:
-        logger.info(
-            (
-                '  > optimizing hyperparameters: stable learning rate search: Done. | '
-                f'{lr_opt:.1e}'
-            )
-        )
+        logger.info(f"learning rate search: Done. | lr = {lr_opt:.1e}", level=2)
     else:
-        raise ValueError('No stable learning rate found.')
+        raise ValueError("No stable learning rate found.")
 
     x0 = x0.clone().detach().to(device).requires_grad_(True)
     optimizer = torch.optim.SGD([x0], lr=lr_opt)
@@ -255,20 +228,21 @@ def find_map(
         if i % 100 == 0 and logger is not None:
             logger.info(
                 (
-                    f"  > optimizing hyperparameters: it. {i}/{max_iter} | "
+                    f"MAP search: it. {i}/{max_iter} | "
                     f"loss: {loss.item():.3f} | grad: {grad_norm:.3f}/{tol_grad}"
                 ),
+                level=2,
                 overwrite=True
             )
         optimizer.step()
         if grad_norm < tol_grad:
-            logger.info('  > optimizing hyperparameters: Done.')
+            logger.info("MAP search: Done.", level=2)
             break
 
     else:
         logger.info(
-            '  > optimizing hyperparameters: Fail. | '
-            'Max iterations reached without convergence.'
+            "MAP search: Fail. | Max iterations reached without convergence.",
+            level=2
         )
 
     return x0.detach()

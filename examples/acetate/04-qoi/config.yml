@@ -1,0 +1,30 @@
+fn_log: out.log
+base_name: qoi
+results_dir: ./
+write_raw_qoi: False
+aimd:
+  fn_coord:
+    - ../01-prepare/cp2k/win-000/pos.gro
+    - ../01-prepare/cp2k/win-001/pos.gro
+    - ../01-prepare/cp2k/win-002/pos.gro
+  fn_topol:
+    - ../01-prepare/cp2k/win-000/topol.top
+    - ../01-prepare/cp2k/win-001/topol.top
+    - ../01-prepare/cp2k/win-002/topol.top
+  fn_trj:
+    - ../02-reference-trjs/ace-000.xtc
+    - ../02-reference-trjs/ace-001.xtc
+    - ../02-reference-trjs/ace-002.xtc
+  start: 1
+  stop: -1
+  step: 1
+settings:
+  rdf_kwargs:
+    r_range: [1, 7]
+    smooth: false
+  hbond_kwargs: {}
+  restraint_kwargs:
+    unbias: false
+ffmd:
+  trainset_dir: ../03-training-trjs/trainset
+  progress_stride: 1

@@ -33,7 +33,9 @@ def load_config(config: str | Path):
     if validate:
         required_keys.extend(['inputs', 'fn_specs'])
     else:
-        required_keys.extend(['mol_resname', 'bounds', 'total_charge', 'implicit_atomtype', 'n_samples'])
+        required_keys.extend(
+            ['mol_resname', 'bounds', 'total_charge', 'implicit_atomtype', 'n_samples']
+        )
 
     for key in required_keys:
         if key not in config:
@@ -42,18 +44,23 @@ def load_config(config: str | Path):
             config[key] = str(Path(config[key]).resolve())
 
     # --- GROMACS section ---
-    gmx_required = ['fn_topol', 'fn_coordinates', 'fn_mdp_em', 'fn_mdp_prod', 'fn_ndx', 'n_steps']
+    gmx_required = [
+        'fn_topol', 'fn_coordinates', 'fn_mdp_em', 'fn_mdp_prod', 'fn_ndx', 'n_steps'
+    ]
     gmx = config['gromacs']
     for key in gmx_required:
         if key not in gmx:
             raise ValueError(f"Missing required gromacs key: '{key}'")
-        
+
     # All list keys except n_steps must be the same length
     file_keys = [k for k in gmx_required if k != 'n_steps']
     lengths = [len(gmx[k]) for k in file_keys]
     if len(set(lengths)) != 1:
-        raise ValueError(f"GROMACS file lists must have same length, got lengths: {dict(zip(file_keys, lengths))}")
-    
+        raise ValueError(
+            "GROMACS file lists must have same length, "
+            f"got lengths: {dict(zip(file_keys, lengths))}"
+        )
+
     # Check is all the GROMACS files exist
     for key in file_keys:
         resolved_paths = []
@@ -62,29 +69,42 @@ def load_config(config: str | Path):
                 raise ValueError(f"File not found: {f} (for '{key}')")
             resolved_paths.append(str(Path(f).resolve()))
         config['gromacs'][key] = resolved_paths
-            
+
     # --- Bounds ---
     if not isinstance(config['bounds'], dict):
         raise ValueError("'bounds' must be a dict")
     for name, b in config['bounds'].items():
-        if not (isinstance(b, (list, tuple)) and len(b) == 2 and all(isinstance(x, (int, float)) for x in b)):
+        if not (
+            isinstance(b, (list, tuple))
+            and len(b) == 2
+            and all(isinstance(x, (int, float)) for x in b)
+        ):
             raise ValueError(f"Invalid bounds for '{name}': {b}")
-        
+
     # --- Numeric fields ---
     if not isinstance(config['total_charge'], (int, float)):
         raise ValueError("'total_charge' must be float")
-    if 'n_samples' in config and (not isinstance(config['n_samples'], int) or config['n_samples'] <= 0):
+    if (
+        'n_samples' in config
+        and (
+            not isinstance(config['n_samples'], int)
+            or config['n_samples'] <= 0
+        )
+    ):
         raise ValueError("'n_samples' must be a positive integer")
-    
+
     # --- Python executable ---
     if not shutil.which(config['python']):
         raise ValueError(f"Python interpreter not found: {config['python']}")
-    
+
     # --- Scheduler ---
     scheduler = config.get('job_scheduler', 'local')
     if scheduler != 'local':
         if scheduler not in SCHEDULER_CLASSES:
-            raise ValueError(f"Unsupported scheduler '{scheduler}'. Supported: {list(SCHEDULER_CLASSES)}")
+            raise ValueError(
+                f"Unsupported scheduler '{scheduler}'. "
+                f"Supported: {list(SCHEDULER_CLASSES)}"
+            )
         if scheduler not in config:
             raise ValueError(f"Missing scheduler settings for '{scheduler}'")
         sched_conf = config[scheduler]
@@ -92,11 +112,11 @@ def load_config(config: str | Path):
         for key in required_sched_keys:
             if key not in sched_conf:
                 raise ValueError(f"Scheduler '{scheduler}' must define '{key}'")
-            
+
     # --- misc ---
     config['compress'] = config.get('compress', False)
     config['cleanup'] = config.get('cleanup', False)
-    config['store'] = config.get('store', False)
+    config['store'] = config.get('store', ['xtc'])
 
     return config, validate
 
@@ -251,16 +271,17 @@ def print_train_summary(config, logger):
     Print a summary of the configuration settings.
     """
 
-    logger.info("")
-    logger.info(f"> Generating training set for: {config['mol_resname']}")
-    logger.info("  > parameters:")
+    logger.info("", level=0)
+    logger.info("=== Generating training set ===\n", level=0)
+    logger.info(f"molecule name: {config['mol_resname']}", level=1)
+    logger.info("parameters:", level=1)
     for name, b in config['bounds'].items():
-        if name.split()[1] == config['implicit_atomtype']:
-            logger.info(f"    {name}: {b} (implicit)")
+        param, atomtype = name.split()
+        if atomtype == config['implicit_atomtype'] and param == 'charge':
+            logger.info(f"{name}: {b} (implicit)", level=2)
         else:
-            logger.info(f"    {name}: {b}")
-    logger.info(f"  > total charge: {config['total_charge']}")
-    logger.info('')
+            logger.info(f"{name}: {b}", level=2)
+    logger.info(f"total charge: {config['total_charge']}\n", level=1)
 
 
 def print_validate_summary(fn_specs, logger):
@@ -268,9 +289,9 @@ def print_validate_summary(fn_specs, logger):
     Print a summary of the configuration settings.
     """
     specs = Specs(fn_specs)
-    logger.info("")
-    logger.info(f"> Generating validation set for: {specs.mol_resname}")
-    logger.info("")
+    logger.info("", level=0)
+    logger.info("=== Generating validation set ===\n", level=0)
+    logger.info(f"molecule name: {specs.mol_resname}\n", level=1)
 
 
 # ---- Main Workflow ----
@@ -302,8 +323,9 @@ def main(fn_config):
     for idx, p in enumerate(iterator):
 
         logger.info(
-            f"> Running MD: {idx+1}/{n_total} "
+            f"Running MD: {idx+1}/{n_total} "
             f"({((idx + 1) / n_total * 100):.0f}%)",
+            level=1,
             overwrite=True
         )
 
@@ -355,7 +377,7 @@ def main(fn_config):
     if job_scheduler != 'local' and n_max > 0:
         control_jobs(job_ids, job_scheduler)
 
-    logger.info(f"> Running MD: {n_total}/{n_total} (100%) | Done.")
+    logger.info(f"Running MD: {n_total}/{n_total} (100%) | Done.", level=1)
 
     # Cleanup
     clean_up_train_dir(

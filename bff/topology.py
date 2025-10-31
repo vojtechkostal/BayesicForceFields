@@ -23,6 +23,12 @@ warnings.filterwarnings(
     module="MDAnalysis.topology.ITPParser"
 )
 
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    module="MDAnalysis.topology.PDBParser"
+)
+
 MASSES = np.array(list(MDA_MASSES.values()))
 ELEMENTS = list(MDA_MASSES.keys())
 

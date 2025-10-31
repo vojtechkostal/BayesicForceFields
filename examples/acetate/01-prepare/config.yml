@@ -1,0 +1,33 @@
+# Required arguments
+project: ace
+gmx_cmd: gmx
+fn_topol:
+  - ./topol.top
+  - ./topol-ions.top
+  - ./topol-ions.top
+fn_mol:
+  - ./ace.gro
+  - ./ace.gro
+  - ./ace.gro
+charge:
+  - -1
+  - 1
+  - 1
+mult:
+  - 1
+  - 1
+  - 1
+restraints:
+  - null
+  - atoms: ['C2 CAL']
+    x0: [0.35]
+    k: [20000]
+  - atoms: ['C2 CAL']
+    x0: [0.50]
+    k: [20000]
+box:
+  - [15.7107, 15.7107, 15.7107, 90, 90, 90]
+  - [15.7480, 15.7480, 15.7480, 90, 90, 90]
+  - [15.7480, 15.7480, 15.7480, 90, 90, 90]
+nsteps_npt: 100000
+nsteps_nvt: 100000
