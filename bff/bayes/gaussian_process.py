@@ -109,10 +109,16 @@ class LGPCommittee:
     lgps : list of LocalGaussianProcess
         List of LGP models.
     """
-    def __init__(self, lgps: list[LocalGaussianProcess], n_observations: int) -> None:
+    def __init__(
+        self,
+        lgps: list[LocalGaussianProcess],
+        n_observations: int,
+        stochastic: bool = False
+    ) -> None:
         self.lgps = lgps
         self.error = None
         self.observations = n_observations
+        self.stochastic = stochastic
 
     @property
     def size(self):
@@ -132,7 +138,15 @@ class LGPCommittee:
         torch.Tensor
             Averaged predicted outputs of shape (n_samples, output_dim).
         """
-        return torch.stack([lgp.predict(X) for lgp in self.lgps]).mean(dim=0)
+
+        if self.size > 1 and self.stochastic:
+            # Select a random model and return its prediction
+            idx = torch.randint(self.size, (1,)).item()
+            return self.lgps[idx].predict(X)
+
+        # Otherwise, return the mean prediction across all models
+        predictions = torch.stack([lgp.predict(X) for lgp in self.lgps])
+        return predictions.mean(dim=0).squeeze(0)
 
     def validate(self, X_test: torch.Tensor, y_test: torch.Tensor) -> float:
         """
