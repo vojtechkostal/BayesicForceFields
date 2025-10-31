@@ -25,9 +25,9 @@ def help():
     typer.echo("\nAvailable commands:")
     typer.echo("  initialize   Creates the system")
     typer.echo("  runsims      Run MDs (training or validation).")
-    typer.echo("  analyze_qoi  Analyze the QoI from simulations.")
+    typer.echo("  analyze      Analyze the QoI from simulations.")
     typer.echo(
-        "  optimize     Runs the Bayesian inference"
+        "  learn     Runs the Bayesian inference"
         " of the force field parameters."
     )
     typer.echo("  version      Show package version.")
