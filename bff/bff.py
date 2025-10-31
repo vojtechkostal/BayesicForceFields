@@ -5,7 +5,7 @@ from .structures import Specs, OptimizationResults
 from .io.logs import Logger, print_progress_mcmc
 
 
-class BFFOptimizer:
+class BFFLearn:
     """
     Main optimization class for Bayesian Force Field (BFF) parameter optimization
     employing Local Gaussian Processes as surrogate models.

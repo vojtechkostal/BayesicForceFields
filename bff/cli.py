@@ -93,7 +93,7 @@ def analyze(
 
 
 @app.command()
-def optimize(
+def learn(
     fn_config: Optional[Path] = typer.Argument(
         None, help="Path to the configuration file (required)."
     )
@@ -101,8 +101,8 @@ def optimize(
     """
     Run molecular simulations as configured in the given config file.
     """
-    from bff.workflows.optimize import main as optimize_main
-    run_workflow(fn_config, optimize_main, "optimize")
+    from bff.workflows.learn import main as learn_main
+    run_workflow(fn_config, learn_main, "optimize")
 
 
 if __name__ == "__main__":
