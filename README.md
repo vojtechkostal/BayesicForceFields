@@ -67,10 +67,6 @@ cd ../03-training-trjs
 bff runsims config-local.yaml
 ```
 
-<<<<<<< HEAD
-###### WARNING HERE, NOTEBOOK NAMES HAVE CHANGED IN MY INSTALLATION #####
-4. Infer the most likely set of force-field charges that reproduce the reference data.
-=======
 4. Analyze quantities of interest.
 Analyze the QoIs for the training and reference dataset.
 ```sh
@@ -80,7 +76,6 @@ bff analyze config.yaml
 
 5. Learn the posterior distribution.
 Infer the most likely set of force-field parameters that reproduce the reference data.
->>>>>>> dev
 This step can be executed either via command line as the steps above (usefull when working on a cluster) but it also can be done in a jupyter notebook which is convenient for the subsequent visualization and analysis.
 ```sh
 cd ../05-learning
