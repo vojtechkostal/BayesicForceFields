@@ -132,8 +132,9 @@ def main(fn_config: str) -> None:
 
     if np.all(success):
         if job_scheduler != 'local':
-            pattern = "*" if config['store'] else "*.xtc"
-            for file in run_dir.glob(pattern):
+            patterns = ["*." + ext for ext in config['store']]
+            files = list(sum((list(run_dir.glob(p)) for p in patterns), []))
+            for file in files:
                 shutil.copy(file, data_dir / file.name)
     else:
         for file in run_dir.glob("*.xtc"):

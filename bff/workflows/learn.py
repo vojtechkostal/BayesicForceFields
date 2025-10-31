@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 
-from ..bff import BFFOptimizer
+from ..bff import BFFLearn
 from ..structures import TrainData
 from ..io.logs import Logger
 from ..io.utils import load_yaml
@@ -69,10 +69,10 @@ def main(fn_config):
     logger = Logger(name='optimize', fn_log=config['fn_log'])
 
     train_data = [TrainData(**files) for files in config['fn_train']]
-    optimizer = BFFOptimizer(*train_data, specs=config['fn_specs'], logger=logger)
+    learner = BFFLearn(*train_data, specs=config['fn_specs'], logger=logger)
 
-    optimizer.setup_LGP(**config.get('lgp', {}))
-    optimizer.run(**config.get('mcmc', {}))
+    learner.setup_LGP(**config.get('lgp', {}))
+    learner.run(**config.get('mcmc', {}))
 
 
 if __name__ == "__main__":

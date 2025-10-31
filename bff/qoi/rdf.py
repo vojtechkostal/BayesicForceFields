@@ -125,6 +125,6 @@ def compute_all_rdfs(
     for atomtype in mol_atomtypes:
         atoms_reference = universe.select_atoms(f"type {atomtype}")
         r, g = compute_rdf(universe, atoms_reference, atoms_solvent, **kwargs)
-        rdfs[atomtype] = [r, g]
+        rdfs[atomtype] = np.array([r, g])
 
     return rdfs

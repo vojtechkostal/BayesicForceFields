@@ -67,17 +67,27 @@ cd ../03-training-trjs
 bff runsims config-local.yaml
 ```
 
+<<<<<<< HEAD
 ###### WARNING HERE, NOTEBOOK NAMES HAVE CHANGED IN MY INSTALLATION #####
 4. Infer the most likely set of force-field charges that reproduce the reference data.
+=======
+4. Analyze quantities of interest.
+Analyze the QoIs for the training and reference dataset.
+```sh
+cd ../04-qoi
+bff analyze config.yaml
+``` 
+
+5. Learn the posterior distribution.
+Infer the most likely set of force-field parameters that reproduce the reference data.
+>>>>>>> dev
 This step can be executed either via command line as the steps above (usefull when working on a cluster) but it also can be done in a jupyter notebook which is convenient for the subsequent visualization and analysis.
 ```sh
-cd ../04-optimization
-bff optimize config.yaml
+cd ../05-learning
+bff learn config.yaml
 ```
 
-or you can open a jupyter notebook in the `05-analysis` directory and run the optimization interactively.
+or you can open a jupyter notebook (`analysis.ipynb`) in the `05-learning-interactive` directory and run the optimization interactively.
 
-5. Visualization
+6. Visualization
 Using the afforementioned jupyter notebook, you can either use the interactive code there or you can load the generated files and visualize results.
-
-## Config files
