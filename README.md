@@ -23,7 +23,7 @@ The LGP hyperparameters are optimized and their uncertainty can be propagated to
 ```sh
 cd BayesicForceFields
 mamba env create -f ./environment.yml
-mamba activate bffdev
+mamba activate bff
 ```
 
 3. install the package:
