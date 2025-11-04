@@ -10,6 +10,7 @@ fn_train:
       hb: ../04-qoi/qoi-ref-hb.npy
       restr: ../04-qoi/qoi-ref-restr.npy
     observations: ../04-qoi/qoi-observations.yaml
+    nuisances: ../04-qoi/qoi-nuisances.yaml
     settings: ../04-qoi/qoi-settings.yaml
 fn_specs: ../04-qoi/qoi-specs.yaml
 lgp:
