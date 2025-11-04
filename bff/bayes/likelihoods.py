@@ -83,8 +83,8 @@ def gaussian_log_likelihood(
         Parameters of the surrogate model, shape (n_samples, n_params + n_sigma).
     y_true : dict
         True values for the observations, keys are the QoI.
-    surrogate : object
-        Surrogate model with a `predict` method.
+    surrogate : dict
+        Dictionary of surrogate models for given QoIs.
     specs : Specs
         Specifications object containing the bounds for the parameters.
 
@@ -97,15 +97,22 @@ def gaussian_log_likelihood(
     # Assign device
     device = theta.device
 
-    # Split the theta into parameters and sigma
-    n_params = theta.shape[1] - len(surrogate)
-    params, sigma = theta[:, :n_params], theta[:, n_params:]
+    # Split the theta into parameters and nuisances
+    n_free_nuisance = sum(model.nuisance is None for model in surrogate.values())
+    n_params = theta.shape[1] - n_free_nuisance
+    params, nuisances = theta[:, :n_params], theta[:, n_params:]
+
+    # Build full sigma: insert fixed nuisances
+    j = 0
+    nuisances_full = torch.empty((len(theta), len(surrogate)), device=device)
+    for i, model in enumerate(surrogate.values()):
+        nuisances_full[:, i] = model.nuisance or nuisances[:, j]
+        j += model.nuisance is None  # increment j only for free parameters
 
     # Check if the parameters are within the valid bounds
     if specs is not None:
         mask = specs.is_valid(params)
-        params = params[mask]
-        sigma = sigma[mask]
+        params, nuisances = params[mask], nuisances_full[mask]
     else:
         mask = slice(None)
 
@@ -113,7 +120,7 @@ def gaussian_log_likelihood(
     log_likelihood = torch.full((len(theta), ), -torch.inf, device=device)
     if mask.any():
         log_like_valid = torch.zeros(mask.sum(), device=device)
-        for (qoi, model), sigma_exp in zip(surrogate.items(), sigma.exp().T):
+        for (qoi, model), sigma_exp in zip(surrogate.items(), nuisances.exp().T):
             y_trial = model.predict(params)
             N = model.observations
             diff = y_true[qoi] - y_trial

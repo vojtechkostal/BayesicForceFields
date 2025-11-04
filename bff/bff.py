@@ -48,14 +48,14 @@ class BFFLearn:
         self.QoI = None
         self.specs = Specs(specs) if not isinstance(specs, Specs) else specs
 
-        self.logger.info("=== Bayesian Force Field Optimization ===\n", level=0)
+        self.logger.info("=== Bayesian Force Field Learning ===\n", level=0)
 
     @property
     def _all_qoi(self) -> list[str]:
         """
         Get a list of all unique QoI names from the training datasets.
         """
-        return list({qoi for d in self.train_data for qoi in d.qoi_names})
+        return sorted({qoi for d in self.train_data for qoi in d.qoi_names})
 
     def setup_LGP(
         self,
@@ -114,6 +114,7 @@ class BFFLearn:
 
             trainset = next(d for d in self.train_data if qoi in d.qoi_names)
             N = (trainset.observations.get(qoi) or 0) * obs_factor
+            nuisance = trainset.nuisances.get(qoi, None)
 
             if qoi == "rdf" and means.get("rdf") == "sigmoid":
                 y_mean = trainset.rdf_sigmoid_mean
@@ -129,6 +130,7 @@ class BFFLearn:
                 n_hyper=n_max,
                 committee=committee,
                 observations=N,
+                nuisance=nuisance,
                 device=device,
                 logger=self.logger,
                 opt_kwargs=kwargs
