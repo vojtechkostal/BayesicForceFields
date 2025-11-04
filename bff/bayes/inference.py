@@ -72,7 +72,7 @@ def log_posterior(
 
 
 def initialize_mcmc_sampler(
-    surrogate: object,
+    surrogate: dict,
     specs: object,
     QoI: list[str],
     y_true: dict,
@@ -87,9 +87,8 @@ def initialize_mcmc_sampler(
 
     Parameters
     ----------
-    surrogate : object
-        Surrogate model used for predictions.
-        Must have a `predict` method.
+    surrogate : dict
+        Dictionary of surrogate models used for predictions.
     specs : object
         Object that contains specifications of the system.
     QoI : list[str]
@@ -119,7 +118,8 @@ def initialize_mcmc_sampler(
     """
 
     # Define priors based on the implicit parameter bounds
-    priors = define_param_priors(specs.bounds_implicit._bounds, QoI, priors_disttype)
+    QoI_n = [q for q, m in surrogate.items() if m.nuisance is None and q in QoI]
+    priors = define_param_priors(specs.bounds_implicit._bounds, QoI_n, priors_disttype)
 
     # Initialize backend
     n_dim = len(priors)
@@ -167,6 +167,7 @@ def lgp_hyperopt(
     n_hyper: int,
     committee: int,
     observations: int,
+    nuisance: float,
     device: str,
     logger: callable,
     opt_kwargs: dict
@@ -193,6 +194,8 @@ def lgp_hyperopt(
         Number of LGP models in the ensemble.
     observations : int
         Number of observations.
+    nuisance : float
+        Nuisance parameter value.
     device : str
         Device to perform computations on (e.g., 'cpu' or 'cuda').
     logger : callable
@@ -242,7 +245,6 @@ def lgp_hyperopt(
         y_mean = check_tensor(y_mean, device='cpu')
 
         priors = define_hyper_priors(X.shape[1])
-        # p0 = initialize_walkers(priors, 1).squeeze(0)
         p0 = torch.tensor([p.mean for p in priors.values()])
 
         log_likelihood = partial(
@@ -279,7 +281,7 @@ def lgp_hyperopt(
         lgps.append(LocalGaussianProcess(X_train, y_train, y_mean, l, w, s, device))
         logger.info(f'Committee: {i}/{committee}', level=2, overwrite=True)
 
-    lgp_committee = LGPCommittee(lgps, observations)
+    lgp_committee = LGPCommittee(lgps, observations, nuisance)
 
     # Validate the surrogate
     lgp_committee.validate(X_test, y_test)

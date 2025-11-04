@@ -113,11 +113,13 @@ class LGPCommittee:
         self,
         lgps: list[LocalGaussianProcess],
         n_observations: int,
+        nuisance: float = None,
         stochastic: bool = False
     ) -> None:
         self.lgps = lgps
         self.error = None
         self.observations = n_observations
+        self.nuisance = nuisance
         self.stochastic = stochastic
 
     @property

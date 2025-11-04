@@ -101,22 +101,17 @@ class TrainData:
         outputs: dict[str, np.ndarray],
         outputs_ref: dict[str, np.ndarray],
         observations: dict[str, int] | str | Path,
+        nuisances: dict[str, float] | str | Path = None,
         settings: dict | str | Path = None
     ) -> None:
 
         self.X = self._load_array(inputs)
         self.y = self._load_dict(outputs)
         self.y_ref = self._load_dict(outputs_ref)
-        self.observations = (
-            load_yaml(observations)
-            if isinstance(observations, (str, Path))
-            else observations
-        )
-        self.settings = (
-            load_yaml(settings)
-            if isinstance(settings, (str, Path))
-            else settings
-        )
+
+        self.observations = self._load_yaml(observations)
+        self.nuisances = self._load_yaml(nuisances) or {}
+        self.settings = self._load_yaml(settings)
 
         assert len(self.X) == len(next(iter(self.y.values()))), (
             "Number of input samples does not match number of output samples."
@@ -144,6 +139,10 @@ class TrainData:
             loaded_dict[qoi] = np.asarray(data)
 
         return loaded_dict
+
+    @staticmethod
+    def _load_yaml(data: str | Path | dict) -> dict:
+        return load_yaml(data) if isinstance(data, (str, Path)) else data
 
     @property
     def qoi_names(self) -> set[str]:
@@ -174,7 +173,7 @@ class TrainData:
         for qoi, data in self.y.items():
             save_npy(f"-train-{qoi}.npy", data)
 
-        # Save references
+        # Save reference data
         for qoi, data in self.y_ref.items():
             save_npy(f"-ref-{qoi}.npy", data)
 
@@ -183,6 +182,8 @@ class TrainData:
                   fn_base.with_name(fn_base.name + "-settings.yaml"))
         save_yaml(self.observations or {},
                   fn_base.with_name(fn_base.name + "-observations.yaml"))
+        save_yaml(self.nuisances or {},
+                  fn_base.with_name(fn_base.name + "-nuisances.yaml"))
 
     def __repr__(self):
         return (
