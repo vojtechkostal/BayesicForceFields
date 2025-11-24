@@ -224,22 +224,26 @@ def initialize_environment(config, validate):
 #         )
 #     n_active = jobs.stdout.count('\n')
 #     return n_active
-def get_active_jobs(ids, scheduler):
-    """Return number of active jobs from a list of job IDs, safe for large lists."""
+def get_active_jobs(ids, scheduler, chunk_size=1000):
     if scheduler != 'slurm':
-        raise NotImplementedError(
-            f"Job scheduler '{scheduler}' is not supported for job monitoring."
-        )
+        raise NotImplementedError
+
+    def chunks(lst, n):
+        for i in range(0, len(lst), n):
+            yield lst[i:i+n]
 
     n_active = 0
-    for jid in ids:
-        # Query each job separately to avoid long argument lists
+    for chunk in chunks(ids, chunk_size):
+        ids_str = ','.join(map(str, chunk))
         res = subprocess.run(
-            ['squeue', '-j', str(jid), '--noheader', '--format', '%i,%t'],
+            ['squeue', '-j', ids_str, '--noheader', '--format', '%i,%t'],
             capture_output=True,
             text=True
         )
-        if res.stdout.strip():
+        # each line = one active job
+        n_active += res.stdout.strip().count('\n')
+        # handle case with single line no newline
+        if res.stdout.strip() and not res.stdout.endswith('\n'):
             n_active += 1
 
     return n_active
