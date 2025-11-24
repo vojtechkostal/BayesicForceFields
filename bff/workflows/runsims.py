@@ -209,20 +209,39 @@ def initialize_environment(config, validate):
 
 
 # ---- Job Monitoring ----
-def get_active_jobs(ids, scheduler):
-    """Get the number of active jobs from a list of job IDs."""
-    ids_str = ','.join(ids)
+# def get_active_jobs(ids, scheduler):
+#     """Get the number of active jobs from a list of job IDs."""
+#     ids_str = ','.join(ids)
 
-    if scheduler == 'slurm':
-        jobs = subprocess.run(
-            ['squeue', '-j', ids_str, '--noheader', '--format', '%i,%t'],
-            capture_output=True,
-            text=True)
-    else:
+#     if scheduler == 'slurm':
+#         jobs = subprocess.run(
+#             ['squeue', '-j', ids_str, '--noheader', '--format', '%i,%t'],
+#             capture_output=True,
+#             text=True)
+#     else:
+#         raise NotImplementedError(
+#             f"Job scheduler '{scheduler}' is not supported for job monitoring."
+#         )
+#     n_active = jobs.stdout.count('\n')
+#     return n_active
+def get_active_jobs(ids, scheduler):
+    """Return number of active jobs from a list of job IDs, safe for large lists."""
+    if scheduler != 'slurm':
         raise NotImplementedError(
             f"Job scheduler '{scheduler}' is not supported for job monitoring."
         )
-    n_active = jobs.stdout.count('\n')
+
+    n_active = 0
+    for jid in ids:
+        # Query each job separately to avoid long argument lists
+        res = subprocess.run(
+            ['squeue', '-j', str(jid), '--noheader', '--format', '%i,%t'],
+            capture_output=True,
+            text=True
+        )
+        if res.stdout.strip():
+            n_active += 1
+
     return n_active
 
 
