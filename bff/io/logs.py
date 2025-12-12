@@ -11,7 +11,7 @@ class Logger:
     """
 
     def __init__(
-        self, name: str, fn_log: str = None, width: int = 100, verbose: bool = True
+        self, name: str, fn_log: str = None, width: int = None, verbose: bool = True
     ) -> None:
 
         """
@@ -21,7 +21,7 @@ class Logger:
             Name of the logger.
         fn_log : str, optional
             Filename to log messages to. If None, logs to console.
-        width : int, default=100
+        width : int, default=None
             Width for message formatting.
         verbose : bool, default=True
             If False, suppresses logging output.
@@ -62,6 +62,10 @@ class Logger:
             If True, the message overwrites the previous console output (stdout only).
         """
 
+        # determine width of the line automatically if not set
+        if self.width is None:
+            width = len(message) + 10
+
         if self.verbose:
             if level < 1:
                 start = ''
@@ -69,7 +73,7 @@ class Logger:
                 start = '> '
             else:
                 start = ' ' * 2 * (level - 1) + '- '
-            message = start + f"{message}".ljust(self.width)
+            message = start + f"{message}".ljust(width)
             if self.fn_log:
                 self.logger.info(message)  # Always log to file if specified
 
