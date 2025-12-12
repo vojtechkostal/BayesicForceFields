@@ -7,7 +7,7 @@ if platform.system() == "Darwin":
     os.environ["MKL_NUM_THREADS"] = "1"  # Limit MKL threads to 1
 
 from .bff import BFFLearn
-from . import postprocessing
+from . import plotting
 from . import qoi
 from . import data
 from . import topology
@@ -20,7 +20,7 @@ __version__ = "0.1.0"
 
 __all__ = [
     "BFFLearn",
-    "postprocessing",
+    "plotting",
     "qoi",
     "data",
     "topology",
