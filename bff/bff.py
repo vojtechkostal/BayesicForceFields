@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from .bayes.inference import lgp_hyperopt, initialize_mcmc_sampler
-from .structures import Specs, OptimizationResults
+from .structures import Specs, InferenceResults
 from .io.logs import Logger, print_progress_mcmc
 
 
@@ -24,8 +24,8 @@ class BFFLearn:
         The training datasets provided during initialization.
     logger : Logger
         The logger instance used for logging.
-    surrogate : dict, optional
-        A dictionary to hold the optimized surrogate models for each QoI.
+    lgp : dict, optional
+        A dictionary to hold the optimized LGP surrogate models for each QoI.
     QoI : list[str], optional
         A list of Quantity of Interest names that will be optimized.
 
@@ -44,7 +44,7 @@ class BFFLearn:
 
         self.train_data = train_data
         self.logger = logger or Logger("BFF")
-        self.surrogate = None
+        self.lgp = None
         self.QoI = None
         self.specs = Specs(specs) if not isinstance(specs, Specs) else specs
 
@@ -57,7 +57,7 @@ class BFFLearn:
         """
         return sorted({qoi for d in self.train_data for qoi in d.qoi_names})
 
-    def setup_LGP(
+    def setup_lgp(
         self,
         QoI: list[str] = None,
         n_max: int = 200,
@@ -107,7 +107,7 @@ class BFFLearn:
         self.logger.info("Optimizing LGP surrogates", level=0)
         self.logger.info("-------------------------", level=0)
 
-        surrogate = {}
+        lgp = {}
         for qoi in self.QoI:
 
             self.logger.info(f"QoI: {qoi}", level=1)
@@ -121,7 +121,7 @@ class BFFLearn:
             else:
                 y_mean = means.get(qoi, 0.0)
 
-            lgp = lgp_hyperopt(
+            lgp_qoi = lgp_hyperopt(
                 X=trainset.X,
                 y=trainset.y[qoi],
                 y_mean=y_mean,
@@ -136,9 +136,9 @@ class BFFLearn:
                 opt_kwargs=kwargs
             )
 
-            surrogate[qoi] = lgp
+            lgp[qoi] = lgp_qoi
 
-        self.surrogate = surrogate
+        self.lgp = lgp
 
         self.logger.info("", level=0)
 
@@ -153,7 +153,7 @@ class BFFLearn:
         restart: bool = True,
         device: str = 'cuda:0',
         **kwargs
-    ) -> OptimizationResults:
+    ) -> InferenceResults:
 
         """
         Run MCMC posterior sampling using the optimized LGP surrogates.
@@ -187,7 +187,7 @@ class BFFLearn:
             An object containing the MCMC sampling results, including samples, priors,
             and autocorrelation times.
         """
-        if not self.surrogate:
+        if not self.lgp:
             raise ValueError("LGP surrogate not set up. Call 'setup_LGP' first.")
 
         y_true = {
@@ -198,7 +198,7 @@ class BFFLearn:
         }
 
         p0, priors, sampler = initialize_mcmc_sampler(
-            self.surrogate,
+            self.lgp,
             self.specs,
             self.QoI,
             y_true,
@@ -214,7 +214,7 @@ class BFFLearn:
 
         print_progress_mcmc(sampler, p0, max_iter, logger=self.logger, **kwargs)
         tau = sampler.get_autocorr_time(tol=0)
-        results = OptimizationResults(sampler, priors, tau, self.specs.data)
+        results = InferenceResults(sampler, priors, tau, self.specs.data)
 
         if fn_priors:
             results.save_priors(fn_priors)
