@@ -66,12 +66,12 @@ def main(fn_config):
 
     config = load_config(fn_config)
 
-    logger = Logger(name='optimize', fn_log=config['fn_log'])
+    logger = Logger(name='learn', fn_log=config['fn_log'])
 
     train_data = [TrainData(**files) for files in config['fn_train']]
     learner = BFFLearn(*train_data, specs=config['fn_specs'], logger=logger)
 
-    learner.setup_LGP(**config.get('lgp', {}))
+    learner.setup_lgp(**config.get('lgp', {}))
     learner.run(**config.get('mcmc', {}))
 
 
