@@ -1,4 +1,3 @@
-import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -436,9 +435,9 @@ class MCMCResults:
         np.save(str(fn_out), self.tau)
 
 
-class OptimizationResults(MCMCResults, Specs):
+class InferenceResults(MCMCResults, Specs):
     def __init__(self, chain, priors, tau, specs) -> None:
-        """Store and process optimization results."""
+        """Store and process learning results."""
         MCMCResults.__init__(self, chain, priors, tau)
         Specs.__init__(self, specs)
 
@@ -536,6 +535,85 @@ class OptimizationResults(MCMCResults, Specs):
 
         self.samples = chain_samples
 
+
+    def sample_posterior(
+        self,
+        n_samples: int = 10,
+        distribution: str = 'normal',
+        confidence: float = 0.9,
+        complete: bool = False,
+        fn_out: str = None
+    ) -> np.ndarray:
+        """
+        Draw samples from the posterior using
+        either uniform or Laplace distribution.
+        """
+        lower, upper = (1 - confidence) / 2, 1 - (1 - confidence) / 2
+        samples = self.chain_implicit_[:, :self.n_params_implicit]
+        confint = np.quantile(samples, [lower, upper], axis=0)
+
+        if distribution == 'normal':
+            mean = np.mean(samples, axis=0)
+            cov = np.cov(samples, rowvar=False)
+        elif distribution != 'uniform':
+            raise ValueError(
+                (
+                    f'Unknown distribution "{distribution}". '
+                    'Options are "uniform" or "normal".'
+                )
+            )
+
+        samples_out = np.empty((n_samples, len(self.bounds_implicit.params)))
+        uniform_range = np.diff(confint, axis=0).ravel()
+
+        i, attempts, max_attempts = 0, 0, n_samples * 1000  # Safety limit
+
+        while i < n_samples and attempts < max_attempts:
+            if distribution == 'uniform':
+                random_values = np.random.rand(len(uniform_range)) * uniform_range
+                sample = random_values + confint[0]
+                sample.reshape(1, -1)
+            else:
+                if cov.size == 1:
+                    sample = np.random.normal(mean, cov, size=1)[:, np.newaxis]
+                else:
+                    sample = np.random.multivariate_normal(mean, cov, size=1)
+
+            is_within_confint = np.all(
+                np.logical_and(sample >= confint[0], sample <= confint[1])
+            )
+            if is_within_confint and self.is_valid(sample):
+                samples_out[i] = sample
+                i += 1
+            attempts += 1
+
+        if i < n_samples:
+            raise RuntimeError(
+                "Failed to generate enough valid samples within max attempts."
+            )
+
+        if complete:
+            q_explicit = np.sum(samples_out * self.constraint_matrix, axis=1)
+            q_implicit = self.total_charge - q_explicit
+            samples_out = np.insert(
+                samples_out, self.implicit_param_pos, q_implicit, axis=1)
+
+            param_names = self.bounds_explicit.params.tolist()
+        else:
+            param_names = self.bounds_implicit.params.tolist()
+
+        if fn_out:
+            if fn_out.endswith('.npy'):
+                np.save(fn_out, samples_out)
+            elif fn_out.endswith('.yaml'):
+                samples_dict = dict(zip(param_names, samples_out.T))
+                save_yaml(samples_dict, fn_out)
+            else:
+                raise ValueError('fn_out must end with .npy or .yaml')
+
+        return samples_out
+
+
     def _compute_explicit_params(self) -> np.ndarray:
         """
         Compute the explicit parameters from the implicit parameters.
@@ -579,6 +657,7 @@ class RandomParamsGenerator(Specs):
             )
 
         n_dim = len(self.bounds_implicit._bounds)
+        self.n_samples = 0
         self.sampler = LatinHypercube(n_dim)
         self.lbe, self.ube = self.bounds_implicit.values.T
         self.lbi, self.ubi = getattr(
@@ -599,6 +678,7 @@ class RandomParamsGenerator(Specs):
     def __call__(self, n) -> None:
         """Advance the sampler to skip the next n samples."""
         self.sampler.fast_forward(n)
+        self.n_samples += n
 
     def generate(self, n, assign_hash=False):
         """
@@ -633,6 +713,7 @@ class RandomParamsGenerator(Specs):
         filtered_samples = scaled_samples[mask]
 
         if assign_hash:
-            hash = secrets.token_hex(8)
+            # hash = secrets.token_hex(8)
+            hash = str(self.n_samples)
             return hash, filtered_samples
         return filtered_samples
