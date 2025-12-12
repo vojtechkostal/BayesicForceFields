@@ -208,22 +208,7 @@ def initialize_environment(config, validate):
     return fn_specs
 
 
-# ---- Job Monitoring ----
-# def get_active_jobs(ids, scheduler):
-#     """Get the number of active jobs from a list of job IDs."""
-#     ids_str = ','.join(ids)
-
-#     if scheduler == 'slurm':
-#         jobs = subprocess.run(
-#             ['squeue', '-j', ids_str, '--noheader', '--format', '%i,%t'],
-#             capture_output=True,
-#             text=True)
-#     else:
-#         raise NotImplementedError(
-#             f"Job scheduler '{scheduler}' is not supported for job monitoring."
-#         )
-#     n_active = jobs.stdout.count('\n')
-#     return n_active
+# ---- Job Control ----
 def get_active_jobs(ids, scheduler, chunk_size=1000):
     if scheduler != 'slurm':
         raise NotImplementedError
@@ -343,7 +328,8 @@ def main(fn_config):
     # Main loop to generate samples
     samples = {}
     job_ids = []
-    for idx, p in enumerate(iterator):
+    pad = len(str(n_total))
+    for idx, sample in enumerate(iterator):
 
         logger.info(
             f"Running MD: {idx+1}/{n_total} "
@@ -353,12 +339,13 @@ def main(fn_config):
         )
 
         # Generate sample or use provided input
-        if validate:
-            hash, sample = str(idx), p
-        else:
+        if not validate:
+            # hash, sample = str(idx), p
+        # else:
+            hash = f"{idx:0{pad}d}"
             max_attempts = 1000
             for _ in range(max_attempts):
-                hash, sample = sampler.generate(1, assign_hash=True)
+                sample = sampler.generate(1)
                 if sample.size > 0:
                     sample = sample.squeeze(0)
                     break
