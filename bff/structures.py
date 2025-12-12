@@ -680,7 +680,7 @@ class RandomParamsGenerator(Specs):
         self.sampler.fast_forward(n)
         self.n_samples += n
 
-    def generate(self, n, assign_hash=False):
+    def generate(self, n):
         """
         Generate random parameter samples within specified bounds.
 
@@ -712,8 +712,4 @@ class RandomParamsGenerator(Specs):
         # Filtered samples based on the mask
         filtered_samples = scaled_samples[mask]
 
-        if assign_hash:
-            # hash = secrets.token_hex(8)
-            hash = str(self.n_samples)
-            return hash, filtered_samples
         return filtered_samples
