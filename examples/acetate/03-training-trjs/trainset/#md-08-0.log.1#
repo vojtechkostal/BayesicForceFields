@@ -1,0 +1,3390 @@
+                      :-) GROMACS - gmx mdrun, 2024.3 (-:
+
+Copyright 1991-2024 The GROMACS Authors.
+GROMACS is free software; you can redistribute it and/or modify it
+under the terms of the GNU Lesser General Public License
+as published by the Free Software Foundation; either version 2.1
+of the License, or (at your option) any later version.
+
+                         Current GROMACS contributors:
+       Mark Abraham           Andrey Alekseenko           Vladimir Basov      
+      Cathrine Bergh            Eliane Briand               Ania Brown        
+      Mahesh Doijade            Giacomo Fiorin          Stefan Fleischmann    
+      Sergey Gorelov         Gilles Gouaillardet            Alan Gray         
+     M. Eric Irrgang         Farzaneh Jalalypour            Joe Jordan        
+     Carsten Kutzner           Justin A. Lemkul          Magnus Lundborg      
+       Pascal Merz              Vedran Miletic            Dmitry Morozov      
+       Julien Nabet              Szilard Pall        Andrea Pasquadibisceglie 
+    Michele Pellegrino          Hubert Santuz             Roland Schulz       
+     Tatiana Shugaeva          Alexey Shvetsov            Philip Turner       
+     Alessandra Villa      Sebastian Wingbermuehle  
+
+                         Previous GROMACS contributors:
+        Emile Apol             Rossen Apostolov           James Barnett       
+        Paul Bauer          Herman J.C. Berendsen          Par Bjelkmar       
+      Christian Blau          Viacheslav Bolnykh            Kevin Boyd        
+    Aldert van Buuren          Carlo Camilloni           Rudi van Drunen      
+      Anton Feenstra           Oliver Fleetwood            Vytas Gapsys       
+       Gaurav Garg             Gerrit Groenhof            Bert de Groot       
+      Anca Hamuraru           Vincent Hindriksen          Victor Holanda      
+     Aleksei Iupinov          Christoph Junghans        Prashanth Kanduri     
+   Dimitrios Karkoulis           Peter Kasson             Sebastian Kehl      
+     Sebastian Keller             Jiri Kraus               Per Larsson        
+      Viveca Lindahl            Erik Marklund           Pieter Meulenhoff     
+      Teemu Murtola              Sander Pronk             Michael Shirts      
+      Alfons Sijbers            Balint Soproni         David van der Spoel    
+      Peter Tieleman            Carsten Uphoff             Jon Vincent        
+     Teemu Virolainen         Christian Wennberg           Maarten Wolf       
+      Artem Zhmurov       
+
+                  Coordinated by the GROMACS project leaders:
+                           Berk Hess and Erik Lindahl
+
+GROMACS:      gmx mdrun, version 2024.3
+Executable:   /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj/bin/gmx
+Data prefix:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj
+Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/03-training-trjs/trainset
+Process ID:   749292
+Command line:
+  gmx mdrun -s /home/vojta/code/BayesicForceFields/examples/acetate/03-training-trjs/trainset/md-08-0.tpr -deffnm /home/vojta/code/BayesicForceFields/examples/acetate/03-training-trjs/trainset/md-08-0
+
+GROMACS version:     2024.3
+Precision:           mixed
+Memory model:        64 bit
+MPI library:         thread_mpi
+OpenMP support:      enabled (GMX_OPENMP_MAX_THREADS = 128)
+GPU support:         CUDA
+NBNxM GPU setup:     super-cluster 2x2x2 / cluster 8
+SIMD instructions:   AVX_512
+CPU FFT library:     fftw-3.3.10-sse2-avx-avx2-avx2_128-avx512
+GPU FFT library:     cuFFT
+Multi-GPU FFT:       none
+RDTSCP usage:        enabled
+TNG support:         enabled
+Hwloc support:       hwloc-2.11.1
+Tracing support:     disabled
+C compiler:          /home/vojta/build/spack/20241108-git/lib/spack/env/gcc/gcc GNU 13.3.0
+C compiler flags:    -fexcess-precision=fast -funroll-all-loops -march=skylake-avx512 -Wno-missing-field-initializers -O3 -DNDEBUG
+C++ compiler:        /home/vojta/build/spack/20241108-git/lib/spack/env/gcc/g++ GNU 13.3.0
+C++ compiler flags:  -fexcess-precision=fast -funroll-all-loops -march=skylake-avx512 -Wno-missing-field-initializers -Wno-cast-function-type-strict SHELL:-fopenmp -O3 -DNDEBUG
+BLAS library:        External - user-supplied
+LAPACK library:      External - user-supplied
+CUDA compiler:       /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/cuda-12.6.2-plz5zr3jgy5q3kfdjopgcugs77axgokb/bin/nvcc nvcc: NVIDIA (R) Cuda compiler driver;Copyright (c) 2005-2024 NVIDIA Corporation;Built on Thu_Sep_12_02:18:05_PDT_2024;Cuda compilation tools, release 12.6, V12.6.77;Build cuda_12.6.r12.6/compiler.34841621_0
+CUDA compiler flags:-std=c++17;--generate-code=arch=compute_50,code=sm_50;--generate-code=arch=compute_52,code=sm_52;--generate-code=arch=compute_60,code=sm_60;--generate-code=arch=compute_61,code=sm_61;--generate-code=arch=compute_70,code=sm_70;--generate-code=arch=compute_75,code=sm_75;--generate-code=arch=compute_80,code=sm_80;--generate-code=arch=compute_86,code=sm_86;--generate-code=arch=compute_89,code=sm_89;--generate-code=arch=compute_90,code=sm_90;-Wno-deprecated-gpu-targets;--generate-code=arch=compute_53,code=sm_53;--generate-code=arch=compute_80,code=sm_80;-use_fast_math;-Xptxas;-warn-double-usage;-Xptxas;-Werror;-D_FORCE_INLINES;-Xcompiler;-fopenmp;-fexcess-precision=fast -funroll-all-loops -march=skylake-avx512 -Wno-missing-field-initializers -Wno-cast-function-type-strict SHELL:-fopenmp -O3 -DNDEBUG
+CUDA driver:         12.60
+CUDA runtime:        12.60
+
+
+Running on 1 node with total 6 cores, 12 processing units, 1 compatible GPU
+Hardware detected on host ada:
+  CPU info:
+    Vendor: Intel
+    Brand:  Intel(R) Core(TM) i7-7800X CPU @ 3.50GHz
+    Family: 6   Model: 85   Stepping: 4
+    Features: aes apic avx avx2 avx512f avx512cd avx512bw avx512vl avx512secondFMA clfsh cmov cx8 cx16 f16c fma hle htt intel lahf mmx msr nonstop_tsc pcid pclmuldq pdcm pdpe1gb popcnt pse rdrnd rdtscp rtm sse2 sse3 sse4.1 sse4.2 ssse3 tdt x2apic
+    Number of AVX-512 FMA units: 2
+  Hardware topology: Full, with devices
+    Packages, cores, and logical processors:
+    [indices refer to OS logical processors]
+      Package  0: [   0   6] [   1   7] [   2   8] [   3   9] [   4  10] [   5  11]
+    CPU limit set by OS: -1   Recommended max number of threads: 12
+    Numa nodes:
+      Node  0 (67095887872 bytes mem):   0   6   1   7   2   8   3   9   4  10   5  11
+      Latency:
+               0
+         0  1.00
+    Caches:
+      L1: 32768 bytes, linesize 64 bytes, assoc. 8, shared 2 ways
+      L2: 1048576 bytes, linesize 64 bytes, assoc. 16, shared 2 ways
+      L3: 8650752 bytes, linesize 64 bytes, assoc. 11, shared 12 ways
+    PCI devices:
+      0000:00:17.0  Id: 8086:a282  Class: 0x0106  Numa: 0
+      0000:01:00.0  Id: 2646:5008  Class: 0x0108  Numa: 0
+      0000:00:1f.6  Id: 8086:15b8  Class: 0x0200  Numa: 0
+      0000:65:00.0  Id: 10de:2216  Class: 0x0300  Numa: 0
+  GPU info:
+    Number of GPUs detected: 1
+    #0: NVIDIA NVIDIA GeForce RTX 3080, compute cap.: 8.6, ECC:  no, stat: compatible
+
+
+++++ PLEASE READ AND CITE THE FOLLOWING REFERENCE ++++
+M. J. Abraham, T. Murtola, R. Schulz, S. Páll, J. C. Smith, B. Hess, E.
+Lindahl
+GROMACS: High performance molecular simulations through multi-level
+parallelism from laptops to supercomputers
+SoftwareX 1 (2015) pp. 19-25
+-------- -------- --- Thank You --- -------- --------
+
+
+++++ PLEASE READ AND CITE THE FOLLOWING REFERENCE ++++
+S. Páll, M. J. Abraham, C. Kutzner, B. Hess, E. Lindahl
+Tackling Exascale Software Challenges in Molecular Dynamics Simulations with
+GROMACS
+In S. Markidis & E. Laure (Eds.), Solving Software Challenges for Exascale 8759 (2015) pp. 3-27
+-------- -------- --- Thank You --- -------- --------
+
+
+++++ PLEASE READ AND CITE THE FOLLOWING REFERENCE ++++
+S. Pronk, S. Páll, R. Schulz, P. Larsson, P. Bjelkmar, R. Apostolov, M. R.
+Shirts, J. C. Smith, P. M. Kasson, D. van der Spoel, B. Hess, and E. Lindahl
+GROMACS 4.5: a high-throughput and highly parallel open source molecular
+simulation toolkit
+Bioinformatics 29 (2013) pp. 845-54
+-------- -------- --- Thank You --- -------- --------
+
+
+++++ PLEASE READ AND CITE THE FOLLOWING REFERENCE ++++
+B. Hess and C. Kutzner and D. van der Spoel and E. Lindahl
+GROMACS 4: Algorithms for highly efficient, load-balanced, and scalable
+molecular simulation
+J. Chem. Theory Comput. 4 (2008) pp. 435-447
+-------- -------- --- Thank You --- -------- --------
+
+
+++++ PLEASE READ AND CITE THE FOLLOWING REFERENCE ++++
+D. van der Spoel, E. Lindahl, B. Hess, G. Groenhof, A. E. Mark and H. J. C.
+Berendsen
+GROMACS: Fast, Flexible and Free
+J. Comp. Chem. 26 (2005) pp. 1701-1719
+-------- -------- --- Thank You --- -------- --------
+
+
+++++ PLEASE READ AND CITE THE FOLLOWING REFERENCE ++++
+E. Lindahl and B. Hess and D. van der Spoel
+GROMACS 3.0: A package for molecular simulation and trajectory analysis
+J. Mol. Mod. 7 (2001) pp. 306-317
+-------- -------- --- Thank You --- -------- --------
+
+
+++++ PLEASE READ AND CITE THE FOLLOWING REFERENCE ++++
+H. J. C. Berendsen, D. van der Spoel and R. van Drunen
+GROMACS: A message-passing parallel molecular dynamics implementation
+Comp. Phys. Comm. 91 (1995) pp. 43-56
+-------- -------- --- Thank You --- -------- --------
+
+
+++++ PLEASE CITE THE DOI FOR THIS VERSION OF GROMACS ++++
+https://doi.org/10.5281/zenodo.13456374
+-------- -------- --- Thank You --- -------- --------
+
+Input Parameters:
+   integrator                     = steep
+   tinit                          = 0
+   dt                             = 0.001
+   nsteps                         = 10000
+   init-step                      = 0
+   simulation-part                = 1
+   mts                            = false
+   mass-repartition-factor        = 1
+   comm-mode                      = Linear
+   nstcomm                        = 100
+   bd-fric                        = 0
+   ld-seed                        = -8522889
+   emtol                          = 100
+   emstep                         = 0.001
+   niter                          = 20
+   fcstep                         = 0
+   nstcgsteep                     = 1000
+   nbfgscorr                      = 10
+   rtpi                           = 0.05
+   nstxout                        = 0
+   nstvout                        = 0
+   nstfout                        = 0
+   nstlog                         = 1000
+   nstcalcenergy                  = 100
+   nstenergy                      = 1000
+   nstxout-compressed             = 0
+   compressed-x-precision         = 1000
+   cutoff-scheme                  = Verlet
+   nstlist                        = 1
+   pbc                            = xyz
+   periodic-molecules             = false
+   verlet-buffer-tolerance        = 0.005
+   verlet-buffer-pressure-tolerance = 0.5
+   rlist                          = 0.75
+   coulombtype                    = PME
+   coulomb-modifier               = Potential-shift
+   rcoulomb-switch                = 0
+   rcoulomb                       = 0.75
+   epsilon-r                      = 1
+   epsilon-rf                     = inf
+   vdw-type                       = PME
+   vdw-modifier                   = Potential-shift
+   rvdw-switch                    = 0
+   rvdw                           = 0.75
+   DispCorr                       = No
+   table-extension                = 1
+   fourierspacing                 = 0.12
+   fourier-nx                     = 14
+   fourier-ny                     = 14
+   fourier-nz                     = 14
+   pme-order                      = 4
+   ewald-rtol                     = 1e-05
+   ewald-rtol-lj                  = 0.001
+   lj-pme-comb-rule               = Geometric
+   ewald-geometry                 = 3d
+   epsilon-surface                = 0
+   ensemble-temperature-setting   = not available
+   tcoupl                         = No
+   nsttcouple                     = -1
+   nh-chain-length                = 0
+   print-nose-hoover-chain-variables = false
+   pcoupl                         = No
+   refcoord-scaling               = No
+   posres-com (3):
+      posres-com[0]= 0.00000e+00
+      posres-com[1]= 0.00000e+00
+      posres-com[2]= 0.00000e+00
+   posres-comB (3):
+      posres-comB[0]= 0.00000e+00
+      posres-comB[1]= 0.00000e+00
+      posres-comB[2]= 0.00000e+00
+   QMMM                           = false
+qm-opts:
+   ngQM                           = 0
+   constraint-algorithm           = Lincs
+   continuation                   = false
+   Shake-SOR                      = false
+   shake-tol                      = 0.0001
+   lincs-order                    = 4
+   lincs-iter                     = 1
+   lincs-warnangle                = 30
+   nwall                          = 0
+   wall-type                      = 9-3
+   wall-r-linpot                  = -1
+   wall-atomtype[0]               = -1
+   wall-atomtype[1]               = -1
+   wall-density[0]                = 0
+   wall-density[1]                = 0
+   wall-ewald-zfac                = 3
+   pull                           = false
+   awh                            = false
+   rotation                       = false
+   interactiveMD                  = false
+   disre                          = No
+   disre-weighting                = Conservative
+   disre-mixed                    = false
+   dr-fc                          = 1000
+   dr-tau                         = 0
+   nstdisreout                    = 100
+   orire-fc                       = 0
+   orire-tau                      = 0
+   nstorireout                    = 100
+   free-energy                    = no
+   cos-acceleration               = 0
+   deform (3x3):
+      deform[    0]={ 0.00000e+00,  0.00000e+00,  0.00000e+00}
+      deform[    1]={ 0.00000e+00,  0.00000e+00,  0.00000e+00}
+      deform[    2]={ 0.00000e+00,  0.00000e+00,  0.00000e+00}
+   simulated-tempering            = false
+   swapcoords                     = no
+   userint1                       = 0
+   userint2                       = 0
+   userint3                       = 0
+   userint4                       = 0
+   userreal1                      = 0
+   userreal2                      = 0
+   userreal3                      = 0
+   userreal4                      = 0
+   applied-forces:
+     electric-field:
+       x:
+         E0                       = 0
+         omega                    = 0
+         t0                       = 0
+         sigma                    = 0
+       y:
+         E0                       = 0
+         omega                    = 0
+         t0                       = 0
+         sigma                    = 0
+       z:
+         E0                       = 0
+         omega                    = 0
+         t0                       = 0
+         sigma                    = 0
+     density-guided-simulation:
+       active                     = false
+       group                      = protein
+       similarity-measure         = inner-product
+       atom-spreading-weight      = unity
+       force-constant             = 1e+09
+       gaussian-transform-spreading-width = 0.2
+       gaussian-transform-spreading-range-in-multiples-of-width = 4
+       reference-density-filename = reference.mrc
+       nst                        = 1
+       normalize-densities        = true
+       adaptive-force-scaling     = false
+       adaptive-force-scaling-time-constant = 4
+       shift-vector               = 
+       transformation-matrix      = 
+     qmmm-cp2k:
+       active                     = false
+       qmgroup                    = System
+       qmmethod                   = PBE
+       qmfilenames                = 
+       qmcharge                   = 0
+       qmmultiplicity             = 1
+     colvars:
+       active                     = false
+       configfile                 = 
+       seed                       = -1
+grpopts:
+   nrdf:         786
+   ref-t:           0
+   tau-t:           0
+annealing:          No
+annealing-npoints:           0
+   acc:	           0           0           0
+   nfreeze:           N           N           N
+   energygrp-flags[  0]: 0
+
+When checking whether update groups are usable:
+  Domain decomposition is not active, so there is no need for update groups
+  The combination of rlist and box size prohibits the use of update groups
+
+Update task can not run on the GPU, because the following condition(s) were not satisfied:
+
+Only the md integrator is supported.
+Virtual sites are not supported.
+
+1 GPU selected for this run.
+Mapping of GPU IDs to the 1 GPU task in the 1 rank on this node:
+  PP:0
+PP tasks will do (non-perturbed) short-ranged interactions on the GPU
+PP task will update and constrain coordinates on the CPU
+Using 1 MPI thread
+Using 12 OpenMP threads 
+
+System total charge: -0.800
+Will do PME sum in reciprocal space for LJ dispersion interactions.
+
+++++ PLEASE READ AND CITE THE FOLLOWING REFERENCE ++++
+U. Essmann, L. Perera, M. L. Berkowitz, T. Darden, H. Lee and L. G. Pedersen 
+A smooth particle mesh Ewald method
+J. Chem. Phys. 103 (1995) pp. 8577-8592
+-------- -------- --- Thank You --- -------- --------
+
+Using a Gaussian width (1/beta) of 0.223817 nm for LJ Ewald
+Will do PME sum in reciprocal space for electrostatic interactions.
+
+++++ PLEASE READ AND CITE THE FOLLOWING REFERENCE ++++
+U. Essmann, L. Perera, M. L. Berkowitz, T. Darden, H. Lee and L. G. Pedersen 
+A smooth particle mesh Ewald method
+J. Chem. Phys. 103 (1995) pp. 8577-8592
+-------- -------- --- Thank You --- -------- --------
+
+Using a Gaussian width (1/beta) of 0.240122 nm for Ewald
+Potential shift: LJ r^-12: -3.157e+01 r^-6: -5.619e-03, Ewald -1.333e-05
+Initialized non-bonded Coulomb Ewald tables, spacing: 8.08e-04 size: 930
+
+Using shifted Lennard-Jones, switch between 0 and 0.75 nm
+Generated table with 875 data points for 1-4 COUL.
+Tabscale = 500 points/nm
+Generated table with 875 data points for 1-4 LJ6.
+Tabscale = 500 points/nm
+Generated table with 875 data points for 1-4 LJ12.
+Tabscale = 500 points/nm
+
+
+Using GPU 8x8 nonbonded short-range kernels
+
+Using a 8x8 pair-list setup:
+  updated every 1 steps, buffer 0.000 nm, rlist 0.750 nm
+Removing pbc first time
+
+Pinning threads with an auto-selected logical cpu stride of 1
+
+++++ PLEASE READ AND CITE THE FOLLOWING REFERENCE ++++
+S. Miyamoto and P. A. Kollman
+SETTLE: An Analytical Version of the SHAKE and RATTLE Algorithms for Rigid
+Water Models
+J. Comp. Chem. 13 (1992) pp. 952-962
+-------- -------- --- Thank You --- -------- --------
+
+
+Note that activating steepest-descent energy minimization via the integrator .mdp option and the command gmx mdrun may be available in a different form in a future version of GROMACS, e.g. gmx minimize and an .mdp option.
+Initiating Steepest Descents
+Started Steepest Descents on rank 0 Fri Dec 12 11:02:52 2025
+
+
+Steepest Descents:
+   Tolerance (Fmax)   =  1.00000e+02
+   Number of steps    =        10000
+           Step           Time
+              0        0.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    1.07802e+00    8.40758e-01    3.33757e-02    1.91459e-01    3.17988e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.53351e+01    2.15570e+03   -7.81969e+03    9.02469e+01   -1.16179e+03
+      Potential Pressure (bar)
+   -6.70774e+03   -4.38605e+03
+
+           Step           Time
+              1        1.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    8.61647e-01    9.73206e-01    3.34872e-02    1.51322e-01    2.57179e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52948e+01    2.15395e+03   -7.81913e+03    8.91959e+01   -1.16175e+03
+      Potential Pressure (bar)
+   -6.71016e+03   -4.47370e+03
+
+           Step           Time
+              2        2.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    1.03455e+00    9.34349e-01    3.24450e-02    1.00877e-01    2.32222e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52825e+01    2.15328e+03   -7.81930e+03    8.86958e+01   -1.16173e+03
+      Potential Pressure (bar)
+   -6.71143e+03   -4.51364e+03
+
+           Step           Time
+              3        3.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    1.04669e+00    9.77423e-01    3.29048e-02    9.13185e-02    2.23307e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52716e+01    2.15250e+03   -7.81889e+03    8.82024e+01   -1.16171e+03
+      Potential Pressure (bar)
+   -6.71225e+03   -4.54821e+03
+
+           Step           Time
+              4        4.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    1.19691e+00    9.39578e-01    3.44919e-02    9.46403e-02    2.05491e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52666e+01    2.15196e+03   -7.81922e+03    8.78297e+01   -1.16169e+03
+      Potential Pressure (bar)
+   -6.71338e+03   -4.56940e+03
+
+           Step           Time
+              5        5.00000
+
+           Step           Time
+              6        6.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.07363e-01    9.09995e-01    3.44570e-02    8.89081e-02    2.06172e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52633e+01    2.15163e+03   -7.81900e+03    8.76284e+01   -1.16169e+03
+      Potential Pressure (bar)
+   -6.71441e+03   -4.57980e+03
+
+           Step           Time
+              7        7.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    1.25153e+00    9.19421e-01    3.67887e-02    9.45131e-02    1.90375e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52573e+01    2.15085e+03   -7.81925e+03    8.71119e+01   -1.16166e+03
+      Potential Pressure (bar)
+   -6.71519e+03   -4.61025e+03
+
+           Step           Time
+              8        8.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    7.59205e-01    9.14095e-01    3.66579e-02    8.79466e-02    1.94674e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52545e+01    2.15053e+03   -7.81898e+03    8.69205e+01   -1.16165e+03
+      Potential Pressure (bar)
+   -6.71593e+03   -4.62095e+03
+
+           Step           Time
+              9        9.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    1.52900e+00    9.17465e-01    3.88895e-02    9.77985e-02    1.82111e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52522e+01    2.15006e+03   -7.81939e+03    8.66115e+01   -1.16163e+03
+      Potential Pressure (bar)
+   -6.71634e+03   -4.63806e+03
+
+           Step           Time
+             10       10.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    1.49802e+00    9.55349e-01    3.84391e-02    8.83292e-02    1.90926e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52496e+01    2.14979e+03   -7.81905e+03    8.64519e+01   -1.16163e+03
+      Potential Pressure (bar)
+   -6.71642e+03   -4.64957e+03
+
+           Step           Time
+             11       11.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.16989e+00    9.42705e-01    4.10578e-02    1.02313e-01    1.75592e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52482e+01    2.14939e+03   -7.81965e+03    8.61871e+01   -1.16161e+03
+      Potential Pressure (bar)
+   -6.71700e+03   -4.66318e+03
+
+           Step           Time
+             12       12.00000
+
+           Step           Time
+             13       13.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.35899e-01    8.34311e-01    4.02195e-02    9.49958e-02    1.82396e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52470e+01    2.14928e+03   -7.81942e+03    8.61271e+01   -1.16161e+03
+      Potential Pressure (bar)
+   -6.71879e+03   -4.66266e+03
+
+           Step           Time
+             14       14.00000
+
+           Step           Time
+             15       15.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    7.99260e-01    8.25557e-01    4.18941e-02    1.01124e-01    1.76259e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52452e+01    2.14892e+03   -7.81975e+03    8.58931e+01   -1.16159e+03
+      Potential Pressure (bar)
+   -6.71934e+03   -4.67647e+03
+
+           Step           Time
+             16       16.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    6.17830e-01    8.21359e-01    4.18675e-02    9.64196e-02    1.81108e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52434e+01    2.14872e+03   -7.81968e+03    8.57687e+01   -1.16159e+03
+      Potential Pressure (bar)
+   -6.71978e+03   -4.68511e+03
+
+           Step           Time
+             17       17.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    9.17204e-01    8.12747e-01    4.35228e-02    1.04345e-01    1.73478e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52424e+01    2.14846e+03   -7.82008e+03    8.55975e+01   -1.16158e+03
+      Potential Pressure (bar)
+   -6.72031e+03   -4.69454e+03
+
+           Step           Time
+             18       18.00000
+
+           Step           Time
+             19       19.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.87343e-01    7.78147e-01    4.32904e-02    1.00664e-01    1.77300e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52415e+01    2.14837e+03   -7.82004e+03    8.55392e+01   -1.16157e+03
+      Potential Pressure (bar)
+   -6.72098e+03   -4.69748e+03
+
+           Step           Time
+             20       20.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    9.16830e-01    7.85162e-01    4.53457e-02    1.07720e-01    1.71574e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52393e+01    2.14797e+03   -7.82055e+03    8.52721e+01   -1.16155e+03
+      Potential Pressure (bar)
+   -6.72160e+03   -4.71467e+03
+
+           Step           Time
+             21       21.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.24177e-01    7.63082e-01    4.49586e-02    1.02052e-01    1.77534e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52380e+01    2.14788e+03   -7.82052e+03    8.52111e+01   -1.16155e+03
+      Potential Pressure (bar)
+   -6.72213e+03   -4.71902e+03
+
+           Step           Time
+             22       22.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    1.08893e+00    7.80658e-01    4.66993e-02    1.10523e-01    1.70029e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52371e+01    2.14766e+03   -7.82100e+03    8.50540e+01   -1.16154e+03
+      Potential Pressure (bar)
+   -6.72239e+03   -4.72911e+03
+
+           Step           Time
+             23       23.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    9.42876e-01    7.79498e-01    4.60086e-02    1.01968e-01    1.79133e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52356e+01    2.14759e+03   -7.82092e+03    8.50043e+01   -1.16154e+03
+      Potential Pressure (bar)
+   -6.72258e+03   -4.73456e+03
+
+           Step           Time
+             24       24.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    1.48917e+00    7.94830e-01    4.80504e-02    1.13713e-01    1.68166e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52349e+01    2.14739e+03   -7.82151e+03    8.48544e+01   -1.16153e+03
+      Potential Pressure (bar)
+   -6.72293e+03   -4.74344e+03
+
+           Step           Time
+             25       25.00000
+
+           Step           Time
+             26       26.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.62310e-01    7.15016e-01    4.72603e-02    1.07196e-01    1.74545e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52342e+01    2.14737e+03   -7.82142e+03    8.48376e+01   -1.16152e+03
+      Potential Pressure (bar)
+   -6.72410e+03   -4.74248e+03
+
+           Step           Time
+             27       27.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    1.63245e+00    7.74088e-01    4.97494e-02    1.17170e-01    1.67454e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52320e+01    2.14706e+03   -7.82230e+03    8.45770e+01   -1.16150e+03
+      Potential Pressure (bar)
+   -6.72420e+03   -4.76294e+03
+
+           Step           Time
+             28       28.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    6.09059e-01    7.08808e-01    4.86005e-02    1.07415e-01    1.76819e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52308e+01    2.14707e+03   -7.82220e+03    8.45688e+01   -1.16150e+03
+      Potential Pressure (bar)
+   -6.72518e+03   -4.76286e+03
+
+           Step           Time
+             29       29.00000
+
+           Step           Time
+             30       30.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.19811e-01    6.89016e-01    4.95962e-02    1.13485e-01    1.71087e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52305e+01    2.14697e+03   -7.82255e+03    8.44861e+01   -1.16150e+03
+      Potential Pressure (bar)
+   -6.72582e+03   -4.76637e+03
+
+           Step           Time
+             31       31.00000
+
+           Step           Time
+             32       32.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.75593e-01    6.74945e-01    4.94500e-02    1.10181e-01    1.74916e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52296e+01    2.14693e+03   -7.82271e+03    8.44374e+01   -1.16149e+03
+      Potential Pressure (bar)
+   -6.72622e+03   -4.77020e+03
+
+           Step           Time
+             33       33.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.44292e-01    6.77003e-01    5.03286e-02    1.14781e-01    1.70857e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52288e+01    2.14684e+03   -7.82309e+03    8.43507e+01   -1.16149e+03
+      Potential Pressure (bar)
+   -6.72660e+03   -4.77579e+03
+
+           Step           Time
+             34       34.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.14620e-01    6.72517e-01    5.00344e-02    1.09870e-01    1.76452e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52278e+01    2.14682e+03   -7.82328e+03    8.42987e+01   -1.16148e+03
+      Potential Pressure (bar)
+   -6.72689e+03   -4.78061e+03
+
+           Step           Time
+             35       35.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    6.22692e-01    6.70344e-01    5.10573e-02    1.16307e-01    1.70321e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52272e+01    2.14674e+03   -7.82369e+03    8.42140e+01   -1.16148e+03
+      Potential Pressure (bar)
+   -6.72736e+03   -4.78546e+03
+
+           Step           Time
+             36       36.00000
+
+           Step           Time
+             37       37.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.33048e-01    6.47517e-01    5.07152e-02    1.12640e-01    1.74253e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52266e+01    2.14674e+03   -7.82378e+03    8.41904e+01   -1.16147e+03
+      Potential Pressure (bar)
+   -6.72778e+03   -4.78702e+03
+
+           Step           Time
+             38       38.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    6.55938e-01    6.59440e-01    5.16729e-02    1.17497e-01    1.70160e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52256e+01    2.14666e+03   -7.82433e+03    8.40810e+01   -1.16147e+03
+      Potential Pressure (bar)
+   -6.72818e+03   -4.79482e+03
+
+           Step           Time
+             39       39.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.25615e-01    6.42433e-01    5.11483e-02    1.12106e-01    1.75865e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52248e+01    2.14667e+03   -7.82444e+03    8.40572e+01   -1.16146e+03
+      Potential Pressure (bar)
+   -6.72854e+03   -4.79706e+03
+
+           Step           Time
+             40       40.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    7.77039e-01    6.58654e-01    5.21989e-02    1.18816e-01    1.69540e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52242e+01    2.14661e+03   -7.82494e+03    8.39665e+01   -1.16146e+03
+      Potential Pressure (bar)
+   -6.72882e+03   -4.80299e+03
+
+           Step           Time
+             41       41.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    6.90797e-01    6.53869e-01    5.13949e-02    1.10948e-01    1.77853e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52233e+01    2.14665e+03   -7.82503e+03    8.39493e+01   -1.16145e+03
+      Potential Pressure (bar)
+   -6.72898e+03   -4.80569e+03
+
+           Step           Time
+             42       42.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    1.04558e+00    6.70005e-01    5.27311e-02    1.20517e-01    1.68378e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52228e+01    2.14657e+03   -7.82559e+03    8.38530e+01   -1.16145e+03
+      Potential Pressure (bar)
+   -6.72933e+03   -4.81125e+03
+
+           Step           Time
+             43       43.00000
+
+           Step           Time
+             44       44.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.15494e-01    6.15797e-01    5.19957e-02    1.14705e-01    1.74149e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52223e+01    2.14661e+03   -7.82560e+03    8.38500e+01   -1.16145e+03
+      Potential Pressure (bar)
+   -6.73010e+03   -4.81015e+03
+
+           Step           Time
+             45       45.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    1.16604e+00    6.61534e-01    5.32267e-02    1.21797e-01    1.68088e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52210e+01    2.14656e+03   -7.82655e+03    8.36965e+01   -1.16143e+03
+      Potential Pressure (bar)
+   -6.73033e+03   -4.82213e+03
+
+           Step           Time
+             46       46.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.61041e-01    6.13493e-01    5.21811e-02    1.13358e-01    1.76401e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52202e+01    2.14663e+03   -7.82656e+03    8.36998e+01   -1.16143e+03
+      Potential Pressure (bar)
+   -6.73103e+03   -4.82137e+03
+
+           Step           Time
+             47       47.00000
+
+           Step           Time
+             48       48.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.33004e-01    6.04733e-01    5.27948e-02    1.18194e-01    1.71430e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52199e+01    2.14660e+03   -7.82690e+03    8.36418e+01   -1.16143e+03
+      Potential Pressure (bar)
+   -6.73150e+03   -4.82376e+03
+
+           Step           Time
+             49       49.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    7.02954e-01    6.21221e-01    5.22130e-02    1.12044e-01    1.78219e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52187e+01    2.14667e+03   -7.82735e+03    8.35874e+01   -1.16143e+03
+      Potential Pressure (bar)
+   -6.73162e+03   -4.82969e+03
+
+           Step           Time
+             50       50.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.14259e-01    6.00962e-01    5.30218e-02    1.19044e-01    1.70678e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52184e+01    2.14663e+03   -7.82776e+03    8.35195e+01   -1.16142e+03
+      Potential Pressure (bar)
+   -6.73236e+03   -4.83193e+03
+
+           Step           Time
+             51       51.00000
+
+           Step           Time
+             52       52.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.52496e-01    5.87277e-01    5.24962e-02    1.14637e-01    1.75400e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52179e+01    2.14668e+03   -7.82794e+03    8.35009e+01   -1.16142e+03
+      Potential Pressure (bar)
+   -6.73268e+03   -4.83331e+03
+
+           Step           Time
+             53       53.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.84837e-01    5.98556e-01    5.31149e-02    1.19682e-01    1.70170e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52174e+01    2.14668e+03   -7.82842e+03    8.34318e+01   -1.16141e+03
+      Potential Pressure (bar)
+   -6.73298e+03   -4.83748e+03
+
+           Step           Time
+             54       54.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.07985e-01    5.92924e-01    5.23571e-02    1.13321e-01    1.76926e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52167e+01    2.14676e+03   -7.82860e+03    8.34173e+01   -1.16141e+03
+      Potential Pressure (bar)
+   -6.73318e+03   -4.83922e+03
+
+           Step           Time
+             55       55.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    7.43390e-01    6.04083e-01    5.32045e-02    1.20597e-01    1.69199e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52164e+01    2.14674e+03   -7.82910e+03    8.33432e+01   -1.16141e+03
+      Potential Pressure (bar)
+   -6.73352e+03   -4.84323e+03
+
+           Step           Time
+             56       56.00000
+
+           Step           Time
+             57       57.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.92460e-01    5.70370e-01    5.25882e-02    1.15977e-01    1.73905e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52160e+01    2.14679e+03   -7.82917e+03    8.33408e+01   -1.16141e+03
+      Potential Pressure (bar)
+   -6.73403e+03   -4.84262e+03
+
+           Step           Time
+             58       58.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    8.16173e-01    5.98692e-01    5.31351e-02    1.21002e-01    1.68802e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52150e+01    2.14684e+03   -7.83004e+03    8.32278e+01   -1.16140e+03
+      Potential Pressure (bar)
+   -6.73440e+03   -4.85038e+03
+
+           Step           Time
+             59       59.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.75674e-01    5.68319e-01    5.22670e-02    1.14364e-01    1.75545e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52145e+01    2.14692e+03   -7.83013e+03    8.32290e+01   -1.16140e+03
+      Potential Pressure (bar)
+   -6.73488e+03   -4.84997e+03
+
+           Step           Time
+             60       60.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    1.04156e+00    6.10679e-01    5.31049e-02    1.21826e-01    1.67703e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52141e+01    2.14693e+03   -7.83077e+03    8.31429e+01   -1.16139e+03
+      Potential Pressure (bar)
+   -6.73488e+03   -4.85574e+03
+
+           Step           Time
+             61       61.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    6.45438e-01    5.85105e-01    5.19029e-02    1.12346e-01    1.77544e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52134e+01    2.14704e+03   -7.83082e+03    8.31548e+01   -1.16139e+03
+      Potential Pressure (bar)
+   -6.73524e+03   -4.85531e+03
+
+           Step           Time
+             62       62.00000
+
+           Step           Time
+             63       63.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.46266e-01    5.57327e-01    5.24000e-02    1.17620e-01    1.71514e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52133e+01    2.14702e+03   -7.83116e+03    8.31044e+01   -1.16139e+03
+      Potential Pressure (bar)
+   -6.73597e+03   -4.85607e+03
+
+           Step           Time
+             64       64.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    1.06812e+00    6.01002e-01    5.12661e-02    1.10101e-01    1.79761e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52116e+01    2.14729e+03   -7.83228e+03    8.30028e+01   -1.16138e+03
+      Potential Pressure (bar)
+   -6.73615e+03   -4.86546e+03
+
+           Step           Time
+             65       65.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.95954e-01    5.47911e-01    5.19292e-02    1.17724e-01    1.70535e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52113e+01    2.14726e+03   -7.83269e+03    8.29365e+01   -1.16138e+03
+      Potential Pressure (bar)
+   -6.73738e+03   -4.86572e+03
+
+           Step           Time
+             66       66.00000
+
+           Step           Time
+             67       67.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.71477e-01    5.52218e-01    5.11437e-02    1.12646e-01    1.76117e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52108e+01    2.14740e+03   -7.83310e+03    8.29075e+01   -1.16138e+03
+      Potential Pressure (bar)
+   -6.73760e+03   -4.86772e+03
+
+           Step           Time
+             68       68.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.66165e-01    5.48284e-01    5.16239e-02    1.18102e-01    1.69702e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52105e+01    2.14741e+03   -7.83352e+03    8.28519e+01   -1.16137e+03
+      Potential Pressure (bar)
+   -6.73806e+03   -4.87007e+03
+
+           Step           Time
+             69       69.00000
+
+           Step           Time
+             70       70.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.87918e-01    5.34427e-01    5.10661e-02    1.14454e-01    1.73556e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52102e+01    2.14748e+03   -7.83370e+03    8.28431e+01   -1.16137e+03
+      Potential Pressure (bar)
+   -6.73837e+03   -4.87027e+03
+
+           Step           Time
+             71       71.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.18716e-01    5.47159e-01    5.13018e-02    1.18217e-01    1.69141e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52098e+01    2.14754e+03   -7.83422e+03    8.27824e+01   -1.16137e+03
+      Potential Pressure (bar)
+   -6.73865e+03   -4.87353e+03
+
+           Step           Time
+             72       72.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.63292e-01    5.36344e-01    5.05418e-02    1.13027e-01    1.74642e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52094e+01    2.14765e+03   -7.83442e+03    8.27771e+01   -1.16137e+03
+      Potential Pressure (bar)
+   -6.73892e+03   -4.87388e+03
+
+           Step           Time
+             73       73.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    6.36885e-01    5.52101e-01    5.09989e-02    1.18609e-01    1.68176e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52091e+01    2.14768e+03   -7.83492e+03    8.27143e+01   -1.16136e+03
+      Potential Pressure (bar)
+   -6.73916e+03   -4.87702e+03
+
+           Step           Time
+             74       74.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.59716e-01    5.48538e-01    4.99881e-02    1.11266e-01    1.76129e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52086e+01    2.14781e+03   -7.83511e+03    8.27183e+01   -1.16136e+03
+      Potential Pressure (bar)
+   -6.73929e+03   -4.87738e+03
+
+           Step           Time
+             75       75.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    8.82056e-01    5.67140e-01    5.07241e-02    1.19404e-01    1.66703e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52085e+01    2.14782e+03   -7.83566e+03    8.26440e+01   -1.16136e+03
+      Potential Pressure (bar)
+   -6.73956e+03   -4.88081e+03
+
+           Step           Time
+             76       76.00000
+
+           Step           Time
+             77       77.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.69225e-01    5.22274e-01    4.99499e-02    1.14095e-01    1.72245e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52082e+01    2.14790e+03   -7.83572e+03    8.26508e+01   -1.16136e+03
+      Potential Pressure (bar)
+   -6.74019e+03   -4.87885e+03
+
+           Step           Time
+             78       78.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    1.01509e+00    5.67580e-01    5.00401e-02    1.19387e-01    1.65923e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52075e+01    2.14809e+03   -7.83685e+03    8.25371e+01   -1.16135e+03
+      Potential Pressure (bar)
+   -6.74045e+03   -4.88598e+03
+
+           Step           Time
+             79       79.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.60920e-01    5.23383e-01    4.89828e-02    1.11857e-01    1.73810e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52070e+01    2.14820e+03   -7.83691e+03    8.25511e+01   -1.16135e+03
+      Potential Pressure (bar)
+   -6.74109e+03   -4.88396e+03
+
+           Step           Time
+             80       80.00000
+
+           Step           Time
+             81       81.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.01196e-01    5.22288e-01    4.92510e-02    1.15905e-01    1.68942e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52069e+01    2.14823e+03   -7.83729e+03    8.25054e+01   -1.16135e+03
+      Potential Pressure (bar)
+   -6.74144e+03   -4.88539e+03
+
+           Step           Time
+             82       82.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.10318e-01    5.31054e-01    4.83100e-02    1.10257e-01    1.74999e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52063e+01    2.14840e+03   -7.83770e+03    8.24884e+01   -1.16135e+03
+      Potential Pressure (bar)
+   -6.74158e+03   -4.88705e+03
+
+           Step           Time
+             83       83.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.01905e-01    5.26198e-01    4.87551e-02    1.16173e-01    1.67792e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52062e+01    2.14842e+03   -7.83812e+03    8.24317e+01   -1.16135e+03
+      Potential Pressure (bar)
+   -6.74205e+03   -4.88871e+03
+
+           Step           Time
+             84       84.00000
+
+           Step           Time
+             85       85.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.77696e-01    5.09823e-01    4.81205e-02    1.12197e-01    1.72076e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52059e+01    2.14851e+03   -7.83829e+03    8.24298e+01   -1.16135e+03
+      Potential Pressure (bar)
+   -6.74237e+03   -4.88835e+03
+
+           Step           Time
+             86       86.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.80902e-01    5.27970e-01    4.82630e-02    1.16243e-01    1.67038e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52057e+01    2.14860e+03   -7.83888e+03    8.23680e+01   -1.16134e+03
+      Potential Pressure (bar)
+   -6.74261e+03   -4.89136e+03
+
+           Step           Time
+             87       87.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.61237e-01    5.13518e-01    4.74155e-02    1.10602e-01    1.73185e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52053e+01    2.14872e+03   -7.83905e+03    8.23714e+01   -1.16134e+03
+      Potential Pressure (bar)
+   -6.74289e+03   -4.89094e+03
+
+           Step           Time
+             88       88.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    7.47941e-01    5.37652e-01    4.78278e-02    1.16664e-01    1.65856e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52052e+01    2.14878e+03   -7.83961e+03    8.23069e+01   -1.16134e+03
+      Potential Pressure (bar)
+   -6.74304e+03   -4.89418e+03
+
+           Step           Time
+             89       89.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.81524e-01    5.28796e-01    4.67187e-02    1.08698e-01    1.74753e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52047e+01    2.14893e+03   -7.83976e+03    8.23204e+01   -1.16134e+03
+      Potential Pressure (bar)
+   -6.74320e+03   -4.89364e+03
+
+           Step           Time
+             90       90.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    1.08489e+00    5.60647e-01    4.74494e-02    1.17549e-01    1.64116e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52046e+01    2.14896e+03   -7.84036e+03    8.22438e+01   -1.16134e+03
+      Potential Pressure (bar)
+   -6.74331e+03   -4.89741e+03
+
+           Step           Time
+             91       91.00000
+
+           Step           Time
+             92       92.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.57594e-01    5.00429e-01    4.65923e-02    1.11773e-01    1.70293e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52044e+01    2.14905e+03   -7.84040e+03    8.22556e+01   -1.16134e+03
+      Potential Pressure (bar)
+   -6.74414e+03   -4.89448e+03
+
+           Step           Time
+             93       93.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    1.24128e+00    5.59876e-01    4.61925e-02    1.17107e-01    1.63258e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52037e+01    2.14941e+03   -7.84202e+03    8.21136e+01   -1.16133e+03
+      Potential Pressure (bar)
+   -6.74450e+03   -4.90233e+03
+
+           Step           Time
+             94       94.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.51397e-01    5.00912e-01    4.50393e-02    1.08965e-01    1.71947e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52031e+01    2.14953e+03   -7.84207e+03    8.21349e+01   -1.16133e+03
+      Potential Pressure (bar)
+   -6.74535e+03   -4.89943e+03
+
+           Step           Time
+             95       95.00000
+
+           Step           Time
+             96       96.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.55279e-01    5.04530e-01    4.52706e-02    1.13333e-01    1.66472e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52031e+01    2.14958e+03   -7.84248e+03    8.20863e+01   -1.16133e+03
+      Potential Pressure (bar)
+   -6.74566e+03   -4.90067e+03
+
+           Step           Time
+             97       97.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.08048e-01    5.11201e-01    4.43020e-02    1.07338e-01    1.73178e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52027e+01    2.14976e+03   -7.84280e+03    8.20850e+01   -1.16133e+03
+      Potential Pressure (bar)
+   -6.74574e+03   -4.90128e+03
+
+           Step           Time
+             98       98.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    6.09686e-01    5.14056e-01    4.47340e-02    1.13743e-01    1.65098e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52026e+01    2.14979e+03   -7.84327e+03    8.20249e+01   -1.16133e+03
+      Potential Pressure (bar)
+   -6.74613e+03   -4.90299e+03
+
+           Step           Time
+             99       99.00000
+
+           Step           Time
+            100      100.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.58935e-01    4.89067e-01    4.40646e-02    1.09464e-01    1.69845e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52024e+01    2.14989e+03   -7.84340e+03    8.20306e+01   -1.16133e+03
+      Potential Pressure (bar)
+   -6.74653e+03   -4.90190e+03
+
+           Step           Time
+            101      101.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    7.22662e-01    5.18207e-01    4.40414e-02    1.13724e-01    1.64203e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52021e+01    2.15005e+03   -7.84418e+03    8.19585e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.74673e+03   -4.90553e+03
+
+           Step           Time
+            102      102.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.35723e-01    4.92678e-01    4.31495e-02    1.07683e-01    1.71015e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52018e+01    2.15018e+03   -7.84431e+03    8.19703e+01   -1.16133e+03
+      Potential Pressure (bar)
+   -6.74713e+03   -4.90410e+03
+
+           Step           Time
+            103      103.00000
+
+           Step           Time
+            104      104.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.26189e-01    4.88774e-01    4.32823e-02    1.10891e-01    1.66818e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52018e+01    2.15022e+03   -7.84463e+03    8.19345e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.74746e+03   -4.90491e+03
+
+           Step           Time
+            105      105.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.53058e-01    4.98306e-01    4.22352e-02    1.06147e-01    1.71939e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52013e+01    2.15047e+03   -7.84525e+03    8.19088e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.74772e+03   -4.90615e+03
+
+           Step           Time
+            106      106.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.85947e-01    4.89991e-01    4.24938e-02    1.10828e-01    1.65772e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52012e+01    2.15051e+03   -7.84562e+03    8.18625e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.74818e+03   -4.90714e+03
+
+           Step           Time
+            107      107.00000
+
+           Step           Time
+            108      108.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.68722e-01    4.81778e-01    4.18830e-02    1.07573e-01    1.69406e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52010e+01    2.15063e+03   -7.84588e+03    8.18568e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.74844e+03   -4.90667e+03
+
+           Step           Time
+            109      109.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.39384e-01    4.91447e-01    4.19163e-02    1.10789e-01    1.65052e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52009e+01    2.15072e+03   -7.84635e+03    8.18108e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.74868e+03   -4.90842e+03
+
+           Step           Time
+            110      110.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.36417e-01    4.85523e-01    4.11416e-02    1.06218e-01    1.70269e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52006e+01    2.15088e+03   -7.84660e+03    8.18107e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.74890e+03   -4.90806e+03
+
+           Step           Time
+            111      111.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.49092e-01    4.97593e-01    4.13613e-02    1.10993e-01    1.63984e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52005e+01    2.15094e+03   -7.84708e+03    8.17580e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.74914e+03   -4.90998e+03
+
+           Step           Time
+            112      112.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.01438e-01    4.97260e-01    4.03948e-02    1.04586e-01    1.71531e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52002e+01    2.15112e+03   -7.84732e+03    8.17687e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.74923e+03   -4.90945e+03
+
+           Step           Time
+            113      113.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    7.72212e-01    5.12535e-01    4.08457e-02    1.11568e-01    1.62453e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52002e+01    2.15117e+03   -7.84785e+03    8.17034e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.74949e+03   -4.91185e+03
+
+           Step           Time
+            114      114.00000
+
+           Step           Time
+            115      115.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.46353e-01    4.75013e-01    4.01472e-02    1.06960e-01    1.67724e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.52000e+01    2.15126e+03   -7.84794e+03    8.17141e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.75004e+03   -4.90981e+03
+
+           Step           Time
+            116      116.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    9.16050e-01    5.17269e-01    3.98459e-02    1.11372e-01    1.61508e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51997e+01    2.15155e+03   -7.84908e+03    8.16216e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.75027e+03   -4.91421e+03
+
+           Step           Time
+            117      117.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.14857e-01    4.77552e-01    3.89131e-02    1.04860e-01    1.68992e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51993e+01    2.15168e+03   -7.84917e+03    8.16404e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.75086e+03   -4.91188e+03
+
+           Step           Time
+            118      118.00000
+
+           Step           Time
+            119      119.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.78232e-01    4.78633e-01    3.90265e-02    1.08324e-01    1.64333e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51993e+01    2.15174e+03   -7.84955e+03    8.16000e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.75115e+03   -4.91270e+03
+
+           Step           Time
+            120      120.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.25792e-01    4.84355e-01    3.81376e-02    1.03456e-01    1.69978e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51990e+01    2.15195e+03   -7.84994e+03    8.15951e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.75129e+03   -4.91283e+03
+
+           Step           Time
+            121      121.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.82666e-01    4.84497e-01    3.83998e-02    1.08527e-01    1.63145e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51990e+01    2.15200e+03   -7.85036e+03    8.15441e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.75166e+03   -4.91401e+03
+
+           Step           Time
+            122      122.00000
+
+           Step           Time
+            123      123.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.47983e-01    4.68282e-01    3.78287e-02    1.05086e-01    1.67152e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51988e+01    2.15211e+03   -7.85053e+03    8.15478e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.75196e+03   -4.91296e+03
+
+           Step           Time
+            124      124.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.63498e-01    4.87677e-01    3.77249e-02    1.08464e-01    1.62347e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51987e+01    2.15227e+03   -7.85120e+03    8.14900e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.75219e+03   -4.91521e+03
+
+           Step           Time
+            125      125.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.02191e-01    4.71146e-01    3.69782e-02    1.03613e-01    1.68094e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51984e+01    2.15240e+03   -7.85138e+03    8.14995e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.75251e+03   -4.91401e+03
+
+           Step           Time
+            126      126.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    7.29213e-01    4.98379e-01    3.71686e-02    1.08758e-01    1.61158e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51984e+01    2.15251e+03   -7.85197e+03    8.14398e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.75259e+03   -4.91646e+03
+
+           Step           Time
+            127      127.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.61845e-01    4.83147e-01    3.62063e-02    1.01906e-01    1.69467e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51981e+01    2.15268e+03   -7.85212e+03    8.14609e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.75284e+03   -4.91495e+03
+
+           Step           Time
+            128      128.00000
+
+           Step           Time
+            129      129.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.86790e-01    4.66329e-01    3.63711e-02    1.05626e-01    1.64307e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51981e+01    2.15271e+03   -7.85242e+03    8.14225e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.75334e+03   -4.91505e+03
+
+           Step           Time
+            130      130.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    6.80328e-01    4.94098e-01    3.47702e-02    9.98982e-02    1.70633e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51975e+01    2.15322e+03   -7.85367e+03    8.13744e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.75371e+03   -4.91674e+03
+
+           Step           Time
+            131      131.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.44372e-01    4.66052e-01    3.50491e-02    1.05269e-01    1.62966e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51974e+01    2.15325e+03   -7.85404e+03    8.13221e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.75446e+03   -4.91690e+03
+
+           Step           Time
+            132      132.00000
+
+           Step           Time
+            133      133.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.21960e-01    4.65764e-01    3.43128e-02    1.01534e-01    1.67419e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51973e+01    2.15344e+03   -7.85442e+03    8.13165e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.75468e+03   -4.91648e+03
+
+           Step           Time
+            134      134.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.12076e-01    4.69484e-01    3.44402e-02    1.05322e-01    1.62056e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51972e+01    2.15351e+03   -7.85483e+03    8.12734e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.75497e+03   -4.91760e+03
+
+           Step           Time
+            135      135.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.50848e-01    4.75178e-01    3.35841e-02    1.00158e-01    1.68434e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51970e+01    2.15371e+03   -7.85517e+03    8.12784e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.75506e+03   -4.91710e+03
+
+           Step           Time
+            136      136.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.53771e-01    4.78506e-01    3.38705e-02    1.05669e-01    1.60745e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51969e+01    2.15377e+03   -7.85562e+03    8.12227e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.75540e+03   -4.91857e+03
+
+           Step           Time
+            137      137.00000
+
+           Step           Time
+            138      138.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.41048e-01    4.56933e-01    3.32989e-02    1.01993e-01    1.65220e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51968e+01    2.15388e+03   -7.85576e+03    8.12318e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.75575e+03   -4.91721e+03
+
+           Step           Time
+            139      139.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    6.63082e-01    4.83496e-01    3.31516e-02    1.05619e-01    1.59870e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51967e+01    2.15409e+03   -7.85655e+03    8.11680e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.75596e+03   -4.91951e+03
+
+           Step           Time
+            140      140.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.98781e-01    4.60363e-01    3.24009e-02    1.00430e-01    1.66246e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51964e+01    2.15423e+03   -7.85670e+03    8.11829e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.75634e+03   -4.91776e+03
+
+           Step           Time
+            141      141.00000
+
+           Step           Time
+            142      142.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.12441e-01    4.58242e-01    3.24613e-02    1.03177e-01    1.62309e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51965e+01    2.15429e+03   -7.85702e+03    8.11497e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.75662e+03   -4.91826e+03
+
+           Step           Time
+            143      143.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.85442e-01    4.65351e-01    3.15908e-02    9.91747e-02    1.67040e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51962e+01    2.15455e+03   -7.85758e+03    8.11374e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.75685e+03   -4.91823e+03
+
+           Step           Time
+            144      144.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.76363e-01    4.61059e-01    3.17546e-02    1.03191e-01    1.61283e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51962e+01    2.15461e+03   -7.85795e+03    8.10954e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.75722e+03   -4.91887e+03
+
+           Step           Time
+            145      145.00000
+
+           Step           Time
+            146      146.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.43635e-01    4.52489e-01    3.12536e-02    1.00415e-01    1.64658e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51960e+01    2.15473e+03   -7.85817e+03    8.10945e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.75746e+03   -4.91810e+03
+
+           Step           Time
+            147      147.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.31492e-01    4.63322e-01    3.11872e-02    1.03137e-01    1.60582e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51959e+01    2.15487e+03   -7.85870e+03    8.10518e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.75769e+03   -4.91935e+03
+
+           Step           Time
+            148      148.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.88668e-01    4.55332e-01    3.05545e-02    9.92408e-02    1.65420e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51958e+01    2.15502e+03   -7.85893e+03    8.10573e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.75792e+03   -4.91836e+03
+
+           Step           Time
+            149      149.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.40943e-01    4.70050e-01    3.06649e-02    1.03316e-01    1.59563e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51957e+01    2.15512e+03   -7.85943e+03    8.10074e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.75811e+03   -4.91998e+03
+
+           Step           Time
+            150      150.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.09005e-01    4.64467e-01    2.98757e-02    9.78287e-02    1.66558e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51955e+01    2.15530e+03   -7.85966e+03    8.10235e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.75827e+03   -4.91879e+03
+
+           Step           Time
+            151      151.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    7.56907e-01    4.84917e-01    3.01900e-02    1.03820e-01    1.58119e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51955e+01    2.15538e+03   -7.86019e+03    8.09624e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.75842e+03   -4.92098e+03
+
+           Step           Time
+            152      152.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    6.86932e-01    4.86334e-01    2.92050e-02    9.60847e-02    1.68238e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51953e+01    2.15558e+03   -7.86036e+03    8.09938e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.75843e+03   -4.91956e+03
+
+           Step           Time
+            153      153.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    1.18933e+00    5.16369e-01    2.97903e-02    1.04792e-01    1.56066e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51953e+01    2.15563e+03   -7.86095e+03    8.09154e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.75851e+03   -4.92257e+03
+
+           Step           Time
+            154      154.00000
+
+           Step           Time
+            155      155.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.33240e-01    4.48588e-01    2.90030e-02    9.91510e-02    1.63061e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51951e+01    2.15574e+03   -7.86100e+03    8.09379e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.75945e+03   -4.91862e+03
+
+           Step           Time
+            156      156.00000
+
+           Step           Time
+            157      157.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.31634e-01    4.63822e-01    2.87527e-02    1.01851e-01    1.58920e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51951e+01    2.15598e+03   -7.86180e+03    8.08805e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.75975e+03   -4.92044e+03
+
+           Step           Time
+            158      158.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.62878e-01    4.48396e-01    2.81533e-02    9.78196e-02    1.63935e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51948e+01    2.15611e+03   -7.86197e+03    8.08910e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76007e+03   -4.91925e+03
+
+           Step           Time
+            159      159.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    6.78493e-01    4.74408e-01    2.82286e-02    1.02091e-01    1.57801e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51949e+01    2.15625e+03   -7.86258e+03    8.08357e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76015e+03   -4.92096e+03
+
+           Step           Time
+            160      160.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.71107e-01    4.57047e-01    2.74547e-02    9.63522e-02    1.65181e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51946e+01    2.15642e+03   -7.86274e+03    8.08572e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76046e+03   -4.91938e+03
+
+           Step           Time
+            161      161.00000
+
+           Step           Time
+            162      162.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.88211e-01    4.46976e-01    2.75600e-02    9.94644e-02    1.60595e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51947e+01    2.15646e+03   -7.86304e+03    8.08224e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76084e+03   -4.91952e+03
+
+           Step           Time
+            163      163.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.11705e-01    4.65133e-01    2.65030e-02    9.49297e-02    1.66166e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51944e+01    2.15686e+03   -7.86390e+03    8.08024e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76108e+03   -4.91963e+03
+
+           Step           Time
+            164      164.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.56088e-01    4.49526e-01    2.67046e-02    9.94340e-02    1.59404e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51943e+01    2.15690e+03   -7.86425e+03    8.07555e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76161e+03   -4.91984e+03
+
+           Step           Time
+            165      165.00000
+
+           Step           Time
+            166      166.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.65532e-01    4.44610e-01    2.61659e-02    9.63455e-02    1.63354e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51942e+01    2.15706e+03   -7.86454e+03    8.07575e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76183e+03   -4.91888e+03
+
+           Step           Time
+            167      167.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.24620e-01    4.53092e-01    2.62120e-02    9.94859e-02    1.58595e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51942e+01    2.15716e+03   -7.86498e+03    8.07162e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76204e+03   -4.91995e+03
+
+           Step           Time
+            168      168.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.44882e-01    4.50631e-01    2.55588e-02    9.51689e-02    1.64251e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51940e+01    2.15735e+03   -7.86526e+03    8.07259e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76221e+03   -4.91890e+03
+
+           Step           Time
+            169      169.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.60678e-01    4.61929e-01    2.57505e-02    9.97890e-02    1.57429e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51940e+01    2.15743e+03   -7.86573e+03    8.06736e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76242e+03   -4.92036e+03
+
+           Step           Time
+            170      170.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.27336e-01    4.65038e-01    2.49562e-02    9.37367e-02    1.65586e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51938e+01    2.15763e+03   -7.86596e+03    8.06968e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76246e+03   -4.91902e+03
+
+           Step           Time
+            171      171.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    8.34327e-01    4.81266e-01    2.53429e-02    1.00455e-01    1.55761e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51939e+01    2.15769e+03   -7.86649e+03    8.06306e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76267e+03   -4.92108e+03
+
+           Step           Time
+            172      172.00000
+
+           Step           Time
+            173      173.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.28985e-01    4.39429e-01    2.47450e-02    9.60801e-02    1.61445e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51937e+01    2.15780e+03   -7.86657e+03    8.06477e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76327e+03   -4.91834e+03
+
+           Step           Time
+            174      174.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    1.03604e+00    4.90824e-01    2.44577e-02    1.00356e-01    1.54757e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51937e+01    2.15819e+03   -7.86784e+03    8.05609e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76338e+03   -4.92152e+03
+
+           Step           Time
+            175      175.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.94573e-01    4.43292e-01    2.36664e-02    9.41801e-02    1.62764e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51933e+01    2.15833e+03   -7.86792e+03    8.05890e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76408e+03   -4.91832e+03
+
+           Step           Time
+            176      176.00000
+
+           Step           Time
+            177      177.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.06731e-01    4.47117e-01    2.37592e-02    9.75300e-02    1.57761e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51934e+01    2.15842e+03   -7.86832e+03    8.05484e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76432e+03   -4.91887e+03
+
+           Step           Time
+            178      178.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.00485e-01    4.51167e-01    2.30937e-02    9.30156e-02    1.63801e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51932e+01    2.15862e+03   -7.86864e+03    8.05598e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76443e+03   -4.91821e+03
+
+           Step           Time
+            179      179.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.52621e-01    4.56869e-01    2.33200e-02    9.79120e-02    1.56482e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51933e+01    2.15870e+03   -7.86908e+03    8.05068e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76470e+03   -4.91928e+03
+
+           Step           Time
+            180      180.00000
+
+           Step           Time
+            181      181.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.27288e-01    4.35353e-01    2.28635e-02    9.46811e-02    1.60757e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51931e+01    2.15880e+03   -7.86921e+03    8.05182e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76506e+03   -4.91763e+03
+
+           Step           Time
+            182      182.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    6.64598e-01    4.62323e-01    2.26585e-02    9.78336e-02    1.55636e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51931e+01    2.15909e+03   -7.87013e+03    8.04536e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76529e+03   -4.91942e+03
+
+           Step           Time
+            183      183.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.67393e-01    4.37924e-01    2.20589e-02    9.32617e-02    1.61739e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51929e+01    2.15922e+03   -7.87027e+03    8.04726e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76570e+03   -4.91740e+03
+
+           Step           Time
+            184      184.00000
+
+           Step           Time
+            185      185.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.18528e-01    4.38258e-01    2.20965e-02    9.57081e-02    1.57964e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51929e+01    2.15930e+03   -7.87061e+03    8.04407e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76594e+03   -4.91782e+03
+
+           Step           Time
+            186      186.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.31774e-01    4.42263e-01    2.14884e-02    9.22663e-02    1.62492e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51927e+01    2.15953e+03   -7.87104e+03    8.04402e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76613e+03   -4.91717e+03
+
+           Step           Time
+            187      187.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.92936e-01    4.42481e-01    2.16139e-02    9.58340e-02    1.56991e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51928e+01    2.15960e+03   -7.87142e+03    8.03980e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76642e+03   -4.91783e+03
+
+           Step           Time
+            188      188.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.68646e-01    4.52881e-01    2.09369e-02    9.10694e-02    1.63572e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51926e+01    2.15983e+03   -7.87178e+03    8.04108e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76645e+03   -4.91697e+03
+
+           Step           Time
+            189      189.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.49219e-01    4.52967e-01    2.11899e-02    9.62586e-02    1.55615e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51926e+01    2.15990e+03   -7.87222e+03    8.03557e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76680e+03   -4.91803e+03
+
+           Step           Time
+            190      190.00000
+
+           Step           Time
+            191      191.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.30480e-01    4.32182e-01    2.07269e-02    9.28471e-02    1.60246e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51925e+01    2.16001e+03   -7.87236e+03    8.03685e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76715e+03   -4.91624e+03
+
+           Step           Time
+            192      192.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    6.80629e-01    4.60139e-01    2.06710e-02    9.63302e-02    1.54713e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51925e+01    2.16024e+03   -7.87313e+03    8.03101e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76728e+03   -4.91817e+03
+
+           Step           Time
+            193      193.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.89185e-01    4.36636e-01    2.00659e-02    9.15096e-02    1.61313e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51923e+01    2.16038e+03   -7.87327e+03    8.03324e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76766e+03   -4.91599e+03
+
+           Step           Time
+            194      194.00000
+
+           Step           Time
+            195      195.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.09942e-01    4.34331e-01    2.01292e-02    9.41188e-02    1.57234e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51923e+01    2.16045e+03   -7.87359e+03    8.02998e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76793e+03   -4.91628e+03
+
+           Step           Time
+            196      196.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.71653e-01    4.42198e-01    1.95010e-02    9.04869e-02    1.62135e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51922e+01    2.16071e+03   -7.87409e+03    8.02995e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76810e+03   -4.91555e+03
+
+           Step           Time
+            197      197.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.89588e-01    4.38812e-01    1.96500e-02    9.42785e-02    1.56190e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51922e+01    2.16077e+03   -7.87446e+03    8.02560e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76844e+03   -4.91614e+03
+
+           Step           Time
+            198      198.00000
+
+           Step           Time
+            199      199.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.28922e-01    4.29144e-01    1.92714e-02    9.17216e-02    1.59672e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51921e+01    2.16090e+03   -7.87466e+03    8.02627e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76867e+03   -4.91499e+03
+
+           Step           Time
+            200      200.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.58962e-01    4.42343e-01    1.92208e-02    9.42926e-02    1.55477e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51921e+01    2.16106e+03   -7.87523e+03    8.02179e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76888e+03   -4.91596e+03
+
+           Step           Time
+            201      201.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.67115e-01    4.32085e-01    1.87388e-02    9.06892e-02    1.60464e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51919e+01    2.16121e+03   -7.87543e+03    8.02319e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76912e+03   -4.91448e+03
+
+           Step           Time
+            202      202.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.92177e-01    4.51088e-01    1.88520e-02    9.45453e-02    1.54439e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51920e+01    2.16134e+03   -7.87596e+03    8.01813e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76923e+03   -4.91586e+03
+
+           Step           Time
+            203      203.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.77108e-01    4.41211e-01    1.82418e-02    8.94623e-02    1.61630e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51918e+01    2.16151e+03   -7.87615e+03    8.02055e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76946e+03   -4.91417e+03
+
+           Step           Time
+            204      204.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    8.48603e-01    4.69053e-01    1.85380e-02    9.51169e-02    1.52962e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51919e+01    2.16161e+03   -7.87669e+03    8.01433e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76946e+03   -4.91626e+03
+
+           Step           Time
+            205      205.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    6.42022e-01    4.62978e-01    1.77633e-02    8.79077e-02    1.63352e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51916e+01    2.16181e+03   -7.87683e+03    8.01835e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.76958e+03   -4.91423e+03
+
+           Step           Time
+            206      206.00000
+
+           Step           Time
+            207      207.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.65134e-01    4.28744e-01    1.79136e-02    9.19358e-02    1.56866e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51917e+01    2.16183e+03   -7.87713e+03    8.01394e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.77031e+03   -4.91360e+03
+
+           Step           Time
+            208      208.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    9.52141e-01    4.80173e-01    1.66594e-02    8.61139e-02    1.64942e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51915e+01    2.16255e+03   -7.87868e+03    8.01124e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.77043e+03   -4.91366e+03
+
+           Step           Time
+            209      209.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.62156e-01    4.31414e-01    1.68955e-02    9.18958e-02    1.55227e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51913e+01    2.16257e+03   -7.87906e+03    8.00486e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.77149e+03   -4.91310e+03
+
+           Step           Time
+            210      210.00000
+
+           Step           Time
+            211      211.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.60865e-01    4.35789e-01    1.63733e-02    8.80555e-02    1.60791e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51913e+01    2.16278e+03   -7.87941e+03    8.00600e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.77162e+03   -4.91160e+03
+
+           Step           Time
+            212      212.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.80037e-01    4.39586e-01    1.65488e-02    9.21840e-02    1.54122e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51913e+01    2.16286e+03   -7.87982e+03    8.00100e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.77188e+03   -4.91285e+03
+
+           Step           Time
+            213      213.00000
+
+           Step           Time
+            214      214.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.21104e-01    4.23102e-01    1.61951e-02    8.94621e-02    1.57990e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51912e+01    2.16296e+03   -7.87997e+03    8.00221e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.77218e+03   -4.91134e+03
+
+           Step           Time
+            215      215.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.74931e-01    4.44287e-01    1.60734e-02    9.21399e-02    1.53369e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51912e+01    2.16323e+03   -7.88078e+03    7.99662e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.77242e+03   -4.91254e+03
+
+           Step           Time
+            216      216.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.51692e-01    4.25473e-01    1.56110e-02    8.82903e-02    1.58855e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51910e+01    2.16336e+03   -7.88093e+03    7.99852e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.77276e+03   -4.91071e+03
+
+           Step           Time
+            217      217.00000
+
+           Step           Time
+            218      218.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.96932e-01    4.25366e-01    1.56426e-02    9.03525e-02    1.55472e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51910e+01    2.16344e+03   -7.88125e+03    7.99558e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.77298e+03   -4.91100e+03
+
+           Step           Time
+            219      219.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.00869e-01    4.28898e-01    1.51710e-02    8.74526e-02    1.59516e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51909e+01    2.16367e+03   -7.88170e+03    7.99559e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.77319e+03   -4.91020e+03
+
+           Step           Time
+            220      220.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.59173e-01    4.28764e-01    1.52698e-02    9.04605e-02    1.54598e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51909e+01    2.16375e+03   -7.88205e+03    7.99179e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.77345e+03   -4.91075e+03
+
+           Step           Time
+            221      221.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.06244e-01    4.37357e-01    1.47516e-02    8.64458e-02    1.60469e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51908e+01    2.16397e+03   -7.88242e+03    7.99307e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.77353e+03   -4.90985e+03
+
+           Step           Time
+            222      222.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.88867e-01    4.37273e-01    1.49480e-02    9.08194e-02    1.53370e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51908e+01    2.16404e+03   -7.88284e+03    7.98792e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.77384e+03   -4.91069e+03
+
+           Step           Time
+            223      223.00000
+
+           Step           Time
+            224      224.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.22292e-01    4.20714e-01    1.45925e-02    8.79485e-02    1.57510e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51907e+01    2.16415e+03   -7.88298e+03    7.98930e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.77414e+03   -4.90911e+03
+
+           Step           Time
+            225      225.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.99404e-01    4.43301e-01    1.45564e-02    9.08778e-02    1.52544e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51907e+01    2.16438e+03   -7.88372e+03    7.98392e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.77431e+03   -4.91032e+03
+
+           Step           Time
+            226      226.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.64564e-01    4.24209e-01    1.40925e-02    8.68184e-02    1.58453e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51906e+01    2.16452e+03   -7.88387e+03    7.98608e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.77465e+03   -4.90829e+03
+
+           Step           Time
+            227      227.00000
+
+           Step           Time
+            228      228.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.95031e-01    4.22620e-01    1.41430e-02    8.90186e-02    1.54809e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51906e+01    2.16459e+03   -7.88417e+03    7.98302e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.77489e+03   -4.90858e+03
+
+           Step           Time
+            229      229.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.25520e-01    4.28499e-01    1.36733e-02    8.59546e-02    1.59174e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51905e+01    2.16484e+03   -7.88465e+03    7.98320e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.77508e+03   -4.90767e+03
+
+           Step           Time
+            230      230.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.63832e-01    4.26434e-01    1.37900e-02    8.91559e-02    1.53877e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51905e+01    2.16491e+03   -7.88501e+03    7.97925e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.77537e+03   -4.90817e+03
+
+           Step           Time
+            231      231.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.52144e-01    4.38724e-01    1.32827e-02    8.49278e-02    1.60205e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51904e+01    2.16515e+03   -7.88539e+03    7.98073e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.77540e+03   -4.90727e+03
+
+           Step           Time
+            232      232.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.09514e-01    4.36106e-01    1.34979e-02    8.95700e-02    1.52557e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51904e+01    2.16521e+03   -7.88580e+03    7.97537e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.77575e+03   -4.90806e+03
+
+           Step           Time
+            233      233.00000
+
+           Step           Time
+            234      234.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.24065e-01    4.18552e-01    1.31419e-02    8.65472e-02    1.57011e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51903e+01    2.16532e+03   -7.88594e+03    7.97683e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.77606e+03   -4.90637e+03
+
+           Step           Time
+            235      235.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    6.37521e-01    4.43361e-01    1.31604e-02    8.97026e-02    1.51686e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51903e+01    2.16554e+03   -7.88665e+03    7.97153e+01   -1.16130e+03
+      Potential Pressure (bar)
+   -6.77618e+03   -4.90768e+03
+
+           Step           Time
+            236      236.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.77349e-01    4.23086e-01    1.26948e-02    8.54156e-02    1.58031e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51902e+01    2.16568e+03   -7.88679e+03    7.97401e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.77653e+03   -4.90555e+03
+
+           Step           Time
+            237      237.00000
+
+           Step           Time
+            238      238.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.97727e-01    4.20319e-01    1.27600e-02    8.77601e-02    1.54116e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51902e+01    2.16575e+03   -7.88710e+03    7.97084e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.77678e+03   -4.90575e+03
+
+           Step           Time
+            239      239.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.49912e-01    4.28270e-01    1.23055e-02    8.45489e-02    1.58817e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51901e+01    2.16601e+03   -7.88758e+03    7.97126e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.77694e+03   -4.90497e+03
+
+           Step           Time
+            240      240.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.75766e-01    4.24749e-01    1.24382e-02    8.79484e-02    1.53119e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51901e+01    2.16607e+03   -7.88794e+03    7.96699e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.77726e+03   -4.90548e+03
+
+           Step           Time
+            241      241.00000
+
+           Step           Time
+            242      242.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.20738e-01    4.16098e-01    1.21563e-02    8.56882e-02    1.56457e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51901e+01    2.16619e+03   -7.88812e+03    7.96789e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.77748e+03   -4.90436e+03
+
+           Step           Time
+            243      243.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.45147e-01    4.28425e-01    1.21472e-02    8.80050e-02    1.52434e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51901e+01    2.16636e+03   -7.88869e+03    7.96368e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.77768e+03   -4.90519e+03
+
+           Step           Time
+            244      244.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.52190e-01    4.18844e-01    1.17863e-02    8.48117e-02    1.57216e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51899e+01    2.16650e+03   -7.88888e+03    7.96523e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.77792e+03   -4.90378e+03
+
+           Step           Time
+            245      245.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.75840e-01    4.36979e-01    1.19052e-02    8.82712e-02    1.51442e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51900e+01    2.16663e+03   -7.88940e+03    7.96041e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.77802e+03   -4.90508e+03
+
+           Step           Time
+            246      246.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.46233e-01    4.27071e-01    1.14442e-02    8.37464e-02    1.58333e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51898e+01    2.16680e+03   -7.88958e+03    7.96315e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.77824e+03   -4.90321e+03
+
+           Step           Time
+            247      247.00000
+
+           Step           Time
+            248      248.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.59819e-01    4.15960e-01    1.15248e-02    8.62517e-02    1.54075e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51899e+01    2.16684e+03   -7.88984e+03    7.95984e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.77859e+03   -4.90323e+03
+
+           Step           Time
+            249      249.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.58418e-01    4.34113e-01    1.09112e-02    8.26708e-02    1.59217e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51897e+01    2.16730e+03   -7.89080e+03    7.95874e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.77889e+03   -4.90236e+03
+
+           Step           Time
+            250      250.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.23450e-01    4.18572e-01    1.10499e-02    8.62887e-02    1.52970e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51897e+01    2.16734e+03   -7.89112e+03    7.95424e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.77937e+03   -4.90247e+03
+
+           Step           Time
+            251      251.00000
+
+           Step           Time
+            252      252.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.44362e-01    4.15911e-01    1.07475e-02    8.38679e-02    1.56610e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51897e+01    2.16750e+03   -7.89141e+03    7.95499e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.77956e+03   -4.90128e+03
+
+           Step           Time
+            253      253.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.89438e-01    4.22326e-01    1.08161e-02    8.64061e-02    1.52223e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51897e+01    2.16761e+03   -7.89181e+03    7.95125e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.77975e+03   -4.90198e+03
+
+           Step           Time
+            254      254.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.05437e-01    4.21267e-01    1.04503e-02    8.30222e-02    1.57430e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51896e+01    2.16778e+03   -7.89208e+03    7.95294e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.77991e+03   -4.90070e+03
+
+           Step           Time
+            255      255.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.17633e-01    4.30676e-01    1.06091e-02    8.67318e-02    1.51144e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51896e+01    2.16787e+03   -7.89251e+03    7.94809e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.78008e+03   -4.90183e+03
+
+           Step           Time
+            256      256.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.47484e-01    4.33316e-01    1.01592e-02    8.19568e-02    1.58645e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51895e+01    2.16806e+03   -7.89273e+03    7.95107e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.78015e+03   -4.90021e+03
+
+           Step           Time
+            257      257.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    7.71127e-01    4.48309e-01    1.04449e-02    8.73393e-02    1.49616e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51895e+01    2.16813e+03   -7.89321e+03    7.94466e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.78029e+03   -4.90209e+03
+
+           Step           Time
+            258      258.00000
+
+           Step           Time
+            259      259.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.14597e-01    4.11946e-01    1.00718e-02    8.38824e-02    1.54847e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51894e+01    2.16824e+03   -7.89330e+03    7.94692e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.78084e+03   -4.89945e+03
+
+           Step           Time
+            260      260.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    9.70510e-01    4.57917e-01    9.95821e-03    8.72611e-02    1.48716e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51895e+01    2.16872e+03   -7.89471e+03    7.93853e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.78105e+03   -4.90139e+03
+
+           Step           Time
+            261      261.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.53061e-01    4.14644e-01    9.46342e-03    8.23777e-02    1.56047e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51892e+01    2.16885e+03   -7.89479e+03    7.94180e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.78173e+03   -4.89819e+03
+
+           Step           Time
+            262      262.00000
+
+           Step           Time
+            263      263.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.04593e-01    4.20444e-01    9.55242e-03    8.50813e-02    1.51456e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51893e+01    2.16895e+03   -7.89519e+03    7.93794e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.78192e+03   -4.89865e+03
+
+           Step           Time
+            264      264.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.25577e-01    4.20962e-01    9.20017e-03    8.15413e-02    1.56982e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51891e+01    2.16913e+03   -7.89545e+03    7.93983e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.78205e+03   -4.89756e+03
+
+           Step           Time
+            265      265.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.51755e-01    4.30359e-01    9.38016e-03    8.54783e-02    1.50293e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51892e+01    2.16921e+03   -7.89588e+03    7.93476e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.78222e+03   -4.89857e+03
+
+           Step           Time
+            266      266.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.91888e-01    4.34991e-01    8.94354e-03    8.04565e-02    1.58324e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51891e+01    2.16940e+03   -7.89610e+03    7.93813e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.78227e+03   -4.89719e+03
+
+           Step           Time
+            267      267.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    8.43420e-01    4.50855e-01    9.25303e-03    8.61657e-02    1.48649e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51892e+01    2.16947e+03   -7.89659e+03    7.93134e+01   -1.16131e+03
+      Potential Pressure (bar)
+   -6.78239e+03   -4.89894e+03
+
+           Step           Time
+            268      268.00000
+
+           Step           Time
+            269      269.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.13334e-01    4.09682e-01    8.87271e-03    8.25124e-02    1.54257e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51891e+01    2.16957e+03   -7.89666e+03    7.93381e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.78300e+03   -4.89601e+03
+
+           Step           Time
+            270      270.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    1.07924e+00    4.62754e-01    8.83563e-03    8.61783e-02    1.47707e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51892e+01    2.17005e+03   -7.89808e+03    7.92536e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.78312e+03   -4.89840e+03
+
+           Step           Time
+            271      271.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.59455e-01    4.13059e-01    8.32934e-03    8.10133e-02    1.55562e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51888e+01    2.17019e+03   -7.89815e+03    7.92907e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.78388e+03   -4.89495e+03
+
+           Step           Time
+            272      272.00000
+
+           Step           Time
+            273      273.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.30360e-01    4.19692e-01    8.43616e-03    8.38838e-02    1.50641e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51890e+01    2.17028e+03   -7.89855e+03    7.92498e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.78406e+03   -4.89535e+03
+
+           Step           Time
+            274      274.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.43200e-01    4.20408e-01    8.09664e-03    8.01632e-02    1.56575e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51888e+01    2.17046e+03   -7.89879e+03    7.92716e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.78418e+03   -4.89417e+03
+
+           Step           Time
+            275      275.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    6.01583e-01    4.31368e-01    8.29714e-03    8.43363e-02    1.49395e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51889e+01    2.17054e+03   -7.89924e+03    7.92180e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.78434e+03   -4.89535e+03
+
+           Step           Time
+            276      276.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.34422e-01    4.36591e-01    7.87181e-03    7.90470e-02    1.58018e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51887e+01    2.17073e+03   -7.89943e+03    7.92562e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.78436e+03   -4.89388e+03
+
+           Step           Time
+            277      277.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    9.40837e-01    4.55386e-01    8.20711e-03    8.51022e-02    1.47639e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51888e+01    2.17079e+03   -7.89994e+03    7.91848e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.78445e+03   -4.89609e+03
+
+           Step           Time
+            278      278.00000
+
+           Step           Time
+            279      279.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.12165e-01    4.07557e-01    7.81580e-03    8.12405e-02    1.53639e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51887e+01    2.17090e+03   -7.89999e+03    7.92121e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.78515e+03   -4.89292e+03
+
+           Step           Time
+            280      280.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    1.21778e+00    4.69311e-01    7.82767e-03    8.51427e-02    1.46684e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51889e+01    2.17141e+03   -7.90151e+03    7.91223e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.78518e+03   -4.89569e+03
+
+           Step           Time
+            281      281.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.64071e-01    4.11281e-01    7.30639e-03    7.96968e-02    1.55051e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51885e+01    2.17154e+03   -7.90156e+03    7.91630e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.78607e+03   -4.89177e+03
+
+           Step           Time
+            282      282.00000
+
+           Step           Time
+            283      283.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.66799e-01    4.19670e-01    7.43045e-03    8.27402e-02    1.49790e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51887e+01    2.17164e+03   -7.90198e+03    7.91195e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.78623e+03   -4.89220e+03
+
+           Step           Time
+            284      284.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.58768e-01    4.19791e-01    7.10246e-03    7.88246e-02    1.56144e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51885e+01    2.17181e+03   -7.90220e+03    7.91462e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.78636e+03   -4.89099e+03
+
+           Step           Time
+            285      285.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    6.68044e-01    4.33582e-01    7.32441e-03    8.32491e-02    1.48456e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51886e+01    2.17189e+03   -7.90266e+03    7.90878e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.78648e+03   -4.89249e+03
+
+           Step           Time
+            286      286.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.75933e-01    4.38222e-01    6.90864e-03    7.76763e-02    1.57704e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51884e+01    2.17208e+03   -7.90283e+03    7.91327e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.78650e+03   -4.89077e+03
+
+           Step           Time
+            287      287.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    1.06549e+00    4.61894e-01    7.27208e-03    8.40957e-02    1.46578e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51885e+01    2.17214e+03   -7.90335e+03    7.90554e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.78652e+03   -4.89331e+03
+
+           Step           Time
+            288      288.00000
+
+           Step           Time
+            289      289.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.11050e-01    4.05480e-01    6.86619e-03    8.00185e-02    1.52996e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51884e+01    2.17225e+03   -7.90340e+03    7.90860e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.78735e+03   -4.88969e+03
+
+           Step           Time
+            290      290.00000
+
+           Step           Time
+            291      291.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.06238e-01    4.19219e-01    6.84030e-03    8.20549e-02    1.49229e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51885e+01    2.17253e+03   -7.90426e+03    7.90348e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.78766e+03   -4.89040e+03
+
+           Step           Time
+            292      292.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.24353e-01    4.05424e-01    6.58076e-03    7.91605e-02    1.53798e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51883e+01    2.17265e+03   -7.90440e+03    7.90549e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.78796e+03   -4.88906e+03
+
+           Step           Time
+            293      293.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    6.58684e-01    4.30669e-01    6.70743e-03    8.23447e-02    1.48189e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51884e+01    2.17282e+03   -7.90502e+03    7.90026e+01   -1.16132e+03
+      Potential Pressure (bar)
+   -6.78800e+03   -4.89042e+03
+
+           Step           Time
+            294      294.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.91691e-01    4.12284e-01    6.36343e-03    7.82036e-02    1.54921e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51882e+01    2.17297e+03   -7.90515e+03    7.90340e+01   -1.16133e+03
+      Potential Pressure (bar)
+   -6.78834e+03   -4.88844e+03
+
+           Step           Time
+            295      295.00000
+
+           Step           Time
+            296      296.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.90746e-01    4.06594e-01    6.44349e-03    8.05140e-02    1.50749e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51883e+01    2.17302e+03   -7.90544e+03    7.90016e+01   -1.16133e+03
+      Potential Pressure (bar)
+   -6.78861e+03   -4.88856e+03
+
+           Step           Time
+            297      297.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.75223e-01    4.18448e-01    6.16282e-03    7.74312e-02    1.55788e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51882e+01    2.17328e+03   -7.90593e+03    7.90124e+01   -1.16133e+03
+      Potential Pressure (bar)
+   -6.78873e+03   -4.88778e+03
+
+           Step           Time
+            298      298.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.81074e-01    4.11753e-01    6.29642e-03    8.07800e-02    1.49693e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51882e+01    2.17334e+03   -7.90627e+03    7.89659e+01   -1.16133e+03
+      Potential Pressure (bar)
+   -6.78907e+03   -4.88829e+03
+
+           Step           Time
+            299      299.00000
+
+           Step           Time
+            300      300.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.16216e-01    4.03484e-01    6.10142e-03    7.86048e-02    1.53264e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51882e+01    2.17345e+03   -7.90644e+03    7.89801e+01   -1.16133e+03
+      Potential Pressure (bar)
+   -6.78929e+03   -4.88699e+03
+
+           Step           Time
+            301      301.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.65158e-01    4.16439e-01    6.17022e-03    8.09197e-02    1.48978e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51882e+01    2.17361e+03   -7.90697e+03    7.89379e+01   -1.16133e+03
+      Potential Pressure (bar)
+   -6.78945e+03   -4.88795e+03
+
+           Step           Time
+            302      302.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.52572e-01    4.07031e-01    5.91645e-03    7.78349e-02    1.54084e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51881e+01    2.17375e+03   -7.90714e+03    7.89601e+01   -1.16133e+03
+      Potential Pressure (bar)
+   -6.78968e+03   -4.88638e+03
+
+           Step           Time
+            303      303.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    6.21086e-01    4.26717e-01    6.07798e-03    8.12532e-02    1.47933e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51882e+01    2.17387e+03   -7.90765e+03    7.89085e+01   -1.16133e+03
+      Potential Pressure (bar)
+   -6.78973e+03   -4.88781e+03
+
+           Step           Time
+            304      304.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.57569e-01    4.16629e-01    5.74665e-03    7.68726e-02    1.55284e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51880e+01    2.17402e+03   -7.90781e+03    7.89440e+01   -1.16133e+03
+      Potential Pressure (bar)
+   -6.78997e+03   -4.88596e+03
+
+           Step           Time
+            305      305.00000
+
+           Step           Time
+            306      306.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.61062e-01    4.03430e-01    5.82696e-03    7.93400e-02    1.50742e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51881e+01    2.17407e+03   -7.90806e+03    7.89091e+01   -1.16133e+03
+      Potential Pressure (bar)
+   -6.79033e+03   -4.88595e+03
+
+           Step           Time
+            307      307.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.75198e-01    4.24624e-01    5.51381e-03    7.59921e-02    1.56248e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51880e+01    2.17446e+03   -7.90887e+03    7.89124e+01   -1.16133e+03
+      Potential Pressure (bar)
+   -6.79050e+03   -4.88529e+03
+
+           Step           Time
+            308      308.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    3.42919e-01    4.07413e-01    5.64061e-03    7.95509e-02    1.49589e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51880e+01    2.17449e+03   -7.90918e+03    7.88643e+01   -1.16133e+03
+      Potential Pressure (bar)
+   -6.79098e+03   -4.88551e+03
+
+           Step           Time
+            309      309.00000
+
+           Step           Time
+            310      310.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.36317e-01    4.03886e-01    5.44803e-03    7.72346e-02    1.53471e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51880e+01    2.17464e+03   -7.90942e+03    7.88776e+01   -1.16133e+03
+      Potential Pressure (bar)
+   -6.79117e+03   -4.88439e+03
+
+           Step           Time
+            311      311.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.26463e-01    4.12276e-01    5.54739e-03    7.97427e-02    1.48814e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51880e+01    2.17474e+03   -7.90984e+03    7.88380e+01   -1.16133e+03
+      Potential Pressure (bar)
+   -6.79133e+03   -4.88528e+03
+
+           Step           Time
+            312      312.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.98515e-01    4.09694e-01    5.30310e-03    7.64716e-02    1.54362e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51879e+01    2.17490e+03   -7.91005e+03    7.88612e+01   -1.16133e+03
+      Potential Pressure (bar)
+   -6.79149e+03   -4.88386e+03
+
+           Step           Time
+            313      313.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    5.85875e-01    4.22740e-01    5.47958e-03    8.01305e-02    1.47689e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51879e+01    2.17498e+03   -7.91049e+03    7.88097e+01   -1.16133e+03
+      Potential Pressure (bar)
+   -6.79159e+03   -4.88531e+03
+
+           Step           Time
+            314      314.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    4.47686e-01    4.22855e-01    5.16675e-03    7.54973e-02    1.55668e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51878e+01    2.17516e+03   -7.91067e+03    7.88481e+01   -1.16133e+03
+      Potential Pressure (bar)
+   -6.79170e+03   -4.88375e+03
+
+           Step           Time
+            315      315.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    8.96307e-01    4.44321e-01    5.45373e-03    8.08166e-02    1.46079e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51879e+01    2.17523e+03   -7.91116e+03    7.87783e+01   -1.16133e+03
+      Potential Pressure (bar)
+   -6.79173e+03   -4.88577e+03
+
+           Step           Time
+            316      316.00000
+
+           Step           Time
+            317      317.00000
+
+   Energies (kJ/mol)
+           Bond            U-B    Proper Dih.  Improper Dih.          LJ-14
+    2.09569e-01    4.00024e-01    5.14739e-03    7.74346e-02    1.51624e-01
+     Coulomb-14        LJ (SR)   Coulomb (SR)   Coul. recip.      LJ recip.
+    2.51878e+01    2.17532e+03   -7.91121e+03    7.88066e+01   -1.16133e+03
+      Potential Pressure (bar)
+   -6.79239e+03   -4.88274e+03
+
+
+Steepest Descents converged to Fmax < 100 in 318 steps
+Potential Energy  = -6.7923887e+03
+Maximum force     =  9.2462814e+01 on atom 2
+Norm of force     =  1.5589931e+01
+Finished mdrun on rank 0 Fri Dec 12 11:02:53 2025
+
