@@ -378,6 +378,27 @@ class TopologyParser:
             if atomtype == atom.type:
                 atom.atom_type.epsilon = value / 4.184
 
+    def _modify_dihedraltype(self, dtype, k=None, phase=None, periodicity=None) -> None:
+        """Modify the dihedral type parameters."""
+        updates: dict[str, object] = {}
+        if k is not None:
+            updates["phi_k"] = k / 4.184
+        if phase is not None:
+            updates["phase"] = phase
+        if periodicity is not None:
+            updates["per"] = periodicity
+
+        dtype = " ".join(dtype.split())  # normalize whitespace
+
+        for dihedral in self.topol.dihedrals:
+            atoms = (dihedral.atom1, dihedral.atom2, dihedral.atom3, dihedral.atom4)
+            dihedral_str = " ".join(a.type for a in atoms)
+
+            if dihedral_str == dtype:
+                for d_type in dihedral.type:
+                    for param, value in updates.items():
+                        setattr(d_type, param, value)
+
     def _constraint_charge(self, total_charge: float) -> None:
         """Adjust the implicit atomtype charge
         to satisfy the total charge requirement."""
@@ -403,13 +424,19 @@ class TopologyParser:
             The total charge of the system.
         """
         for param, value in params.items():
-            param_type, atomtype = param.split()
-            if param_type == 'charge':
-                self._modify_charge(atomtype, value)
-            elif param_type == 'sigma':
-                self._modify_sigma(atomtype, value)
-            elif param_type == 'epsilon':
-                self._modify_epsilon(atomtype, value)
+
+            if 'dihedraltype' in param:
+                _, param_type, dtype = param.split(maxsplit=2)
+                self._modify_dihedraltype(dtype, **{param_type: value})
+
+            else:
+                param_type, param_spec = param.split()
+                if param_type == 'charge':
+                    self._modify_charge(param_spec, value)
+                elif param_type == 'sigma':
+                    self._modify_sigma(param_spec, value)
+                elif param_type == 'epsilon':
+                    self._modify_epsilon(param_spec, value)
 
         if total_charge is not None:
             self._constraint_charge(total_charge)
