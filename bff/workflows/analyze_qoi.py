@@ -33,7 +33,8 @@ def load_config(fn_config: str) -> dict:
 
     if not config['ffmd'].get('trainset_dir'):
         raise ValueError("Missing 'trainset_dir' in FFMD configuration.")
-    config['ffmd']['trainset_dir'] = (base_dir / config['ffmd']['trainset_dir']).resolve()
+    trainset_dir = base_dir / config['ffmd']['trainset_dir']
+    config['ffmd']['trainset_dir'] = trainset_dir.resolve()
     if not config['ffmd']['trainset_dir'].exists():
         raise FileNotFoundError(
             f"Trainset directory not found: {config['ffmd']['trainset_dir']}")
@@ -129,13 +130,22 @@ def main(fn_config: str) -> None:
         for qoi in valid_qoi
     }
 
-    observations = _infer_observations(qoi_ref, valid_hb)
+    if config['ffmd'].get('observations') is not None:
+        observations = config['ffmd']['observations']
+    else:
+        observations = _infer_observations(qoi_ref, valid_hb)
+
+    if config['ffmd'].get('nuisances') is not None:
+        nuisances = config['ffmd']['nuisances']
+    else:
+        nuisances = {}
 
     train_data = TrainData(
         inputs=trainset_info.inputs,
         outputs=y_train,
         outputs_ref=y_true,
         observations=observations,
+        nuisances=nuisances,
         settings=settings
     )
 
