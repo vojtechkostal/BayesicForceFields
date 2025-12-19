@@ -1,8 +1,11 @@
-atomtype_counts:
-  CC: 1
-  CT3: 1
-  HA3: 3
-  OC: 2
+atoms:
+  C1: CT3
+  C2: CC
+  H1: HA3
+  H2: HA3
+  H3: HA3
+  O1: OC
+  O2: OC
 bounds:
   charge CC:
   - 0.0
@@ -13,9 +16,10 @@ bounds:
   charge HA3:
   - -0.3
   - 0.3
-  charge OC:
+  charge O1 O2:
   - -0.8
   - -0.3
-implicit_atomtype: CC
+implicit_atoms:
+- H1
 mol_resname: ACE
 total_charge: -0.8
