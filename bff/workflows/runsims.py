@@ -34,7 +34,7 @@ def load_config(config: str | Path):
         required_keys.extend(['inputs', 'fn_specs'])
     else:
         required_keys.extend(
-            ['mol_resname', 'bounds', 'total_charge', 'implicit_atomtype', 'n_samples']
+            ['mol_resname', 'bounds', 'total_charge', 'implicit_atoms', 'n_samples']
         )
 
     for key in required_keys:
@@ -61,7 +61,7 @@ def load_config(config: str | Path):
             f"got lengths: {dict(zip(file_keys, lengths))}"
         )
 
-    # Check is all the GROMACS files exist
+    # Check if all the GROMACS files exist
     for key in file_keys:
         resolved_paths = []
         for f in gmx[key]:
@@ -172,14 +172,29 @@ def initialize_environment(config, validate):
         fn_specs = Path(config['fn_specs']).resolve()
     else:
         topol = TopologyParser(config['gromacs']['fn_topol'][0])
-        topol.select_mol(config['mol_resname'], config['implicit_atomtype'])
+        topol.select_mol(config['mol_resname'], config['implicit_atoms'])
         specs_data = {
             'mol_resname': config['mol_resname'],
-            'atomtype_counts': topol.mol_atomtype_counts,
-            'implicit_atomtype': config['implicit_atomtype'],
+            # 'atomtype_counts': topol.mol_atomtype_counts,
+            'atoms': topol.mol_atoms_by_name,
+            # 'implicit_atomtype': config['implicit_atomtype'],
+            'implicit_atoms': topol.implicit_atoms,
             'bounds': config['bounds'],
             'total_charge': config['total_charge'],
         }
+
+        # Check if all targetted atomtypes are present in the topology
+        valid_atoms = np.concatenate((topol.mol_atomnames, topol.mol_atomtypes))
+        for param in config['bounds'].keys():
+            if 'dihedraltypes' in param:
+                _, _, atoms = param.split(maxsplit=2)
+            else:
+                _, atoms = param.split(maxsplit=1)
+                for atom in atoms.split(' '):
+                    if atom not in valid_atoms:
+                        raise ValueError(
+                            f"Parameter '{param}' targets unknown atom '{atom}'. "
+                        )
 
         # Save the Specs data into a file
         fn_specs = data_dir / 'specs.yaml'
@@ -284,8 +299,9 @@ def print_train_summary(config, logger):
     logger.info(f"molecule name: {config['mol_resname']}", level=1)
     logger.info("parameters:", level=1)
     for name, b in config['bounds'].items():
-        param, atomtype = name.split()
-        if atomtype == config['implicit_atomtype'] and param == 'charge':
+        param, atoms = name.split(maxsplit=1)
+        # if atomtype == config['implicit_atomtype'] and param == 'charge':
+        if atoms == config['implicit_atoms'] and param == 'charge':
             logger.info(f"{name}: {b} (implicit)", level=2)
         else:
             logger.info(f"{name}: {b}", level=2)
@@ -340,8 +356,6 @@ def main(fn_config):
 
         # Generate sample or use provided input
         if not validate:
-            # hash, sample = str(idx), p
-        # else:
             hash = f"{idx:0{pad}d}"
             max_attempts = 1000
             for _ in range(max_attempts):

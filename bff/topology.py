@@ -7,7 +7,7 @@ import parmed as pmd
 from MDAnalysis.guesser.tables import masses as MDA_MASSES
 from MDAnalysis.lib.distances import distance_array
 
-from .tools import random_placement, guess_box
+from .tools import random_placement, guess_box, check_constraint_availability
 from .data import WATER_3SITE, WATER_4SITE, WATERS, IONS
 
 # Suppress specific warning from MDAnalysis
@@ -286,11 +286,25 @@ class TopologyParser:
         self.topol = pmd.load_file(self.fn_topol)
         self.universe = prepare_universe(self.fn_topol)
 
-    def write(self, fn_out: str):
+    def write(self, fn_out: str, **kwargs) -> None:
         """Write the topology into file."""
-        self.topol.save(fn_out)
+        self.topol.save(fn_out, **kwargs)
 
-    def select_mol(self, mol_resname: str, implicit_atomtype: str):
+    # def select_mol(self, mol_resname: str, implicit_atomtype: str):
+    #     """
+    #     Select a molecule from the topology by name.
+
+    #     Parameters
+    #     ----------
+    #     mol_resname : str
+    #         Residue name of the molecule to select.
+    #     implicit_atomtype : str
+    #         Atom type whose charge will be adjusted implicitly
+    #         to satisfy the total charge requirement.
+    #     """
+    #     self.mol_resname = mol_resname
+    #     self.implicit_atomtype = implicit_atomtype
+    def select_mol(self, mol_resname: str, implicit_atoms: list[str] | str):
         """
         Select a molecule from the topology by name.
 
@@ -303,7 +317,34 @@ class TopologyParser:
             to satisfy the total charge requirement.
         """
         self.mol_resname = mol_resname
-        self.implicit_atomtype = implicit_atomtype
+        if isinstance(implicit_atoms, (list, str)):
+            self._implicit_atoms = implicit_atoms
+        else:
+            raise ValueError(
+                "Implicit atoms must be specified as a list of names or a type string."
+            )
+
+    @property
+    def implicit_atoms(self) -> list[str]:
+        """Return implicit atoms resolved to atom names."""
+
+        atoms = self._implicit_atoms
+
+        if isinstance(atoms, str):
+            if atoms in self.mol_atomtypes:
+                resolved = self.mol_atoms_by_type[atoms]
+            else:
+                resolved = [atoms]
+
+        else:
+            resolved = list(atoms)
+
+        if not set(resolved).issubset(self.mol_atomnames):
+            raise ValueError(
+                f"Implicit atom names {resolved} not found in the selected molecule."
+            )
+
+        return resolved
 
     @property
     def mol(self) -> str:
@@ -324,26 +365,47 @@ class TopologyParser:
     @property
     def mol_atomtypes(self) -> list:
         """Retrieve unique atom types in the selected molecule."""
-        atomtypes = [atom.type for atom in self.mol.atoms]
-        atomtypes = np.unique(atomtypes)
+        return np.array(list(self.mol_atoms_by_type.keys()))
+
+    @property
+    def mol_atomnames(self) -> list:
+        """Retrieve atom names in the selected molecule."""
+        return np.array(list(self.mol_atoms_by_name.keys()))
+
+    @property
+    def mol_atoms_by_name(self) -> dict:
+        """Retrieve atoms names and their atomtypes."""
+        return {atom.name: atom.type for atom in self.mol.atoms}
+
+    @property
+    def mol_atoms_by_type(self) -> dict:
+        """Retrieve atoms types and their names."""
+        atomtypes: dict[str, list[str]] = {}
+        for atom in self.mol.atoms:
+            atomtypes.setdefault(atom.type, []).append(atom.name)
+
         return atomtypes
 
     @property
     def mol_atomtype_counts(self) -> dict:
         """Count the number of atoms of each type in the selected molecule."""
-        atomtypes = [atom.type for atom in self.mol.atoms]
-        unique_atomtypes, counts = np.unique(atomtypes, return_counts=True)
-        return dict(zip(unique_atomtypes.tolist(), counts.tolist()))
+        return {
+            atomtype: len(names)
+            for atomtype, names in self.mol_atoms_by_type.items()
+        }
 
     @property
     def implicit_charge(self) -> float:
         """Retrieve charge of the implicit atomtype."""
-        q = [atom.charge
-             for atom in self.mol.atoms
-             if atom.type == self.implicit_atomtype]
-        if not q:
-            return None
-        return q[0]
+        # q = [atom.charge
+        #      for atom in self.mol.atoms
+        #      if atom.type == self.implicit_atomtype]
+        for atom in self.mol.atoms:
+            name = getattr(atom, self.implicit_atom_type)
+            if name == self.implicit_atom:
+                q = atom.charge
+                break
+        return q
 
     @property
     def implicit_param(self) -> str:
@@ -360,10 +422,15 @@ class TopologyParser:
                 params.append(f'{kind} {atomtype}')
         return params
 
-    def _modify_charge(self, atomtype: str, value: float) -> None:
+    # def _modify_charge(self, atomtype: str, value: float) -> None:
+    #     """Modify the charge of a given atom type."""
+    #     for atom in self.topol.atoms:
+    #         if atomtype == atom.type:
+    #             atom.charge = value
+    def _modify_charge(self, name: str, value: float) -> None:
         """Modify the charge of a given atom type."""
         for atom in self.topol.atoms:
-            if atomtype == atom.type:
+            if name == atom.name:
                 atom.charge = value
 
     def _modify_sigma(self, atomtype: str, value: float) -> None:
@@ -399,19 +466,32 @@ class TopologyParser:
                     for param, value in updates.items():
                         setattr(d_type, param, value)
 
+    # def _constraint_charge(self, total_charge: float) -> None:
+    #     """Adjust the implicit atomtype charge
+    #     to satisfy the total charge requirement."""
+
+    #     assert self.n_mol != 0, "No molecule selected."
+    #     n_implicit = self.mol_atomtype_counts[self.implicit_atomtype]
+    #     q_explicit = sum(
+    #         atom.charge for atom in self.topol.atoms
+    #         if (atom.type in self.mol_atomtypes and
+    #             atom.type != self.implicit_atomtype)
+    #     )
+    #     q_implicit = (total_charge - q_explicit / self.n_mol) / n_implicit
+    #     self._modify_charge(self.implicit_atomtype, q_implicit)
     def _constraint_charge(self, total_charge: float) -> None:
         """Adjust the implicit atomtype charge
         to satisfy the total charge requirement."""
 
         assert self.n_mol != 0, "No molecule selected."
-        n_implicit = self.mol_atomtype_counts[self.implicit_atomtype]
         q_explicit = sum(
             atom.charge for atom in self.topol.atoms
-            if (atom.type in self.mol_atomtypes and
-                atom.type != self.implicit_atomtype)
+            if (atom.residue.name == self.mol_resname and
+                atom.name not in self.implicit_atoms)
         )
-        q_implicit = (total_charge - q_explicit / self.n_mol) / n_implicit
-        self._modify_charge(self.implicit_atomtype, q_implicit)
+        q_implicit = (total_charge - q_explicit / self.n_mol) / len(self.implicit_atoms)
+        for atom in self.implicit_atoms:
+            self._modify_charge(atom, q_implicit)
 
     def update_params(self, params: dict, total_charge: float = None) -> None:
         """Update the parameters of the selected molecule.
@@ -423,6 +503,8 @@ class TopologyParser:
         total_charge : float, optional
             The total charge of the system.
         """
+
+        modified_charges = set()
         for param, value in params.items():
 
             if 'dihedraltype' in param:
@@ -430,13 +512,21 @@ class TopologyParser:
                 self._modify_dihedraltype(dtype, **{param_type: value})
 
             else:
-                param_type, param_spec = param.split()
+                param_type, atoms = param.split(maxsplit=1)
                 if param_type == 'charge':
-                    self._modify_charge(param_spec, value)
+                    for atom in atoms.split(' '):
+                        if atom in self.mol_atomnames:
+                            self._modify_charge(atom, value)
+                            modified_charges.add(atom)
+                        elif atom in self.mol_atomtypes:
+                            for name in self.mol_atoms_by_type[atom]:
+                                if name not in modified_charges:
+                                    self._modify_charge(name, value)
                 elif param_type == 'sigma':
-                    self._modify_sigma(param_spec, value)
+                    self._modify_sigma(atoms, value)
                 elif param_type == 'epsilon':
-                    self._modify_epsilon(param_spec, value)
+                    self._modify_epsilon(atoms, value)
 
         if total_charge is not None:
+            check_constraint_availability(list(params.keys()), self.implicit_atoms)
             self._constraint_charge(total_charge)

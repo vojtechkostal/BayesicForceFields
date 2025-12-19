@@ -87,3 +87,11 @@ def extract_defaults(fn):
         for k, v in sig.parameters.items()
         if v.default is not inspect.Parameter.empty
     }
+
+
+def check_constraint_availability(params: list, implicit_atoms: list[str]) -> None:
+    atoms_mod_charge = [p.split()[1] for p in params if "charge" in p]
+
+    if np.any(np.isin(implicit_atoms, atoms_mod_charge)):
+        raise ValueError("Implicit atom cannot be one of the "
+                         "explicitly modified charges.")
