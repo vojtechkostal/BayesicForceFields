@@ -236,9 +236,10 @@ class Specs:
         self.data = self._load(specs)
 
         # Extract attributes
-        self.atomtype_counts = self.data.get('atomtype_counts', {})
+        # self.atomtype_counts = self.data.get('atomtype_counts', {})
+        self.atoms = self.data.get('atoms', [])
         self.mol_resname = self.data.get('mol_resname', "")
-        self.implicit_atomtype = self.data.get('implicit_atomtype', "")
+        self.implicit_atoms = self.data.get('implicit_atoms', "")
         self.total_charge = self.data.get('total_charge', 0.0)
         self._bounds = Bounds(self.data['bounds'])
 
@@ -259,13 +260,19 @@ class Specs:
     def save(self, fn_out: str):
         save_yaml(self.data, fn_out)
 
+    # @property
+    # def atomtypes(self):
+    #     return list(self.atomtype_counts.keys())
+
     @property
-    def atomtypes(self):
-        return list(self.atomtype_counts.keys())
+    def atomtype_counts(self):
+        atomtypes, counts = np.unique(list(self.atoms.values()), return_counts=True)
+        return dict(zip(atomtypes, counts))
 
     @property
     def implicit_param(self):
-        return f"charge {self.implicit_atomtype}"
+        implicit_atoms = " ".join(self.implicit_atoms)
+        return f"charge {implicit_atoms}"
 
     @property
     def implicit_param_pos(self):
@@ -273,7 +280,7 @@ class Specs:
 
     @property
     def implicit_param_count(self):
-        return self.atomtype_counts[self.implicit_atomtype]
+        return len(self.implicit_atoms)
 
     @property
     def implicit_param_bounds(self):
@@ -314,8 +321,12 @@ class Specs:
     @property
     def constraint_matrix(self):
         """Determine constraint matrix and create a linear constraint."""
+        # return np.array([
+        #     self.atomtype_counts[p.split()[1]] if 'charge' in p else 0
+        #     for p in self.bounds_implicit.params
+        # ])
         return np.array([
-            self.atomtype_counts[p.split()[1]] if 'charge' in p else 0
+            self.atomtype_counts.get(p.split()[1], 1) if "charge" in p else 0
             for p in self.bounds_implicit.params
         ])
 
@@ -535,7 +546,6 @@ class InferenceResults(MCMCResults, Specs):
 
         self.samples = chain_samples
 
-
     def sample_posterior(
         self,
         n_samples: int = 10,
@@ -612,7 +622,6 @@ class InferenceResults(MCMCResults, Specs):
                 raise ValueError('fn_out must end with .npy or .yaml')
 
         return samples_out
-
 
     def _compute_explicit_params(self) -> np.ndarray:
         """

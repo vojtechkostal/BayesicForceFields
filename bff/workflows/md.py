@@ -47,7 +47,7 @@ def modify_topology(
         params_dict = dict(zip(specs.bounds_explicit.params, params))
 
     topol = TopologyParser(fn_topol)
-    topol.select_mol(specs.mol_resname, specs.implicit_atomtype)
+    topol.select_mol(specs.mol_resname, specs.implicit_atoms)
     topol.update_params(params_dict, total_charge)
 
     if fn_out:
