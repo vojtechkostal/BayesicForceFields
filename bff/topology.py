@@ -456,7 +456,10 @@ class TopologyParser:
                     )
 
         # check for duplicates
-        flat = [atom for param in expanded for atom in param.split(" ")[1:]]
+        flat = []
+        for param in expanded:
+            if param.startswith("charge"):
+                flat.extend(param.split(" ")[1:])
         if len(flat) != len(set(flat)):
             raise ValueError(
                 "Duplicate atom names found in the parameters."
