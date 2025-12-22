@@ -35,7 +35,7 @@ However, the GPU-enabled PyTorch installation cannot be automatized so at this p
 Also, the code needs `Gromacs` installation to be accesible to run force-field MDs during the initial setup and during generation of the training set.
 
 ```sh
-pip install .
+pip install -e .
 ```
 
 ## Usage
@@ -48,7 +48,7 @@ The parameterization uses data from a triplet of simulations: 1. aqueous species
 1. Create the systems
 ```sh
 cd ./examples/acetate/01-prepare
-bff initialize config.yml
+bff initialize config.yaml
 ```
 Generates the necessary files and directories for both reference (CP2K) and training (GROMACS) trajectories.
 This step also includes initial NpT equilibration for all systems.
