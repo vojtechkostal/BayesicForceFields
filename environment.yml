@@ -6,7 +6,7 @@ dependencies:
   - ipython
   - ipywidgets
   - ipykernel
-  - numpy
+  - numpy <= 2.2.4
   - scipy
   - pyyaml
   - mdanalysis
