@@ -260,10 +260,6 @@ class Specs:
     def save(self, fn_out: str):
         save_yaml(self.data, fn_out)
 
-    # @property
-    # def atomtypes(self):
-    #     return list(self.atomtype_counts.keys())
-
     @property
     def atomtype_counts(self):
         atomtypes, counts = np.unique(list(self.atoms.values()), return_counts=True)
@@ -320,11 +316,8 @@ class Specs:
 
     @property
     def constraint_matrix(self):
-        """Determine constraint matrix and create a linear constraint."""
-        # return np.array([
-        #     self.atomtype_counts[p.split()[1]] if 'charge' in p else 0
-        #     for p in self.bounds_implicit.params
-        # ])
+        """Determine constraint matrix."""
+
         return np.array([
             self.atomtype_counts.get(p.split()[1], 1) if "charge" in p else 0
             for p in self.bounds_implicit.params
@@ -713,9 +706,7 @@ class RandomParamsGenerator(Specs):
 
         # Validate samples against implicit charge constraints
         q_explicit = np.sum(scaled_samples * self.constraint_matrix, axis=1)
-        q_implicit = (
-            self.total_charge - q_explicit
-        ) / self.implicit_param_count
+        q_implicit = (self.total_charge - q_explicit) / self.implicit_param_count
         mask = (self.lbi <= q_implicit) & (q_implicit <= self.ubi)
 
         # Filtered samples based on the mask
