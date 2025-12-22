@@ -94,7 +94,7 @@ def load_config(config: str | Path):
     else:
         raise ValueError("'implicit_atoms' must be a string or list of strings")
 
-    if implicit_atoms_str not in bound_keys:
+    if bound_keys and implicit_atoms_str not in bound_keys:
         raise ValueError(
             f"'implicit_atoms' ({implicit_atoms_str}) "
             "must be one of the defined bounds."
