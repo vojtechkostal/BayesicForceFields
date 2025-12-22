@@ -30,7 +30,7 @@ bounds:
   charge OC: [-0.8, -0.3]
   charge CT3: [-1.0, 0.3]
   charge HA3: [-0.3, 0.3]
-implicit_atomtype: CC
+implicit_atoms: CC
 total_charge: -0.80
 n_samples: 10
 compress: false
