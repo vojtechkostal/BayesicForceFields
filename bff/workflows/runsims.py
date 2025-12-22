@@ -81,6 +81,25 @@ def load_config(config: str | Path):
         ):
             raise ValueError(f"Invalid bounds for '{name}': {b}")
 
+    # --- Check whether implicit atoms are part of bounds ---
+    bound_keys = set(
+        b.split(maxsplit=1)[1]
+        for b in config['bounds'].keys()
+        if 'charge' in b
+    )
+    if isinstance(config['implicit_atoms'], str):
+        implicit_atoms_str = config['implicit_atoms']
+    elif isinstance(config['implicit_atoms'], (list, tuple)):
+        implicit_atoms_str = ' '.join(config['implicit_atoms'])
+    else:
+        raise ValueError("'implicit_atoms' must be a string or list of strings")
+
+    if implicit_atoms_str not in bound_keys:
+        raise ValueError(
+            f"'implicit_atoms' ({implicit_atoms_str}) "
+            "must be one of the defined bounds."
+        )
+
     # --- Numeric fields ---
     if not isinstance(config['total_charge'], (int, float)):
         raise ValueError("'total_charge' must be float")
@@ -172,29 +191,22 @@ def initialize_environment(config, validate):
         fn_specs = Path(config['fn_specs']).resolve()
     else:
         topol = TopologyParser(config['gromacs']['fn_topol'][0])
-        topol.select_mol(config['mol_resname'], config['implicit_atoms'])
+        topol.select_molecule(config['mol_resname'], config['implicit_atoms'])
+        bounds_expanded = topol.expand_params(config['bounds'].keys())
+        bounds_expanded = dict(zip(bounds_expanded, config['bounds'].values()))
         specs_data = {
             'mol_resname': config['mol_resname'],
             # 'atomtype_counts': topol.mol_atomtype_counts,
             'atoms': topol.mol_atoms_by_name,
             # 'implicit_atomtype': config['implicit_atomtype'],
             'implicit_atoms': topol.implicit_atoms,
-            'bounds': config['bounds'],
+            'bounds': bounds_expanded,
             'total_charge': config['total_charge'],
         }
 
-        # Check if all targetted atomtypes are present in the topology
-        valid_atoms = np.concatenate((topol.mol_atomnames, topol.mol_atomtypes))
-        for param in config['bounds'].keys():
-            if 'dihedraltypes' in param:
-                _, _, atoms = param.split(maxsplit=2)
-            else:
-                _, atoms = param.split(maxsplit=1)
-                for atom in atoms.split(' '):
-                    if atom not in valid_atoms:
-                        raise ValueError(
-                            f"Parameter '{param}' targets unknown atom '{atom}'. "
-                        )
+        # Check if all targetted atoms are present in the molecules
+        # and check for clashes with implicit atoms or duplicate definitions
+        # additionaly, modify bounds to be named by atom names in the case of charges
 
         # Save the Specs data into a file
         fn_specs = data_dir / 'specs.yaml'
@@ -289,23 +301,23 @@ def clean_up_train_dir(samples, data_dir, compress=False, remove=False):
                     print(f"Warning: Failed to remove {f}: {e}")
 
 
-def print_train_summary(config, logger):
+def print_train_summary(fn_specs, logger):
     """
     Print a summary of the configuration settings.
     """
 
+    specs = Specs(fn_specs)
+
     logger.info("", level=0)
     logger.info("=== Generating training set ===\n", level=0)
-    logger.info(f"molecule name: {config['mol_resname']}", level=1)
+    logger.info(f"molecule name: {specs.mol_resname}", level=1)
     logger.info("parameters:", level=1)
-    for name, b in config['bounds'].items():
-        param, atoms = name.split(maxsplit=1)
-        # if atomtype == config['implicit_atomtype'] and param == 'charge':
-        if atoms == config['implicit_atoms'] and param == 'charge':
+    for name, b in specs.bounds_explicit._bounds.items():
+        if name == specs.implicit_param:
             logger.info(f"{name}: {b} (implicit)", level=2)
         else:
             logger.info(f"{name}: {b}", level=2)
-    logger.info(f"total charge: {config['total_charge']}\n", level=1)
+    logger.info(f"total charge: {specs.total_charge}\n", level=1)
 
 
 def print_validate_summary(fn_specs, logger):
@@ -336,7 +348,7 @@ def main(fn_config):
         iterator = inputs
         n_total = len(inputs)
     else:
-        print_train_summary(config, logger)
+        print_train_summary(fn_specs, logger)
         sampler = RandomParamsGenerator(fn_specs)
         iterator = range(config['n_samples'])
         n_total = config['n_samples']

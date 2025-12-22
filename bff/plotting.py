@@ -5,91 +5,11 @@ import numpy as np
 
 from scipy.stats import gaussian_kde
 
-from .structures import Specs, InferenceResults
-from .io.utils import save_yaml
-
-
-# def draw_samples(
-#     results: InferenceResults,
-#     n_samples: int = 10,
-#     distribution: str = 'normal',
-#     confidence: float = 0.9,
-#     complete: bool = False,
-#     fn_out: str = None
-# ) -> np.ndarray:
-#     """
-#     Draw samples from the posterior using
-#     either uniform or Laplace distribution.
-#     """
-#     lower, upper = (1 - confidence) / 2, 1 - (1 - confidence) / 2
-#     samples = results.chain_implicit_[:, :results.n_params_implicit]
-#     confint = np.quantile(samples, [lower, upper], axis=0)
-
-#     if distribution == 'normal':
-#         mean = np.mean(samples, axis=0)
-#         cov = np.cov(samples, rowvar=False)
-#     elif distribution != 'uniform':
-#         raise ValueError(
-#             (
-#                 f'Unknown distribution "{distribution}". '
-#                 'Options are "uniform" or "normal".'
-#             )
-#         )
-
-#     samples_out = np.empty((n_samples, len(results.bounds_implicit.params)))
-#     specs = Specs(results.data)
-#     uniform_range = np.diff(confint, axis=0).ravel()
-
-#     i, attempts, max_attempts = 0, 0, n_samples * 1000  # Safety limit
-
-#     while i < n_samples and attempts < max_attempts:
-#         if distribution == 'uniform':
-#             random_values = np.random.rand(len(uniform_range)) * uniform_range
-#             sample = random_values + confint[0]
-#             sample.reshape(1, -1)
-#         else:
-#             if cov.size == 1:
-#                 sample = np.random.normal(mean, cov, size=1)[:, np.newaxis]
-#             else:
-#                 sample = np.random.multivariate_normal(mean, cov, size=1)
-
-#         is_within_confint = np.all(
-#             np.logical_and(sample >= confint[0], sample <= confint[1])
-#         )
-#         if is_within_confint and specs.is_valid(sample):
-#             samples_out[i] = sample
-#             i += 1
-#         attempts += 1
-
-#     if i < n_samples:
-#         raise RuntimeError(
-#             "Failed to generate enough valid samples within max attempts."
-#         )
-
-#     if complete:
-#         q_explicit = np.sum(samples_out * results.constraint_matrix, axis=1)
-#         q_implicit = results.total_charge - q_explicit
-#         samples_out = np.insert(
-#             samples_out, results.implicit_param_pos, q_implicit, axis=1)
-
-#         param_names = results.bounds_explicit.params.tolist()
-#     else:
-#         param_names = results.bounds_implicit.params.tolist()
-
-#     if fn_out:
-#         if fn_out.endswith('.npy'):
-#             np.save(fn_out, samples_out)
-#         elif fn_out.endswith('.yaml'):
-#             samples_dict = dict(zip(param_names, samples_out.T))
-#             save_yaml(samples_dict, fn_out)
-#         else:
-#             raise ValueError('fn_out must end with .npy or .yaml')
-
-#     return samples_out
+from .structures import InferenceResults
 
 
 def plot_marginals(
-    results,
+    results: InferenceResults,
     color_prior: str = 'gray', color_posterior: str = 'tab:red',
     fn_out: str = None
 ) -> None:
@@ -114,7 +34,8 @@ def plot_marginals(
 
     for i, (p_kind, ax) in enumerate(zip(param_kinds, axs)):
         x_offset = 0
-        x_lim_low, x_lim_high = -0.5, len(results.atomtypes)
+        x_lim_low = -0.5
+        x_lim_high = sum(1 for name in results.bounds_explicit.params if p_kind in name)
         bounds_raw = [
             bound
             for name, bound in results.bounds_explicit._bounds.items()
@@ -126,7 +47,6 @@ def plot_marginals(
                 continue
             if len(param.split()) == 1:
                 continue
-            atomtype = param.split()[1]
             atomtype_idx = results.labels_explicit_.index(param)
             posterior = results.chain_explicit_[:, atomtype_idx]
             bound = results.bounds_explicit._bounds[param]
@@ -136,7 +56,7 @@ def plot_marginals(
             x = torch.linspace(x_min, x_max, 1000)
 
             # Plot prior
-            if p_kind == 'charge' and atomtype == results.implicit_atomtype:
+            if param == results.implicit_param:
                 pass
             else:
                 all_keys = results.priors.keys()
@@ -212,8 +132,10 @@ def plot_marginals(
         y_high = np.max(bounds_raw) + 0.25 * y_scale
         ax.set_ylim(y_low, y_high)
         ax.tick_params(axis='both', direction='in')
-        ax.set_xticks(np.arange(0, len(results.atomtypes), 1))
-        ax.set_xticklabels(results.atomtypes, rotation=30)
+        ax.set_xticks(np.arange(0, len(results.bounds_explicit.params), 1))
+
+        xtick_labels = [p.split(maxsplit=1)[-1] for p in results.bounds_explicit.params]
+        ax.set_xticklabels(xtick_labels, rotation=30)
         ax.set_xlabel('Atomtype')
 
     if fn_out is not None:
