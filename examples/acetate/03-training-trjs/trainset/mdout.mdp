@@ -2,7 +2,7 @@
 ;	File 'mdout.mdp' was generated
 ;	By user: vojta (1001)
 ;	On host: ada
-;	At date: Thu Dec 18 16:20:20 2025
+;	At date: Mon Dec 22 12:06:29 2025
 ;
 ;	Created by:
 ;	                     :-) GROMACS - gmx grompp, 2024.3 (-:
@@ -11,7 +11,7 @@
 ;	Data prefix:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj
 ;	Working dir:  /home/vojta/code/BayesicForceFields/examples/acetate/03-training-trjs/trainset
 ;	Command line:
-;	  gmx grompp -f /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/train/nvt-002.mdp -c /home/vojta/code/BayesicForceFields/examples/acetate/03-training-trjs/trainset/md-0-2.gro -p /home/vojta/code/BayesicForceFields/examples/acetate/03-training-trjs/trainset/md-0-002.top -n /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/train/index-002.ndx -o /home/vojta/code/BayesicForceFields/examples/acetate/03-training-trjs/trainset/md-0-2.tpr -maxwarn 2
+;	  gmx grompp -f /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/train/nvt-002.mdp -c /home/vojta/code/BayesicForceFields/examples/acetate/03-training-trjs/trainset/md-09-2.gro -p /home/vojta/code/BayesicForceFields/examples/acetate/03-training-trjs/trainset/md-09-002.top -n /home/vojta/code/BayesicForceFields/examples/acetate/01-prepare/train/index-002.ndx -o /home/vojta/code/BayesicForceFields/examples/acetate/03-training-trjs/trainset/md-09-2.tpr -maxwarn 2
 
 ; VARIOUS PREPROCESSING OPTIONS
 ; Preprocessor information: use cpp syntax.
@@ -175,7 +175,7 @@ annealing-temp           =
 ; GENERATE VELOCITIES FOR STARTUP RUN
 gen-vel                  = no
 gen-temp                 = 300
-gen-seed                 = 2130505210
+gen-seed                 = 1061157674
 
 ; OPTIONS FOR BONDS    
 constraints              = h-bonds

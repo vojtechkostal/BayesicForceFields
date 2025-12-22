@@ -7,19 +7,19 @@ atoms:
   O1: OC
   O2: OC
 bounds:
-  charge CC:
-  - 0.0
-  - 1.0
-  charge CT3:
+  charge C1:
   - -1.0
   - 0.3
-  charge HA3:
+  charge C2:
+  - 0.0
+  - 1.0
+  charge H1 H2 H3:
   - -0.3
   - 0.3
   charge O1 O2:
   - -0.8
   - -0.3
 implicit_atoms:
-- H1
+- C2
 mol_resname: ACE
 total_charge: -0.8
