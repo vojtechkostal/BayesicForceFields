@@ -414,26 +414,26 @@ class TopologyParser:
             if atomtype == atom.type:
                 atom.atom_type.epsilon = value / 4.184
 
-    def _modify_dihedraltype(self, dtype, k=None, phase=None, periodicity=None) -> None:
-        """Modify the dihedral type parameters."""
-        updates: dict[str, object] = {}
-        if k is not None:
-            updates["phi_k"] = k / 4.184
-        if phase is not None:
-            updates["phase"] = phase
-        if periodicity is not None:
-            updates["per"] = periodicity
+    # def _modify_dihedraltype(self, dtype, k=None, phase=None, periodicity=None) -> None:
+    #     """Modify the dihedral type parameters."""
+    #     updates: dict[str, object] = {}
+    #     if k is not None:
+    #         updates["phi_k"] = k / 4.184
+    #     if phase is not None:
+    #         updates["phase"] = phase
+    #     if periodicity is not None:
+    #         updates["per"] = periodicity
 
-        dtype = " ".join(dtype.split())  # normalize whitespace
+    #     dtype = " ".join(dtype.split())  # normalize whitespace
 
-        for dihedral in self.topol.dihedrals:
-            atoms = (dihedral.atom1, dihedral.atom2, dihedral.atom3, dihedral.atom4)
-            dihedral_str = " ".join(a.type for a in atoms)
+    #     for dihedral in self.topol.dihedrals:
+    #         atoms = (dihedral.atom1, dihedral.atom2, dihedral.atom3, dihedral.atom4)
+    #         dihedral_str = " ".join(a.type for a in atoms)
 
-            if dihedral_str == dtype:
-                for d_type in dihedral.type:
-                    for param, value in updates.items():
-                        setattr(d_type, param, value)
+    #         if dihedral_str == dtype:
+    #             for d_type in dihedral.type:
+    #                 for param, value in updates.items():
+    #                     setattr(d_type, param, value)
 
     def expand_params(self, params: list[str]) -> list[str]:
         """Convert atom types to atom names for charges in the parameters dictionary."""
@@ -495,20 +495,20 @@ class TopologyParser:
         params_expanded = self.expand_params(params.keys())
         params_expanded = dict(zip(params_expanded, params.values()))
         for param, value in params_expanded.items():
-            if "dihedraltype" in param:
-                param_name, rest = param.split(maxsplit=1)
-                atoms, param_type = rest.rsplit(" ", maxsplit=1)
-                self._modify_dihedraltype(atoms, **{param_type: value})
-            else:
-                param_name, atoms = param.split(" ", maxsplit=1)
+            # if "dihedraltype" in param:
+            #     param_name, rest = param.split(maxsplit=1)
+            #     atoms, param_type = rest.rsplit(" ", maxsplit=1)
+            #     self._modify_dihedraltype(atoms, **{param_type: value})
+            # else:
+            param_name, atoms = param.split(" ", maxsplit=1)
 
-                if param_name == 'charge':
-                    for atom in atoms.split(' '):
-                        self._modify_charge(atom, value)
-                elif param_type == 'sigma':
-                    self._modify_sigma(atoms, value)
-                elif param_type == 'epsilon':
-                    self._modify_epsilon(atoms, value)
+            if param_name == 'charge':
+                for atom in atoms.split(' '):
+                    self._modify_charge(atom, value)
+            elif param_name == 'sigma':
+                self._modify_sigma(atoms, value)
+            elif param_name == 'epsilon':
+                self._modify_epsilon(atoms, value)
 
         if total_charge is not None:
             # check if none of the implicit atoms were modified
