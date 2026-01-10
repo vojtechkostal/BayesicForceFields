@@ -140,7 +140,7 @@ def load_config(config: str | Path):
     return config, validate
 
 
-def dispatch_md_job(hash, sample, config, job_scheduler):
+def dispatch_md_job(hash: str, sample: list, config: dict, job_scheduler: object):
     """
     Submit an MD simulation either locally or via a job scheduler.
     """
