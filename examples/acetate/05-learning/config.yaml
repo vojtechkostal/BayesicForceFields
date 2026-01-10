@@ -20,9 +20,9 @@ lgp:
     - restr
   n_max: 200
   fn_hyper:
-    rdf: hyperparams-rdf.yml
-    hb: hyperparams-hb.yml
-    restr: hyperparams-restr.yml
+    rdf: hyperparams-rdf.yaml
+    hb: hyperparams-hb.yaml
+    restr: hyperparams-restr.yaml
   committee: 1
   test_fraction: 0.2
   device: cuda:0
@@ -30,6 +30,6 @@ mcmc:
   priors_type: normal
   max_iter: 100000
   fn_backend: mcmc.h5
-  fn_priors: priors.yml
+  fn_priors: priors.yaml
   fn_tau: tau.npy
   device: cuda:0
