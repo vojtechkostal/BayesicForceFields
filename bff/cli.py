@@ -79,6 +79,19 @@ def runsims(
 
 
 @app.command()
+def md(
+    fn_config: Optional[Path] = typer.Argument(
+        None, help="Path to the configuration file (required)."
+    )
+):
+    """
+    Run molecular simulations as configured in the given config file.
+    """
+    from bff.workflows.md import main as md_main
+    run_workflow(fn_config, md_main, "md")
+
+
+@app.command()
 def analyze(
     fn_config: Optional[Path] = typer.Argument(
         None, help="Path to the configuration file (required)."

@@ -147,11 +147,11 @@ def dispatch_md_job(hash: str, sample: list, config: dict, job_scheduler: object
 
     # Prepare job-specific configurations
     config_md = config | {'params': sample, 'hash': hash}
-    data_dir = Path(config_md['data_dir'])
+    data_dir = Path(config_md['data_dir']).resolve()
     fn_config_md = data_dir / f'config-{hash}.yaml'
     save_yaml(config_md, fn_config_md)
 
-    cmd_run = [config['python'], '-m', MD_SCRIPT, '-f', str(fn_config_md)]
+    cmd_run = ["bff", "md", str(fn_config_md)]
 
     if job_scheduler == 'local':
         subprocess.run(cmd_run, cwd=str(data_dir))
@@ -170,7 +170,7 @@ def dispatch_md_job(hash: str, sample: list, config: dict, job_scheduler: object
         )
 
     for cmd in config[job_scheduler]['commands']:
-        resolved = ' '.join(map(str, cmd_run)) if 'RUN MD' in cmd else cmd
+        resolved = cmd_run if 'RUN MD' in cmd else cmd
         submit_script.add_command(resolved)
 
     return submit_script.submit(fn_submit)
