@@ -22,7 +22,7 @@ The LGP hyperparameters are optimized and their uncertainty can be propagated to
 1. Clone this repository and (preferably) create and activate a new environment using `mamba` or `conda` as:
 ```sh
 cd BayesicForceFields
-mamba env create -f ./environment.yml
+mamba env create -f ./environment.yaml
 mamba activate bff
 ```
 
