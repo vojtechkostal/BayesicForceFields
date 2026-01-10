@@ -65,6 +65,7 @@ def main(fn_config: str) -> None:
     specs = Specs(config['fn_specs']) if config.get('fn_specs') else Specs(config)
     implicit = True
     gmx_cmd = config['gmx_cmd']
+    run = config.get('run', True)
 
     # Unpack Gromacs configuration
     job_keys = ['fn_mdp_em', 'fn_mdp_prod', 'fn_coordinates', 'fn_ndx', 'n_steps']
@@ -98,6 +99,11 @@ def main(fn_config: str) -> None:
             # Create topology with new parameters
             fn_top_new = str(run_dir / f"md-{hash}-{i:03d}.top")
             _ = modify_topology(top, specs, params, implicit, fn_top_new)
+
+            # Skip running the simulation if specified
+            if not run:
+                success.append(True)
+                continue
 
             # Minimize energy
             if em:
