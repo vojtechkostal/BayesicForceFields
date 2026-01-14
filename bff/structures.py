@@ -45,8 +45,6 @@ class QoI:
             for name in self.names
         }
 
-    # def flatten
-
     def __repr__(self):
         return f"QoI: {', '.join(self.names)}"
 
@@ -239,7 +237,7 @@ class Specs:
         # self.atomtype_counts = self.data.get('atomtype_counts', {})
         self.atoms = self.data.get('atoms', [])
         self.mol_resname = self.data.get('mol_resname', "")
-        self.implicit_atoms = self.data.get('implicit_atoms', "")
+        self.implicit_atoms = np.atleast_1d(self.data.get('implicit_atoms', ""))
         self.total_charge = self.data.get('total_charge', 0.0)
         self._bounds = Bounds(self.data['bounds'])
 
