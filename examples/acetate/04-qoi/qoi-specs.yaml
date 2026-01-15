@@ -19,6 +19,7 @@ bounds:
   charge O1 O2:
   - -0.8
   - -0.3
+constraint_charge: -0.8
 implicit_atoms:
 - C2
 mol_resname: ACE

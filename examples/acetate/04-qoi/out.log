@@ -1,17 +1,27 @@
 === Quantities of Interest (QoI) Analysis ===
           
-> Training QoI:  0/10 (  0%) | 0s < NaN          
-> Training QoI:  1/10 ( 10%) | 0s < 4s          
-> Training QoI:  2/10 ( 20%) | 0s < 2s          
-> Training QoI:  3/10 ( 30%) | 0s < 1s          
-> Training QoI:  4/10 ( 40%) | 0s < 0s          
-> Training QoI:  5/10 ( 50%) | 0s < 0s          
-> Training QoI:  6/10 ( 60%) | 0s < 0s          
-> Training QoI:  7/10 ( 70%) | 0s < 0s          
-> Training QoI:  8/10 ( 80%) | 0s < 0s          
-> Training QoI:  9/10 ( 90%) | 0s < 0s          
-> Training QoI: 10/10 (100%) | 0s < 0s          
-> Training QoI: 10/10 (100%) | Done. (0s)          
+> Training QoI:  0/20 (  0%) | 0s < NaN          
+> Training QoI:  1/20 (  5%) | 0s < 17s          
+> Training QoI:  2/20 ( 10%) | 0s < 8s          
+> Training QoI:  3/20 ( 15%) | 0s < 5s          
+> Training QoI:  4/20 ( 20%) | 0s < 3s          
+> Training QoI:  5/20 ( 25%) | 0s < 2s          
+> Training QoI:  6/20 ( 30%) | 0s < 2s          
+> Training QoI:  7/20 ( 35%) | 0s < 1s          
+> Training QoI:  8/20 ( 40%) | 0s < 1s          
+> Training QoI:  9/20 ( 45%) | 0s < 1s          
+> Training QoI: 10/20 ( 50%) | 0s < 0s          
+> Training QoI: 11/20 ( 55%) | 0s < 0s          
+> Training QoI: 12/20 ( 60%) | 0s < 0s          
+> Training QoI: 13/20 ( 65%) | 1s < 0s          
+> Training QoI: 14/20 ( 70%) | 1s < 0s          
+> Training QoI: 15/20 ( 75%) | 1s < 0s          
+> Training QoI: 16/20 ( 80%) | 1s < 0s          
+> Training QoI: 17/20 ( 85%) | 1s < 0s          
+> Training QoI: 18/20 ( 90%) | 1s < 0s          
+> Training QoI: 19/20 ( 95%) | 1s < 0s          
+> Training QoI: 20/20 (100%) | 1s < 0s          
+> Training QoI: 20/20 (100%) | Done. (1s)          
           
 > Reference QoI: in progress...          
 > Reference QoI: Done. (1.1 s)          
