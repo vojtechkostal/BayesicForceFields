@@ -22,21 +22,20 @@ gromacs:
     - ../01-prepare/train/index-001.ndx
     - ../01-prepare/train/index-002.ndx
   n_steps:
-    - 200000
-    - 200000
-    - 200000
+    - 500000
+    - 500000
+    - 500000
 bounds:
-  charge CC: [0.0, 1.0]
-  charge OC: [-0.8, -0.3]
-  charge CT3: [-1.0, 0.3]
-  charge HA3: [-0.3, 0.3]
-implicit_atoms: CC
+  charge C2: [0.0, 1.0]
+  charge O1 O2: [-0.8, -0.3]
+  charge C1: [-1.0, 0.3]
+  charge H1 H2 H3: [-0.3, 0.3]
+implicit_atoms: [H1, H2, H3]
 total_charge: -0.80
 n_samples: 10
 compress: false
 cleanup: true
 store: ['xtc']
-python: python3.13
 gmx_cmd: gmx
 job_scheduler: slurm
 slurm:
