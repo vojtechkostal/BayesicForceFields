@@ -22,9 +22,9 @@ gromacs:
     - ../01-prepare/train/index-001.ndx
     - ../01-prepare/train/index-002.ndx
   n_steps:
-    - 200000
-    - 200000
-    - 200000
+    - 1100000
+    - 1100000
+    - 1100000
 bounds:
   charge CC: [0.0, 1.0]
   charge OC: [-0.8, -0.3]
@@ -32,7 +32,7 @@ bounds:
   charge HA3: [-0.3, 0.3]
 implicit_atoms: CC
 total_charge: -0.80
-n_samples: 10
+n_samples: 50
 compress: false
 cleanup: true
 store: ['xtc']

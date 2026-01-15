@@ -40,15 +40,15 @@ def modify_topology(
         specs = Specs(specs)
 
     if implicit:
-        total_charge = specs.total_charge
+        constraint_charge = specs.constraint_charge
         params_dict = dict(zip(specs.bounds_implicit.params, params))
     else:
-        total_charge = None
+        constraint_charge = None
         params_dict = dict(zip(specs.bounds_explicit.params, params))
 
     topol = TopologyParser(fn_topol)
     topol.select_molecule(specs.mol_resname, specs.implicit_atoms)
-    topol.update_params(params_dict, total_charge)
+    topol.update_params(params_dict, constraint_charge)
 
     if fn_out:
         topol.write(fn_out)
