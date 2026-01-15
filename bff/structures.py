@@ -238,7 +238,7 @@ class Specs:
         self.mol_resname = self.data.get('mol_resname', "")
         self.implicit_atoms = self.data.get('implicit_atoms', "")
         self.total_charge = self.data.get('total_charge', 0.0)
-        self.constraint_charge = self.data.get('group_charge', 0.0)
+        self.constraint_charge = self.data.get('constraint_charge', 0.0)
         self._bounds = Bounds(self.data['bounds'])
 
     @staticmethod
