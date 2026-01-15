@@ -1,17 +1,17 @@
 ;
-;   File /home/vojta/code/BayesicForceFields/examples/acetate/03-training-trjs/trainset/topol-000.top  was generated
-;   By user: vojta (1001)
-;   On host:ada 
-;   At date:Sat. January  6 13:49:01 2026 
+;   File /home2/kostal/code/BayesicForceFields/examples/acetate/03-training-trjs/trainset/topol-000.top  was generated
+;   By user: kostal (1283)
+;   On host:login1.aurum.hpcg.local 
+;   At date:Thu. January  4 10:32:22 2026 
 ;
 ;   This is a standalone topology file
 ;
 ;   Created by:
 ;   ParmEd:       bff, VERSION4.3.0 
 ;   Executable:   bff
-;   Library dir:  /home/vojta/build/spack/20241108-git/opt/spack/linux-archrolling-skylake_avx512/gcc-13.3.0/gromacs-2024.3-ewjq7mic6tftzsjj675pvajllpmbk2dj/share/gromacs/top
+;   Library dir:  /usr/local/gromacs/share/gromacs/top
 ;   Command line:
-;     /home/vojta/miniforge3/envs/bffo/bin/bff runsims config-local.yaml
+;     /home2/kostal/miniforge3/envs/bff/bin/bff runsims config-slurm.yaml
 ;
 
 [ defaults ]

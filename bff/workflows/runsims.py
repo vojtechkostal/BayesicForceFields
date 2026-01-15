@@ -166,7 +166,7 @@ def dispatch_md_job(hash: str, sample: list, config: dict, job_scheduler: object
         )
 
     for cmd in config[job_scheduler]['commands']:
-        resolved = cmd_run if 'RUN MD' in cmd else cmd
+        resolved = " ".join(cmd_run) if 'RUN MD' in cmd else cmd
         submit_script.add_command(resolved)
 
     return submit_script.submit(fn_submit)
