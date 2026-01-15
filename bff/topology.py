@@ -382,13 +382,13 @@ class TopologyParser:
 
         return atomtypes
 
-    # @property
-    # def mol_atomtype_counts(self) -> dict:
-    #     """Count the number of atoms of each type in the selected molecule."""
-    #     return {
-    #         atomtype: len(names)
-    #         for atomtype, names in self.mol_atoms_by_type.items()
-    #     }
+    @property
+    def total_charge(self) -> float:
+        """Calculate the total charge of the selected molecule."""
+        return sum(
+            atom.charge for atom in self.topol.atoms
+            if atom.residue.name == self.mol_resname
+        ) / self.n_mol
 
     @property
     def implicit_param(self) -> str:
@@ -414,26 +414,27 @@ class TopologyParser:
             if atomtype == atom.type:
                 atom.atom_type.epsilon = value / 4.184
 
-    # def _modify_dihedraltype(self, dtype, k=None, phase=None, periodicity=None) -> None:
-    #     """Modify the dihedral type parameters."""
-    #     updates: dict[str, object] = {}
-    #     if k is not None:
-    #         updates["phi_k"] = k / 4.184
-    #     if phase is not None:
-    #         updates["phase"] = phase
-    #     if periodicity is not None:
-    #         updates["per"] = periodicity
+    def _constraint_charge(self, total_charge: float) -> None:
+        """Adjust the implicit atomtype charge
+        to satisfy the total charge requirement."""
 
-    #     dtype = " ".join(dtype.split())  # normalize whitespace
+        assert self.n_mol != 0, "No molecule selected."
+        q_explicit = sum(
+            atom.charge for atom in self.topol.atoms
+            if (atom.residue.name == self.mol_resname and
+                atom.name not in self.implicit_atoms)
+        )
+        q_implicit = (total_charge - q_explicit / self.n_mol) / len(self.implicit_atoms)
+        for atom in self.implicit_atoms:
+            self._modify_charge(atom, q_implicit)
 
-    #     for dihedral in self.topol.dihedrals:
-    #         atoms = (dihedral.atom1, dihedral.atom2, dihedral.atom3, dihedral.atom4)
-    #         dihedral_str = " ".join(a.type for a in atoms)
-
-    #         if dihedral_str == dtype:
-    #             for d_type in dihedral.type:
-    #                 for param, value in updates.items():
-    #                     setattr(d_type, param, value)
+    def group_charge(self, atom_names: list[str]) -> float:
+        """Calculate the total charge of a group of atoms."""
+        total_charge = 0.0
+        for atom in self.topol.atoms:
+            if atom.name in atom_names and atom.residue.name == self.mol_resname:
+                total_charge += atom.charge
+        return total_charge
 
     def expand_params(self, params: list[str]) -> list[str]:
         """Convert atom types to atom names for charges in the parameters dictionary."""
@@ -466,20 +467,6 @@ class TopologyParser:
             )
 
         return expanded
-
-    def _constraint_charge(self, total_charge: float) -> None:
-        """Adjust the implicit atomtype charge
-        to satisfy the total charge requirement."""
-
-        assert self.n_mol != 0, "No molecule selected."
-        q_explicit = sum(
-            atom.charge for atom in self.topol.atoms
-            if (atom.residue.name == self.mol_resname and
-                atom.name not in self.implicit_atoms)
-        )
-        q_implicit = (total_charge - q_explicit / self.n_mol) / len(self.implicit_atoms)
-        for atom in self.implicit_atoms:
-            self._modify_charge(atom, q_implicit)
 
     def update_params(self, params: dict, total_charge: float = None) -> None:
         """Update the parameters of the selected molecule.
