@@ -1,5 +1,8 @@
 acetate/01-prepare/prepare
 
+acetate/03-training-trjs/*.npz
+acetate/03-training-trjs/*.lock
+
 acetate/05-learning/*.h5
 acetate/05-learning/hyperparams*.yaml
 acetate/05-learning/hyperparams*.yml
