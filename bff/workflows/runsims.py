@@ -28,7 +28,7 @@ def load_config(config: str | Path):
     config = load_yaml(config)
 
     # Check the mandatory keys
-    required_keys = ['data_dir', 'gromacs', 'python', 'job_scheduler', 'gmx_cmd']
+    required_keys = ['data_dir', 'gromacs', 'job_scheduler', 'gmx_cmd']
     validate = 'inputs' in config
     if validate:
         required_keys.extend(['inputs', 'fn_specs'])
@@ -112,10 +112,6 @@ def load_config(config: str | Path):
     ):
         raise ValueError("'n_samples' must be a positive integer")
 
-    # --- Python executable ---
-    if not shutil.which(config['python']):
-        raise ValueError(f"Python interpreter not found: {config['python']}")
-
     # --- Scheduler ---
     scheduler = config.get('job_scheduler', 'local')
     if scheduler != 'local':
@@ -194,14 +190,24 @@ def initialize_environment(config, validate):
         topol.select_molecule(config['mol_resname'], config['implicit_atoms'])
         bounds_expanded = topol.expand_params(config['bounds'].keys())
         bounds_expanded = dict(zip(bounds_expanded, config['bounds'].values()))
+
+        # determine charge of the modified group of atoms
+        group = []
+        for param in bounds_expanded.keys():
+            param_name, *atoms = param.split()
+            if param_name == 'charge':
+                group.extend(atoms)
+        target_charge = config['total_charge']
+        group_charge = topol.group_charge(group)
+        constraint_charge = target_charge - topol.total_charge + group_charge
+
         specs_data = {
             'mol_resname': config['mol_resname'],
-            # 'atomtype_counts': topol.mol_atomtype_counts,
             'atoms': topol.mol_atoms_by_name,
-            # 'implicit_atomtype': config['implicit_atomtype'],
             'implicit_atoms': topol.implicit_atoms,
             'bounds': bounds_expanded,
             'total_charge': config['total_charge'],
+            'constraint_charge': constraint_charge,
         }
 
         # Check if all targetted atoms are present in the molecules

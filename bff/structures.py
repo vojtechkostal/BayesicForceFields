@@ -234,11 +234,11 @@ class Specs:
         self.data = self._load(specs)
 
         # Extract attributes
-        # self.atomtype_counts = self.data.get('atomtype_counts', {})
         self.atoms = self.data.get('atoms', [])
         self.mol_resname = self.data.get('mol_resname', "")
-        self.implicit_atoms = np.atleast_1d(self.data.get('implicit_atoms', ""))
+        self.implicit_atoms = self.data.get('implicit_atoms', "")
         self.total_charge = self.data.get('total_charge', 0.0)
+        self.constraint_charge = self.data.get('group_charge', 0.0)
         self._bounds = Bounds(self.data['bounds'])
 
     @staticmethod
@@ -316,10 +316,11 @@ class Specs:
     def constraint_matrix(self):
         """Determine constraint matrix."""
 
-        return np.array([
-            self.atomtype_counts.get(p.split()[1], 1) if "charge" in p else 0
-            for p in self.bounds_implicit.params
-        ])
+        return np.array(
+            [len(p.split()[1:]) if p.startswith("charge") else 0
+             for p in self.bounds_implicit.params],
+            dtype=int,
+        )
 
     def is_valid(self, params):
         if isinstance(params, list):
@@ -336,7 +337,7 @@ class Specs:
         valid_explicit = ((params > lbe) & (params < ube)).all(axis=1)
 
         q_explicit = np.sum(params * self.constraint_matrix, axis=1)
-        q_implicit = self.total_charge - q_explicit
+        q_implicit = self.constraint_charge - q_explicit
         valid_implicit = (q_implicit >= lbi) & (q_implicit <= ubi)
 
         return valid_explicit & valid_implicit
