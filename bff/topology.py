@@ -440,21 +440,23 @@ class TopologyParser:
         """Convert atom types to atom names for charges in the parameters dictionary."""
         expanded: list[str] = []
         for param in params:
-            param_name, _, atoms = param.partition(" ")
+            param_name, atoms = param.split(" ", maxsplit=1)
             if 'charge' != param_name:
                 expanded.append(param)
                 continue
 
+            atom_names = " "
             for atom in atoms.split(' '):
                 if atom in self.mol_atomtypes:
                     names_str = ' '.join(self.mol_atoms_by_type[atom])
-                    expanded.append(f"charge {names_str}")
+                    atom_names += f"{names_str} "
                 elif atom in self.mol_atomnames:
-                    expanded.append(f"charge {atom}")
+                    atom_names += f"{atom} "
                 else:
                     raise ValueError(
                         f"Atom '{atom}' not found in the selected molecule."
                     )
+            expanded.append(f"charge {atom_names.strip()}")
 
         # check for duplicates
         flat = []

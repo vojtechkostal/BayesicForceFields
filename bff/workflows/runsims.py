@@ -210,6 +210,10 @@ def initialize_environment(config, validate):
             'constraint_charge': constraint_charge,
         }
 
+        config['bounds'] = bounds_expanded
+        config['constraint_charge'] = constraint_charge
+        config['implicit_atoms'] = topol.implicit_atoms
+
         # Check if all targetted atoms are present in the molecules
         # and check for clashes with implicit atoms or duplicate definitions
         # additionaly, modify bounds to be named by atom names in the case of charges
