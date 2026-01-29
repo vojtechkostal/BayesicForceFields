@@ -8,6 +8,14 @@ from scipy.stats import gaussian_kde
 from .structures import InferenceResults
 
 
+def _wrap_label(s: str, max_per_line: int) -> str:
+    atoms = s.split()
+    return "\n".join(
+        " ".join(atoms[i:i + max_per_line])
+        for i in range(0, len(atoms), max_per_line)
+    )
+
+
 def plot_marginals(
     results: InferenceResults,
     color_prior: str = 'gray', color_posterior: str = 'tab:red',
@@ -134,7 +142,7 @@ def plot_marginals(
         ax.tick_params(axis='both', direction='in')
         ax.set_xticks(np.arange(0, len(results.bounds_explicit.params), 1))
 
-        xtick_labels = [p.split(maxsplit=1)[-1] for p in results.bounds_explicit.params]
+        xtick_labels = [_wrap_label(p.split(maxsplit=1)[-1], 4) for p in results.bounds_explicit.params]
         ax.set_xticklabels(xtick_labels, rotation=30)
         ax.set_xlabel('Atomtype')
 

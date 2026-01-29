@@ -414,6 +414,25 @@ class TopologyParser:
             if atomtype == atom.type:
                 atom.atom_type.epsilon = value / 4.184
 
+    def _modify_dihedraltype(self, dtype, k, phase, periodicity) -> None:
+        """Modify the dihedral type parameters."""
+
+        phase = float(phase)
+        periodicity = int(periodicity)
+
+        dtype = " ".join(dtype.split())  # normalize whitespace
+
+        for dihedral in self.topol.dihedrals:
+            atoms = (dihedral.atom1, dihedral.atom2, dihedral.atom3, dihedral.atom4)
+            dihedral_str = " ".join(a.type for a in atoms)
+
+            if dihedral_str == dtype:
+                for d_type in dihedral.type:
+                    if d_type.per == periodicity and d_type.phase == phase:
+                        d_type.per = periodicity
+                        d_type.phase = phase
+                        d_type.phi_k = k / 4.184
+
     def _constraint_charge(self, total_charge: float) -> None:
         """Adjust the implicit atomtype charge
         to satisfy the total charge requirement."""
@@ -484,20 +503,20 @@ class TopologyParser:
         params_expanded = self.expand_params(params.keys())
         params_expanded = dict(zip(params_expanded, params.values()))
         for param, value in params_expanded.items():
-            # if "dihedraltype" in param:
-            #     param_name, rest = param.split(maxsplit=1)
-            #     atoms, param_type = rest.rsplit(" ", maxsplit=1)
-            #     self._modify_dihedraltype(atoms, **{param_type: value})
-            # else:
-            param_name, atoms = param.split(" ", maxsplit=1)
+            if "dihedraltype" in param:
+                param_name, *atoms, periodicity, phase = param.split()
+                atoms = " ".join(atoms)
+                self._modify_dihedraltype(atoms, value, phase, periodicity)
+            else:
+                param_name, atoms = param.split(" ", maxsplit=1)
 
-            if param_name == 'charge':
-                for atom in atoms.split(' '):
-                    self._modify_charge(atom, value)
-            elif param_name == 'sigma':
-                self._modify_sigma(atoms, value)
-            elif param_name == 'epsilon':
-                self._modify_epsilon(atoms, value)
+                if param_name == 'charge':
+                    for atom in atoms.split(' '):
+                        self._modify_charge(atom, value)
+                elif param_name == 'sigma':
+                    self._modify_sigma(atoms, value)
+                elif param_name == 'epsilon':
+                    self._modify_epsilon(atoms, value)
 
         if total_charge is not None:
             # check if none of the implicit atoms were modified
