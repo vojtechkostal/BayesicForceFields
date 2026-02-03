@@ -4,7 +4,9 @@ import subprocess
 import shutil
 import numpy as np
 from pathlib import Path
-from ..topology import TopologyParser
+
+from gmxtop import Topology
+from ..topology import TopologyModifier
 from ..structures import Specs, RandomParamsGenerator
 from ..io.utils import load_yaml, save_yaml, compress_results
 from ..io.schedulers import Slurm
@@ -186,33 +188,37 @@ def initialize_environment(config, validate):
     if validate:
         fn_specs = Path(config['fn_specs']).resolve()
     else:
-        topol = TopologyParser(config['gromacs']['fn_topol'][0])
-        topol.select_molecule(config['mol_resname'], config['implicit_atoms'])
-        bounds_expanded = topol.expand_params(config['bounds'].keys())
-        bounds_expanded = dict(zip(bounds_expanded, config['bounds'].values()))
+        top_modifier = TopologyModifier(
+            config['gromacs']['fn_topol'][0],
+            config['mol_resname'],
+            config['implicit_atoms'])
+        bounds_resolved = top_modifier.resolve_params(config['bounds'])
 
         # determine charge of the modified group of atoms
         group = []
-        for param in bounds_expanded.keys():
+        for param in bounds_resolved.keys():
             param_name, *atoms = param.split()
             if param_name == 'charge':
                 group.extend(atoms)
         target_charge = config['total_charge']
-        group_charge = topol.group_charge(group)
-        constraint_charge = target_charge - topol.total_charge + group_charge
+        group_charge = top_modifier.group_charge(group)
+        constraint_charge = target_charge - top_modifier.total_charge + group_charge
+
+        atoms = {atom.name: atom.type.name for atom in top_modifier.mol.atoms}
+        implicit_atoms = [atom.name for atom in top_modifier.implicit_atoms]
 
         specs_data = {
             'mol_resname': config['mol_resname'],
-            'atoms': topol.mol_atoms_by_name,
-            'implicit_atoms': topol.implicit_atoms,
-            'bounds': bounds_expanded,
+            'atoms': atoms,
+            'implicit_atoms': implicit_atoms,
+            'bounds': bounds_resolved,
             'total_charge': config['total_charge'],
             'constraint_charge': constraint_charge,
         }
 
-        config['bounds'] = bounds_expanded
+        config['bounds'] = bounds_resolved
         config['constraint_charge'] = constraint_charge
-        config['implicit_atoms'] = topol.implicit_atoms
+        config['implicit_atoms'] = implicit_atoms
 
         # Check if all targetted atoms are present in the molecules
         # and check for clashes with implicit atoms or duplicate definitions
@@ -227,7 +233,7 @@ def initialize_environment(config, validate):
     for i, (fn_top, fn_coords, fn_mdp_em, fn_mdp_prod, fn_ndx) in enumerate(files):
 
         # Write topology file
-        TopologyParser(fn_top).write(str(data_dir / f'topol-{i:03d}.top'))
+        Topology(fn_top).write(str(data_dir / f'topol-{i:03d}.top'))
 
         # File mapping: (source, destination filename template)
         file_map = {
@@ -288,7 +294,7 @@ def clean_up_train_dir(samples, data_dir, compress=False, remove=False):
     data_dir = Path(data_dir)
     samples_to_store = {}
     for hash, params in samples.items():
-        fn_trial = sorted(data_dir.glob(f'*{hash}*.xtc'))  # sort by filename
+        fn_trial = sorted(data_dir.glob(f'*-{hash}-*.xtc'))  # sort by filename
         if fn_trial and all(f.exists() for f in fn_trial):
             samples_to_store[hash] = {
                 'params': params,

@@ -1,33 +1,10 @@
-"""Module to handle force field parameteres."""
-
-import warnings
 import numpy as np
 import MDAnalysis as mda
-import parmed as pmd
 from MDAnalysis.guesser.tables import masses as MDA_MASSES
-from MDAnalysis.lib.distances import distance_array
 
-from .tools import random_placement, guess_box
-from .data import WATER_3SITE, WATER_4SITE, WATERS, IONS
+from pathlib import Path
+from gmxtop import Topology, MoleculeType
 
-# Suppress specific warning from MDAnalysis
-warnings.filterwarnings(
-    "ignore",
-    category=UserWarning,
-    module="MDAnalysis.core.universe"
-)
-
-warnings.filterwarnings(
-    "ignore",
-    category=DeprecationWarning,
-    module="MDAnalysis.topology.ITPParser"
-)
-
-warnings.filterwarnings(
-    "ignore",
-    category=UserWarning,
-    module="MDAnalysis.topology.PDBParser"
-)
 
 MASSES = np.array(list(MDA_MASSES.values()))
 ELEMENTS = list(MDA_MASSES.keys())
@@ -48,43 +25,6 @@ def check_unitcell(universe: mda.Universe, unitcell: list) -> None:
             raise ValueError("Unitcell is not specified.")
         for ts in universe.trajectory:
             ts.dimensions = unitcell
-
-
-def check_topols(fn_topol_1: str, fn_topol_2: str) -> None:
-    """Check if a pair of topologies is consistent."""
-
-    # Load universes
-    u1 = prepare_universe(fn_topol_1)
-    u2 = prepare_universe(fn_topol_2)
-
-    # Do not consider dummy atoms
-    atoms1 = u1.select_atoms('not mass -1 to 0.5')
-    atoms2 = u2.select_atoms('not mass -1 to 0.5')
-
-    # Check if the atomtypes are the same
-    at1 = np.unique(atoms1.types)
-    at2 = np.unique(atoms2.types)
-
-    if not len(at1) == len(at2):
-        raise ValueError(
-            (
-                f'Number of atomtypes do not match between {fn_topol_1} '
-                f'and {fn_topol_2}.'
-            )
-        )
-
-    if not np.all(at1 == at2):
-        raise ValueError(
-            f'Atomtypes do not match between {fn_topol_1} and {fn_topol_2}.'
-        )
-
-    # Check if the atom names are the same
-    names1 = np.unique(atoms1.names)
-    names2 = np.unique(atoms2.names)
-    if not np.all(names1 == names2):
-        raise ValueError(
-            f'Atom names do not match between {fn_topol_1} and {fn_topol_2}.'
-        )
 
 
 def prepare_universe(
@@ -125,403 +65,197 @@ def prepare_universe(
     return universe
 
 
-def create_box(
-    fn_topol: str,
-    fn_mol: str,
-    fn_out: str,
-    box: np.ndarray = None,
-    min_dist: float = 1.5,
-    disp_limit: float = 0.4
-) -> tuple:
-    """Fills a box with molecules, solvent and ions."""
+class TopologyModifier(Topology):
 
-    # Create universe
-    topol = pmd.load_file(fn_topol)
-    universe = fill_universe(topol)
+    def __init__(
+        self,
+        fn_topol: str | Path,
+        mol_resname: str,
+        implicit_atomnames: list[str] | str
+    ) -> None:
 
-    if box is None:
-        box = guess_box(len(topol.residues))
-    else:
-        box = np.array(box)
-    universe.dimensions = box
-
-    # Insert moleculal positions
-    mol = mda.Universe(fn_mol)  # TODO: get rid of the elements warning
-    pos_mol = mol.atoms.positions - mol.atoms.center_of_mass()
-    coords = insert_molecules(
-        universe, topol, box, pos_mol,
-        min_dist=min_dist, disp_limit=disp_limit
-    )
-    universe.atoms.positions = coords
-
-    # Write positons into a file
-    universe.atoms.write(fn_out)
-
-    return universe, topol
-
-
-def insert_molecules(
-    universe: mda.Universe,
-    topol: pmd.gromacs.GromacsTopologyFile,
-    box: np.ndarray,
-    pos_mol: np.ndarray,
-    min_dist: float = 1.5,
-    disp_limit: float = 0.4
-) -> np.ndarray:
-    """Insert molecules into the box."""
-
-    coords = np.zeros((len(topol.atoms), 3))
-    i = 0
-    for residue in topol.residues:
-        n_atoms = len(residue.atoms)
-        if residue.name in WATERS:
-            pos = WATER_3SITE if n_atoms == 3 else WATER_4SITE
-            displacement_limit = box[:3]
-        elif residue.name.lower() in IONS:
-            pos = np.zeros(3)
-            displacement_limit = box[:3] * disp_limit
+        self.source = fn_topol
+        self.mol_resname = mol_resname
+        if isinstance(implicit_atomnames, str):
+            self._implicit_atomnames = [implicit_atomnames]
         else:
-            pos = pos_mol
-            displacement_limit = box[:3] * disp_limit
-        while True:
-            pos_trial = random_placement(pos.copy(), displacement_limit)
-            distances = distance_array(
-                pos_trial, coords, box=universe.dimensions
-            )
-            if not np.any(distances < min_dist):
-                coords[i:i+n_atoms] = pos_trial
-                break
-        i += n_atoms
+            self._implicit_atomnames = implicit_atomnames
 
-    return coords
-
-
-def fill_universe(topol: pmd.gromacs.GromacsTopologyFile) -> mda.Universe:
-    """Fill an empty universe with the topology information."""
-    atoms = topol.atoms
-    residues = topol.residues
-    resindices = np.array([i for i, r in enumerate(residues) for _ in r.atoms])
-    segindices = [0] * len(topol.residues)
-
-    # Create universe
-    universe = mda.Universe.empty(
-        n_atoms=len(atoms),
-        n_residues=len(residues),
-        atom_resindex=resindices,
-        residue_segindex=segindices,
-        trajectory=True)
-
-    universe.add_TopologyAttr('name', [a.name for a in atoms])
-    universe.add_TopologyAttr('type', [a.type for a in atoms])
-    universe.add_TopologyAttr('resname', [r.name for r in residues])
-    universe.add_TopologyAttr('resid', list(range(1, len(residues) + 1)))
-
-    universe.guess_TopologyAttrs(to_guess=['elements', 'masses'])
-
-    return universe
-
-
-class TopologyParser:
-    """
-    Parser and modifier for GROMACS .itp topology files.
-
-    Parameters
-    ----------
-    fn_topol : str
-        Path to the GROMACS topology file.
-
-    Attributes
-    ----------
-    fn_topol : str
-        Path to the topology file passed at construction.
-    topol : parmed.gromacs.GromacsTopologyFile
-        Parsed topology object (ParmEd).
-    universe : MDAnalysis.Universe
-        MDAnalysis universe created from the topology.
-    mol_resname : str | None
-        Residue name of the currently selected molecule.
-    _implicit_atoms : list[str] | None
-        Atom names or atom types designated as implicit for charge adjustments.
-
-    Properties (convenience)
-    ------------------------
-    mol : parmed.structure.Structure
-        The selected molecule object (raises if not found).
-    n_mol : int
-        Number of residues in the topology matching mol_resname.
-    mol_atomtypes : np.ndarray
-        Unique atom types in the selected molecule.
-    mol_atomnames : np.ndarray
-        Atom names in the selected molecule.
-    mol_atoms_by_name : dict
-        Mapping from atom name -> atom type for the selected molecule.
-    mol_atoms_by_type : dict
-        Mapping from atom type -> list of atom names for the selected molecule.
-    implicit_atoms : list[str]
-        Resolved implicit atom names (returns atom names even if implicit
-        was specified as an atom type).
-    implicit_param : str
-        String used to identify the implicit parameter (e.g. "charge H1 H2").
-
-    Main methods
-    ------------
-    parse()
-        Parse the topology file into ParmEd and MDAnalysis objects.
-    write(fn_out, **kwargs)
-        Save the topology to disk.
-    select_molecule(resname, implicit_atoms)
-        Select a molecule by residue name and set implicit atoms (name(s) or
-        type(s)) used for charge constraints.
-    update_params(params, total_charge=None)
-        Update charges, sigma, epsilon and dihedral parameters for the
-        selected molecule. If total_charge is provided, adjust implicit
-        atoms to satisfy the total charge.
-    expand_params(params)
-        Expand parameters that reference atom types into explicit atom names.
-    """
-
-    def __init__(self, fn_topol: str) -> None:
-        """
-        Initialize the TopologyParser with a given topology file path.
-
-        Parameters
-        ----------
-        fn_topol : str
-            Path to the GROMACS topology (.itp) file.
-        """
-
-        self.fn_topol = str(fn_topol)
-        self.topol = None
-        self.universe = None
-        self.mol_resname = None
-        self._implicit_atoms = None
-
-        self.parse()
-
-    def parse(self) -> None:
-        """Parse the topology from an .itp file."""
-        self.topol = pmd.load_file(self.fn_topol)
-        self.universe = prepare_universe(self.fn_topol)
-
-    def write(self, fn_out: str, **kwargs) -> None:
-        """Write the topology into file."""
-        self.topol.save(fn_out, **kwargs)
-
-    def select_molecule(self, resname: str, implicit_atoms: list[str] | str) -> None:
-        """
-        Select a molecule from the topology by name.
-
-        Parameters
-        ----------
-        resname : str
-            Residue name of the molecule to select.
-        implicit_atoms : list[str] | str
-            Atom type whose charge will be adjusted implicitly
-            to satisfy the total charge requirement.
-        """
-        self.mol_resname = resname
-        if isinstance(implicit_atoms, str):
-            self._implicit_atoms = [implicit_atoms]
-        elif isinstance(implicit_atoms, (list, tuple, set)):
-            self._implicit_atoms = list(implicit_atoms)
-        else:
-            raise TypeError(
-                "implicit_atoms must be a string or an iterable of strings "
-                f"(got {type(implicit_atoms).__name__})"
-            )
+        super().__init__(self.source)
+        self.universe = prepare_universe(self.source)
 
     @property
-    def implicit_atoms(self) -> list[str]:
-        """Return implicit atoms resolved to atom names."""
-
-        for atom in self._implicit_atoms:
-            if atom in self.mol_atomtypes:
-                return self.mol_atoms_by_type[atom]
-            elif atom in self.mol_atomnames:
-                return self._implicit_atoms
-
-        raise ValueError("Implicit atoms not found in the selected molecule.")
-
-    @property
-    def mol(self) -> str:
-        """Retrieve the selected molecule."""
-        mol_list = self.topol.molecules.get(self.mol_resname, None)
-        if mol_list is None:
-            raise ValueError(
-                f"Molecule with resname '{self.mol_resname}' not found in the "
-                "topology."
-            )
-        return mol_list[0]
+    def mol(self) -> MoleculeType:
+        return self.molecules[self.mol_resname][0]
 
     @property
     def n_mol(self) -> int:
-        """Retrieve the number of molecules in the topology."""
-        return sum(r.name == self.mol_resname for r in self.topol.residues)
+        return self.molecules[self.mol_resname][1]
 
     @property
-    def mol_atomtypes(self) -> list:
-        """Retrieve unique atom types in the selected molecule."""
-        return np.array(list(self.mol_atoms_by_type.keys()))
-
-    @property
-    def mol_atomnames(self) -> list:
-        """Retrieve atom names in the selected molecule."""
-        return np.array(list(self.mol_atoms_by_name.keys()))
-
-    @property
-    def mol_atoms_by_name(self) -> dict:
-        """Retrieve atoms names and their atomtypes."""
-        return {atom.name: atom.type for atom in self.mol.atoms}
-
-    @property
-    def mol_atoms_by_type(self) -> dict:
-        """Retrieve atoms types and their names."""
-        atomtypes: dict[str, list[str]] = {}
+    def implicit_atoms(self) -> list[str]:
+        implicit_atoms = []
         for atom in self.mol.atoms:
-            atomtypes.setdefault(atom.type, []).append(atom.name)
+            if (atom.name in self._implicit_atomnames
+                    or atom.type.name in self._implicit_atomnames):
+                implicit_atoms.append(atom)
 
-        return atomtypes
-
-    @property
-    def total_charge(self) -> float:
-        """Calculate the total charge of the selected molecule."""
-        return sum(
-            atom.charge for atom in self.topol.atoms
-            if atom.residue.name == self.mol_resname
-        ) / self.n_mol
+        return implicit_atoms
 
     @property
     def implicit_param(self) -> str:
-        """Retrieve the implicit parameter name."""
-        atoms = ' '.join(self.implicit_atoms)
-        return f'charge {atoms}'
+        atoms = " ".join([atom.name for atom in self.implicit_atoms])
+        return f"charge {atoms}"
 
-    def _modify_charge(self, name: str, value: float) -> None:
-        """Modify the charge of a given atom type."""
-        for atom in self.topol.atoms:
-            if name == atom.name:
-                atom.charge = value
+    @property
+    def total_charge(self) -> float:
+        return np.sum([atom.charge for atom in self.mol.atoms])
 
-    def _modify_sigma(self, atomtype: str, value: float) -> None:
-        """Modify the Lennard-Jones sigma of a given atom type."""
-        for atom in self.topol.atoms:
-            if atomtype == atom.type:
-                atom.atom_type.sigma = value * 10
+    def _update_charge(self, atomname: str, value: float) -> None:
+        for atom in self.mol.atoms:
+            if atom.name == atomname:
+                atom.update(charge=value)
+                return
+        raise ValueError(f"Atom {atomname} not found in molecule {self.mol_resname}.")
 
-    def _modify_epsilon(self, atomtype: str, value: float) -> None:
-        """Modify the Lennard-Jones epsilon of a given atom type."""
-        for atom in self.topol.atoms:
-            if atomtype == atom.type:
-                atom.atom_type.epsilon = value / 4.184
+    def _update_sigma(self, atomtype: str, value: float) -> None:
+        for at in self.atomtypes:
+            if at.name == atomtype:
+                at.update(sigma=value)
+                return
+        raise ValueError(f"Atom type {atomtype} not found in topology.")
 
-    def _modify_dihedraltype(self, dtype, k, phase, periodicity) -> None:
-        """Modify the dihedral type parameters."""
+    def _update_epsilon(self, atomtype: str, value: float) -> None:
+        for atomtype in self.atomtypes:
+            if atomtype.name == atomtype:
+                atomtype.update(epsilon=value)
+                return
+        raise ValueError(f"Atom type {atomtype} not found in topology.")
 
-        phase = float(phase)
-        periodicity = int(periodicity)
+    def _update_dihedraltype9(
+        self,
+        atoms: str,
+        k: float,
+        phase: float,
+        multiplicity: int
+    ) -> None:
 
-        dtype = " ".join(dtype.split())  # normalize whitespace
+        # normalize white spaces
+        dihedraltype = " ".join(atoms.split())
 
-        for dihedral in self.topol.dihedrals:
-            atoms = (dihedral.atom1, dihedral.atom2, dihedral.atom3, dihedral.atom4)
-            dihedral_str = " ".join(a.type for a in atoms)
-
-            if dihedral_str == dtype:
-                for d_type in dihedral.type:
-                    if d_type.per == periodicity and d_type.phase == phase:
-                        d_type.per = periodicity
-                        d_type.phase = phase
-                        d_type.phi_k = k / 4.184
-
-    def _constraint_charge(self, total_charge: float) -> None:
-        """Adjust the implicit atomtype charge
-        to satisfy the total charge requirement."""
-
-        assert self.n_mol != 0, "No molecule selected."
-        q_explicit = sum(
-            atom.charge for atom in self.topol.atoms
-            if (atom.residue.name == self.mol_resname and
-                atom.name not in self.implicit_atoms)
+        for d in self.mol.dihedrals:
+            atoms = [d.ai, d.aj, d.ak, d.al]
+            if d.func == 9:
+                dt_str = " ".join([a.type.name for a in atoms])
+            if dt_str == dihedraltype:
+                d.update(kphi=k, phi_s=phase, mult=multiplicity)
+                return
+        raise ValueError(
+            f"Dihedral type '{dihedraltype}' not found in molecule {self.mol_resname}."
         )
-        q_implicit = (total_charge - q_explicit / self.n_mol) / len(self.implicit_atoms)
+
+    def _update_define(self, directive: str, argument: float | int | str) -> None:
+        for define in self.defines:
+            if define.directive == directive:
+                define.update(argument=argument)
+                return
+
+    def _constraint_charge(self, target: float) -> None:
+
+        q_explicit = np.sum([
+            atom.charge for atom in self.mol.atoms
+            if atom not in self.implicit_atoms
+        ])
+
+        n_implicit = len(self.implicit_atoms)
+        q_implicit = (target - q_explicit) / n_implicit
         for atom in self.implicit_atoms:
-            self._modify_charge(atom, q_implicit)
+            self._update_charge(atom.name, q_implicit)
 
-    def group_charge(self, atom_names: list[str]) -> float:
-        """Calculate the total charge of a group of atoms."""
-        total_charge = 0.0
-        for atom in self.topol.atoms:
-            if atom.name in atom_names and atom.residue.name == self.mol_resname:
-                total_charge += atom.charge
-        return total_charge
+    def group_charge(self, atomnames: list[str]) -> float:
+        return np.sum([
+            atom.charge for atom in self.mol.atoms
+            if atom.name in atomnames
+        ])
 
-    def expand_params(self, params: list[str]) -> list[str]:
-        """Convert atom types to atom names for charges in the parameters dictionary."""
-        expanded: list[str] = []
-        for param in params:
-            param_name, atoms = param.split(" ", maxsplit=1)
-            if 'charge' != param_name:
-                expanded.append(param)
+    def resolve_params(
+        self,
+        params: dict[str, float | list[float]]
+    ) -> dict[str, float | list[float]]:
+        mol_atomnames = [atom.name for atom in self.mol.atoms]
+        mol_atomtypes = [atom.type.name for atom in self.mol.atoms]
+
+        resolved: dict[str, float | list[float]] = {}
+        for p in params.keys():
+            p_name, atoms = p.split(" ", maxsplit=1)
+            if p_name != 'charge':
+                resolved[p] = params[p]
                 continue
 
-            atom_names = " "
-            for atom in atoms.split(' '):
-                if atom in self.mol_atomtypes:
-                    names_str = ' '.join(self.mol_atoms_by_type[atom])
-                    atom_names += f"{names_str} "
-                elif atom in self.mol_atomnames:
-                    atom_names += f"{atom} "
+            atomnames = " "
+            for name in atoms.split(" "):
+                if name in mol_atomnames:
+                    atomnames += f"{name} "
+                elif name in mol_atomtypes:
+                    for atom in self.mol.atoms:
+                        if atom.type.name == name:
+                            atomnames += f"{atom.name} "
                 else:
                     raise ValueError(
-                        f"Atom '{atom}' not found in the selected molecule."
+                        f"Atom name or type '{name}' not found "
+                        f"in molecule {self.mol_resname}."
                     )
-            expanded.append(f"charge {atom_names.strip()}")
+            resolved[f"charge {atomnames.strip()}"] = params[p]
 
         # check for duplicates
-        flat = []
-        for param in expanded:
-            if param.startswith("charge"):
-                flat.extend(param.split(" ")[1:])
+        flat: list[str] = []
+        for r in resolved.keys():
+            if r.startswith('charge'):
+                flat.extend(r.split(" ")[1:])
         if len(flat) != len(set(flat)):
-            raise ValueError(
-                "Duplicate atom names found in the parameters."
-            )
+            raise ValueError("Duplicate atom names in resolved parameters.")
 
-        return expanded
+        return resolved
 
-    def update_params(self, params: dict, total_charge: float = None) -> None:
-        """Update the parameters of the selected molecule.
+    def update_params(self, params: dict, constraint_charge: float | None) -> None:
+        params_resolved = self.resolve_params(params)
 
-        Parameters
-        ----------
-        params : dict
-            A dictionary of parameters and the values to update.
-        total_charge : float, optional
-            The total charge of the system.
-        """
+        for p, value in params_resolved.items():
+            if "dihedraltype9" in p:
+                p_name, *dihedraltypes, mult, phase = p.split()
+                for dt in dihedraltypes:
+                    atoms = dt.replace("_", " ")
+                    self._update_dihedraltype9(
+                        atoms,
+                        k=value,
+                        phase=float(phase),
+                        multiplicity=int(mult)
+                    )
 
-        params_expanded = self.expand_params(params.keys())
-        params_expanded = dict(zip(params_expanded, params.values()))
-        for param, value in params_expanded.items():
-            if "dihedraltype" in param:
-                param_name, *atoms, periodicity, phase = param.split()
-                atoms = " ".join(atoms)
-                self._modify_dihedraltype(atoms, value, phase, periodicity)
+            elif p.startswith("define"):
+                p_name, directive = p.split(" ")
+                self._update_define(directive, value)
+
             else:
-                param_name, atoms = param.split(" ", maxsplit=1)
+                p_name, *atoms = p.split(" ")
+                if p_name == 'charge':
+                    for atom in atoms:
+                        self._update_charge(atom, value)
+                elif p_name == 'sigma':
+                    for atom in atoms:
+                        self._update_sigma(atom, value)
+                elif p_name == 'epsilon':
+                    for atom in atoms:
+                        self._update_epsilon(atom, value)
+                else:
+                    raise ValueError(f"Unsupported parameter name '{p_name}'.")
 
-                if param_name == 'charge':
-                    for atom in atoms.split(' '):
-                        self._modify_charge(atom, value)
-                elif param_name == 'sigma':
-                    self._modify_sigma(atoms, value)
-                elif param_name == 'epsilon':
-                    self._modify_epsilon(atoms, value)
-
-        if total_charge is not None:
-            # check if none of the implicit atoms were modified
-            if not any(
-                atom in params_expanded
-                for atom in self.implicit_atoms
-            ):
-                self._constraint_charge(total_charge)
+        if constraint_charge is not None:
+            # check if none of the implict atoms were updated manually
+            for atom in self.implicit_atoms:
+                if atom.name in params_resolved:
+                    raise ValueError(
+                        f"Implicit atom '{atom}' charge was set manually, "
+                        "cannot apply constraint charge."
+                    )
+            self._constraint_charge(constraint_charge)

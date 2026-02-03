@@ -11,4 +11,3 @@ __all__ = [
     "mdp",
     "cp2k",
 ]
-#  type: ignore

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from ..io.mdp import get_n_frames_target
 from ..structures import Specs
-from ..topology import TopologyParser
+from ..topology import TopologyModifier
 from ..io.utils import load_yaml
 
 
@@ -46,13 +46,12 @@ def modify_topology(
         constraint_charge = None
         params_dict = dict(zip(specs.bounds_explicit.params, params))
 
-    topol = TopologyParser(fn_topol)
-    topol.select_molecule(specs.mol_resname, specs.implicit_atoms)
-    topol.update_params(params_dict, constraint_charge)
+    top_modifier = TopologyModifier(fn_topol, specs.mol_resname, specs.implicit_atoms)
+    top_modifier.update_params(params_dict, constraint_charge)
 
     if fn_out:
-        topol.write(fn_out)
-    return topol
+        top_modifier.write(fn_out)
+    return top_modifier
 
 
 def main(fn_config: str) -> None:

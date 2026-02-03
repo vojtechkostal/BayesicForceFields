@@ -10,7 +10,6 @@ from .bff import BFFLearn
 from . import plotting
 from . import qoi
 from . import data
-from . import topology
 from . import tools
 from . import io
 from . import structures
@@ -23,7 +22,6 @@ __all__ = [
     "plotting",
     "qoi",
     "data",
-    "topology",
     "tools",
     "io",
     "structures",

@@ -1,7 +1,6 @@
 import argparse
 import subprocess
 import numpy as np
-import parmed as pmd
 
 import MDAnalysis as mda
 from MDAnalysis.analysis.distances import distance_array
@@ -11,7 +10,8 @@ from MDAnalysis import transformations as trans
 from pathlib import Path
 from collections import defaultdict
 
-from ..topology import create_box
+from gmxtop import Topology
+from ..tools import create_box
 from ..io.cp2k import make_cp2k_input
 from ..io.mdp import MDP
 from ..io.utils import load_yaml
@@ -292,27 +292,20 @@ def create_restraint_window(
             w.write(universe.atoms)
 
 
-def remove_vsites(universe: mda.Universe, fn_out=None) -> mda.AtomGroup:
-    """Remove virtual sites from the universe and save the coordinates."""
-
-    # Remove virtual sites and save .xyz file
-    atoms = universe.select_atoms('not mass -1 to 0.5')
-
-    if fn_out:
-        atoms.write(fn_out, frames=universe.trajectory[[-1]])
-    else:
-        return atoms
-
-
 def strip_topol(
-        fn_topol: str, fn_coords: str, fn_out_topol: str, fn_out_coords: str) -> None:
-    top = pmd.load_file(fn_topol, xyz=fn_coords)
+        fn_topol: str, fn_coords: str, fn_out_topol: str, *fn_out_coords: str) -> None:
+    top = Topology(fn_topol)
+    u = mda.Universe(fn_topol, fn_coords, topology_format='ITP')
 
-    # Remove dummy atoms
-    mask = np.array([atom.element for atom in top.atoms]) == 0
-    top.strip(mask)
+    # Remove virtual sites from topology
+    for mol, _ in top.molecules.values():
+        mol.remove_vsites()
     top.write(fn_out_topol)
-    top.save(fn_out_coords)
+
+    # Remove virtual sites from coordinates
+    atoms = u.select_atoms('not mass -1 to 0.5')
+    for fn_out in fn_out_coords:
+        atoms.write(fn_out, frames=u.trajectory[[-1]])
 
 
 def get_restraint_atom_indices(fn_system: str, names: list) -> np.ndarray:
@@ -359,7 +352,7 @@ def main(fn_config: str) -> None:
             logger.info("Creating box: Done.", level=2)
 
             fn_topol_processed = fn_coord.with_suffix('.top')
-            topol.save(str(fn_topol_processed))
+            topol.write(str(fn_topol_processed))
             q = sum(atom.charge for atom in topol.atoms)
             maxwarn = 1 if not np.isclose(q, 0, atol=1e-4) else 0
 
@@ -457,9 +450,12 @@ def main(fn_config: str) -> None:
         cp2k_win_dir = cp2k_dir / f'win-{i:03d}'
         cp2k_win_dir.mkdir(exist_ok=True)
 
-        remove_vsites(u, cp2k_win_dir / 'pos.xyz')
-        strip_topol(str(fn_topol_processed), str(deffnm_nvt) + '.gro',
-                    str(cp2k_win_dir / 'topol.top'), str(cp2k_win_dir / 'pos.gro'))
+        # remove_vsites(u, cp2k_win_dir / 'pos.xyz')
+        strip_topol(str(fn_topol_processed),
+                    str(deffnm_nvt) + '.gro',
+                    str(cp2k_win_dir / 'topol.top'),
+                    str(cp2k_win_dir / 'pos.gro'),
+                    str(cp2k_win_dir / 'pos.xyz'))
 
         atom_indices = get_restraint_atom_indices(
             str(cp2k_win_dir / 'pos.gro'), atoms)
