@@ -12,15 +12,15 @@ CAL         1
 
 [ atoms ]
 ;   nr    type   resnr  residu    atom    cgnr        charge          mass
-     1    CA       1      CAL     CAL      1           1.60      40.07800
+     1    CAL       1      CAL     CAL      1           1.60      40.07800
 
 [ moleculetype ]
 ; Name   nrexcl
-CL          1
+CLA          1
 
 [ atoms ]
 ;   nr    type   resnr  residu    atom    cgnr        charge          mass
-     1    CL       1      CL      CL       1         -0.80      35.45300
+     1    CLA       1      CLA      CLA       1         -0.80      35.45300
 
 [ moleculetype ]
 ; Name   nrexcl
