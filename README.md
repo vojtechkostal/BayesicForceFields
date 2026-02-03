@@ -13,26 +13,23 @@ The LGP hyperparameters are optimized and their uncertainty can be propagated to
 * [SciPy](https://scipy.org/)
 * [MDAnalysis](https://www.mdanalysis.org) (analyzing MD trajectories)
 * [emcee](https://emcee.readthedocs.io/en/stable/#) (MCMC sampling within the Bayesian inference)
-* [ParmEd](https://parmed.github.io/ParmEd/html/index.html) (topology handling)
 * [PyTorch](https://pytorch.org/get-started/locally/) (Efficient surrogate modeling using GPU and CUDA)
 * [PyYAML](https://pypi.org/project/PyYAML/) (handling .yaml files)
 * [Matplotlib](https://matplotlib.org/) (Plotting)
+* [gmxtop](https://github.com/vojtechkostal/gmxtop) (Topology handling)
 
 ## Installation
+0. > [!WARNING] Install prerequisites:
+    - `PyTorch` (Local Gaussian Process evaluations): this cannot be automatized yet, install (preferably the GPU version) follwing instructions here: https://pytorch.org/get-started/locally/
+    - `Gromacs` (molecular dynamics engine): needed to be accessible from command line via `gmx` (or similar) commands in order to run MD simulations.
+    - `gmxtop` (Gromacs topology handling): Follow installation instructions here: https://github.com/vojtechkostal/gmxtop
+
 1. Clone this repository and (preferably) create and activate a new environment using `mamba` or `conda` as:
 ```sh
 cd BayesicForceFields
 mamba env create -f ./environment.yaml
 mamba activate bff
 ```
-
-3. install the package:
- > [!WARNING]
-The package requires `PyTorch` to be installed and it benefits hugely from the GPU acceleration.
-However, the GPU-enabled PyTorch installation cannot be automatized so at this point, please install PyTorch using one of the options here: https://pytorch.org/get-started/locally/.
-
- > [!WARNING]
-Also, the code needs `Gromacs` installation to be accesible to run force-field MDs during the initial setup and during generation of the training set.
 
 ```sh
 pip install -e .

@@ -6,10 +6,9 @@ dependencies:
   - ipython
   - ipywidgets
   - ipykernel
-  - numpy <= 2.2.4
+  - numpy
   - scipy
   - pyyaml
   - mdanalysis
   - emcee
-  - parmed
   - typer
