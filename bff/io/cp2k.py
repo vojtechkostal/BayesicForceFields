@@ -1,9 +1,10 @@
 import numpy as np
 import MDAnalysis as mda
+from typing import List, Dict
 from ..data import CATIONS, CP2K_KIND_DEFAULTS, CP2K_INPUT_TEMPLATE
 
 
-def format_cp2k_input(data: dict, indent: int = 0) -> list:
+def format_cp2k_input(data: dict, indent: int = 0) -> List[str]:
     """ Recursively format CP2K input from a dictionary. """
     lines = []
     for key, value in data.items():
@@ -34,8 +35,8 @@ def format_cp2k_input(data: dict, indent: int = 0) -> list:
 
 def make_cp2k_input(
     project: str,
-    charge: int, multiplicity: int, unitcell: list[float], fn_pos: str,
-    restraints: list[dict],
+    charge: int, multiplicity: int, unitcell: List[float], fn_pos: str,
+    restraints: List[Dict[str, float]],
     equlibration: bool, restart: bool,
     fn_out: str
 ) -> None:

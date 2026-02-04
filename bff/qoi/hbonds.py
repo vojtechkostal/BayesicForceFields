@@ -1,6 +1,7 @@
 import numpy as np
 import MDAnalysis as mda
 from MDAnalysis.lib.distances import capped_distance, calc_angles
+from typing import Dict, List
 
 __all__ = ["compute_all_hbonds", "extract_hbonds"]
 
@@ -10,7 +11,7 @@ def count_hbonds(
     donor_indices: np.ndarray,
     acceptor_indices: np.ndarray,
     n_frames: int
-) -> dict:
+) -> Dict[str, float]:
     """
     Counts the average number of hydrogen bonds per hydrogen bond type.
 
@@ -61,7 +62,7 @@ def compute_hbonds(
     start: int = 0,
     step: int = 1,
     stop: int = None,
-) -> tuple:
+) -> tuple[np.ndarray, np.ndarray, int]:
     """
     Computes hydrogen bonds between donor and acceptor atoms.
 
@@ -126,7 +127,7 @@ def compute_hbonds(
 
 
 def compute_all_hbonds(
-        universe: mda.Universe, mol_resname: str, **kwargs) -> dict:
+        universe: mda.Universe, mol_resname: str, **kwargs) -> Dict[str, float]:
     """
     Computes all hydrogen bonds between a molecule and water.
 
@@ -135,7 +136,7 @@ def compute_all_hbonds(
     universe : MDAnalysis.Universe
     mol_resname : str
         Residue name of the molecule.
-    **kwargs : dict, optional
+    **kwargs : Dict, optional
         Additional keyword arguments passed to the
         underlying hydrogen bond analysis function.
         - `distance_cutoff` (float): Maximum acceptable
@@ -185,7 +186,10 @@ def compute_all_hbonds(
     return hbonds
 
 
-def extract_hbonds(hbonds_true, hbonds_pred):
+def extract_hbonds(
+    hbonds_true: Dict[str, float],
+    hbonds_pred: Dict[str, float]
+) -> List[float]:
     """Gets the average number of hydrogen bonds
     with respect to the reference."""
 

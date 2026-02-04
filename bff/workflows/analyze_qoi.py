@@ -2,6 +2,7 @@ import time
 import numpy as np
 
 from pathlib import Path
+from typing import List, Dict
 
 from ..qoi.analysis import analyze_trainset, analyze_all_trajectories, get_all_settings
 from ..io.logs import Logger
@@ -51,8 +52,8 @@ def load_config(fn_config: str) -> dict:
 
 
 def _flatten_qoi(
-    sample: list[QoI], valid_qoi: list[str], valid_hb: np.ndarray[str] = None
-) -> dict[str, list]:
+    sample: List[QoI], valid_qoi: List[str], valid_hb: np.ndarray[str] = None
+) -> Dict[str, List[float]]:
     """Group QoI values without flattening."""
 
     blocks = {attr: [] for attr in valid_qoi}
@@ -72,8 +73,8 @@ def _flatten_qoi(
 
 
 def _infer_observations(
-    qoi: list[QoI], valid_hb: np.ndarray[str] = None
-) -> dict[str, int]:
+    qoi: List[QoI], valid_hb: np.ndarray[str] = None
+) -> Dict[str, int]:
     observations = {}
     for i in qoi:
         for name, n in i.observations.items():

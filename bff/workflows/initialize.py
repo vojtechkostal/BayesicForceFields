@@ -1,6 +1,7 @@
 import argparse
 import subprocess
 import numpy as np
+from typing import Any, Union, Dict, List
 
 import MDAnalysis as mda
 from MDAnalysis.analysis.distances import distance_array
@@ -18,7 +19,10 @@ from ..io.utils import load_yaml
 from ..io.logs import Logger
 
 
-def check_gmx_available(gmx_cmd='gmx') -> None:
+PathLike = Union[str, Path]
+
+
+def check_gmx_available(gmx_cmd: str = 'gmx') -> None:
     """Check if the 'gmx' command is available in the system PATH."""
     try:
         subprocess.run(
@@ -35,7 +39,7 @@ def check_gmx_available(gmx_cmd='gmx') -> None:
         )
 
 
-def load_config(config: str | Path) -> None:
+def load_config(config: PathLike) -> None:
     """Ensure the config file contains necessary fields with valid types."""
 
     config = load_yaml(config)
@@ -144,9 +148,9 @@ def load_config(config: str | Path) -> None:
     return config
 
 
-def setup_directories(main_dir: Path = Path('./')) -> tuple:
+def setup_directories(main_dir: PathLike = Path('./')) -> tuple:
     """Create required directories for the workflow."""
-    main_dir = Path('./').resolve()
+    main_dir = Path(main_dir).resolve()
     prep_dir = main_dir / 'prepare'
     train_dir = main_dir / 'train'
     cp2k_dir = main_dir / 'cp2k'
@@ -157,7 +161,7 @@ def setup_directories(main_dir: Path = Path('./')) -> tuple:
     return prep_dir, train_dir, cp2k_dir
 
 
-def process_topologies(config: dict):
+def process_topologies(config: Dict[str, Any]) -> Dict[str, Dict]:
     """Group restraints by topology file."""
     grouped = defaultdict(lambda: {'sel': [], 'x0': [], 'k': []})
     for fn, sel, x0, k in zip(
@@ -169,7 +173,7 @@ def process_topologies(config: dict):
     return grouped
 
 
-def make_ndx(universe: mda.Universe, selections: list, fn_out: str) -> None:
+def make_ndx(universe: mda.Universe, selections: List[str], fn_out: str) -> None:
     with SelectionWriter(fn_out, mode='w') as ndx:
         ndx.write(universe.atoms, name='System')
         if selections is not None:
@@ -211,9 +215,9 @@ def run_md(
 
 def insert_pull_code(
     fn_mdp: str,
-    groups: list,
-    positions: list,
-    force_constants: list,
+    groups: List[str],
+    positions: List[float],
+    force_constants: List[float],
     fn_out: str
 ) -> MDP:
 
@@ -263,8 +267,8 @@ def get_average_box(
 
 def create_restraint_window(
     universe: mda.Universe,
-    restr_sel: list,
-    restr_x0: list,
+    restr_sel: List[str],
+    restr_x0: List[float],
     box: np.ndarray,
     fn_out=None
 ) -> None:
@@ -308,7 +312,7 @@ def strip_topol(
         atoms.write(fn_out, frames=u.trajectory[[-1]])
 
 
-def get_restraint_atom_indices(fn_system: str, names: list) -> np.ndarray:
+def get_restraint_atom_indices(fn_system: str, names: List[str]) -> np.ndarray:
     u = mda.Universe(fn_system)
     indices = []
     for name in names:
@@ -319,12 +323,12 @@ def get_restraint_atom_indices(fn_system: str, names: list) -> np.ndarray:
     return np.array(indices)
 
 
-def get_fn_mdp(fn: str) -> Path:
+def get_fn_mdp(fn: PathLike) -> Path:
     fn_mdp = Path(__file__).parent.parent / 'data' / 'mdp' / fn
     return fn_mdp.resolve()
 
 
-def main(fn_config: str) -> None:
+def main(fn_config: PathLike) -> None:
     config = load_config(fn_config)
     logger = Logger("initialize", config['fn_log'])
     logger.info("", level=0)
@@ -333,7 +337,9 @@ def main(fn_config: str) -> None:
     prep_dir, train_dir, cp2k_dir = setup_directories()
 
     # Storage for unique topologies -> cached data
-    done_topologies: dict[str, dict] = {fn: None for fn in set(config['fn_topol'])}
+    done_topologies: Dict[str, Dict[str, Any]] = {
+        fn: None for fn in set(config['fn_topol'])
+    }
 
     n_total = len(config['fn_topol'])
     for i, (fn_topol, fn_mol, charge, mult, restraint, box) in enumerate(

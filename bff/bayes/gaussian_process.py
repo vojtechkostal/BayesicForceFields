@@ -1,6 +1,8 @@
 import torch
+import numpy as np
 from .kernels import gaussian_kernel
 from .utils import check_tensor, nearest_positive_definite, smape
+from typing import Union, Dict, List
 
 
 class LocalGaussianProcess:
@@ -50,15 +52,15 @@ class LocalGaussianProcess:
         self.Kdd_inv = check_tensor(Kdd_inv, device=device)
 
     @property
-    def n_params(self):
+    def n_params(self) -> int:
         return self.X_train.shape[1]
 
     @property
-    def y_size(self):
+    def y_size(self) -> int:
         return self.y_train.shape[1]
 
     @property
-    def hyperparameters(self):
+    def hyperparameters(self) -> Dict[str, Union[np.ndarray, float]]:
         return {
             'lengths': self.lengths.cpu().numpy(),
             'width': self.width.cpu().numpy().item(),
@@ -66,7 +68,7 @@ class LocalGaussianProcess:
         }
 
     @torch.no_grad()
-    def predict(self, Xi):
+    def predict(self, Xi: torch.Tensor) -> torch.Tensor:
         """
         Predict outputs for given input points.
 
@@ -111,7 +113,7 @@ class LGPCommittee:
     """
     def __init__(
         self,
-        lgps: list[LocalGaussianProcess],
+        lgps: List[LocalGaussianProcess],
         n_observations: int,
         nuisance: float = None,
         stochastic: bool = False
@@ -123,7 +125,7 @@ class LGPCommittee:
         self.stochastic = stochastic
 
     @property
-    def size(self):
+    def size(self) -> int:
         return len(self.lgps)
 
     def predict(self, X: torch.Tensor) -> torch.Tensor:
@@ -172,7 +174,7 @@ class LGPCommittee:
             y_test = y_test.cpu().numpy()
         self.error = smape(y_test, y_pred) * 100
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
             f"{self.__class__.__name__}(\n"
             f"  committee_size={self.size},\n"

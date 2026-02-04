@@ -48,7 +48,7 @@ class Slurm:
         self.commands = []
         self.fname = None
 
-    def add_command(self, command):
+    def add_command(self, command: str) -> None:
         """
         Add a shell command to the script.
 
@@ -73,7 +73,7 @@ class Slurm:
         script += "\n".join(self.commands)
         return script
 
-    def save(self, filename):
+    def save(self, filename: str) -> None:
         """
         Save the SLURM script to a file.
 
@@ -86,7 +86,7 @@ class Slurm:
         with open(filename, 'w') as file:
             file.write(self.generate())
 
-    def submit(self, filename):
+    def submit(self, filename: str) -> str:
         """
         Submit the SLURM script to the queue.
         """

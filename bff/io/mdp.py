@@ -1,4 +1,5 @@
 from collections import OrderedDict
+from typing import List, Dict
 
 
 class MDP:
@@ -87,7 +88,7 @@ class MDP:
                     f.write(f'{key:<25} = {value}\n')
 
 
-def get_n_frames_target(fn_mdp):
+def get_n_frames_target(fn_mdp: str) -> tuple[int | None, int | None]:
     """Extracts the expected number of frames in the resulting trajectory."""
     mdp_data = MDP(fn_mdp).content
     n_steps = int(mdp_data.get('nsteps'))
@@ -98,7 +99,7 @@ def get_n_frames_target(fn_mdp):
         return None, None
 
 
-def get_restraints(fn_mdp):
+def get_restraints(fn_mdp: str) -> List[Dict[str, float]]:
     """Reads the restraints from the MDP file."""
 
     mdp = MDP(str(fn_mdp))

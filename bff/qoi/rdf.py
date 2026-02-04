@@ -3,6 +3,7 @@
 import numpy as np
 import MDAnalysis as mda
 from scipy.ndimage import gaussian_filter
+from typing import Dict, Tuple
 
 from ..tools import compute_distances
 
@@ -11,14 +12,14 @@ def compute_rdf(
     universe: mda.Universe,
     atoms_ref: mda.AtomGroup,
     atoms_sel: mda.AtomGroup,
-    r_range: list = (0, 10),
+    r_range: Tuple[float, float] = (0, 10),
     n_bins: int = 200,
     pbc: bool = True,
     start: int = None,
     stop: int = None,
     step: int = None,
     smooth: bool = True,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> Tuple[np.ndarray, np.ndarray]:
     """
     Computes the radial distribution function (RDF) between two atom groups.
 
@@ -84,7 +85,7 @@ def compute_all_rdfs(
     mol_resname: str,
     solvent_sel: str = "resname SOL HOH WAT and name O*",
     **kwargs,
-) -> dict:
+) -> Dict[str, np.ndarray]:
     """
     Compute radial distribution functions (RDFs) of solvent around
     a molecule's atomtypes
@@ -97,7 +98,8 @@ def compute_all_rdfs(
     solvent_sel : str
         selection string to reprecent solvent atoms.
         Default is "resname SOL HOH WAT and name O*"
-    **kwargs : dict
+    **kwargs : Dict, optional
+        Additional
         keyword arguments for the underlying compute_rdf function
         - `r_range` : tuple, optional
         - `n_bins` : int, optional

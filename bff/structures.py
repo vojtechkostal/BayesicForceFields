@@ -1,5 +1,11 @@
 from dataclasses import dataclass
 from pathlib import Path
+from typing import (
+    Any,
+    Dict, List, Mapping,
+    Optional, Sequence,
+    Tuple, Union, Set
+)
 
 import numpy as np
 import torch
@@ -12,7 +18,11 @@ from .io.utils import load_yaml, save_yaml, extract_train_dir
 from .tools import sigmoid
 
 
-def lookup(filename, directories):
+PathLike = Union[str, Path]
+ArrayLike = Union[np.ndarray, torch.Tensor]
+
+
+def lookup(filename, directories: Sequence[PathLike]) -> Path:
     """
     Find a file in a list of directories.
     """
@@ -35,11 +45,11 @@ class QoI:
         self.__dict__.update(kwargs)
 
     @property
-    def names(self) -> list[str]:
+    def names(self) -> List[str]:
         return list(self.__dict__)
 
     @property
-    def observations(self) -> dict[str, int]:
+    def observations(self) -> Dict[str, int]:
         return {
             name: len(getattr(self, name))
             for name in self.names
@@ -55,25 +65,25 @@ class TrainSetInfo:
     Information about the training set.
     """
     train_dir: Path
-    specs: dict | None
-    samples: dict | None
-    fn_topol: list[Path]
-    fn_coord: list[Path]
-    restraints: list[dict]
-    settings: dict | None
+    specs: Optional[Dict[str, Any]]
+    samples: Optional[Mapping[str, Any]]
+    fn_topol: List[Path]
+    fn_coord: List[Path]
+    restraints: List[Dict[str, Any]]
+    settings: Optional[Dict[str, Any]]
 
     @classmethod
-    def from_dir(cls, train_dir: str | Path):
+    def from_dir(cls, train_dir: PathLike) -> "TrainSetInfo":
         train_dir = Path(train_dir).resolve()
         specs, samples, fn_topol, fn_coord, restraints = extract_train_dir(train_dir)
         return cls(train_dir, specs, samples, fn_topol, fn_coord, restraints, None)
 
     @property
-    def hashes(self) -> list[str]:
-        return list(self.samples.keys() or {})
+    def hashes(self) -> List[str]:
+        return list((self.samples or {}).keys())
 
     @property
-    def inputs(self) -> dict[str, dict]:
+    def inputs(self) -> np.ndarray:
         return np.array([sample["params"] for sample in self.samples.values()])
 
     @property
@@ -81,25 +91,25 @@ class TrainSetInfo:
         return len(self.samples or {})
 
     @property
-    def fn_trj(self) -> list[list[Path]]:
+    def fn_trj(self) -> List[List[Path]]:
         return [
             [self.train_dir / trj for trj in s["fn_trj"]]
             for s in (self.samples or {}).values()
         ]
 
-    def setup_settings(self, settings: dict | None):
+    def setup_settings(self, settings: Optional[Dict[str, Any]] = None) -> None:
         self.settings = settings or {}
 
 
 class TrainData:
     def __init__(
         self,
-        inputs: np.ndarray | list | str | Path,
-        outputs: dict[str, np.ndarray],
-        outputs_ref: dict[str, np.ndarray],
-        observations: dict[str, int] | str | Path,
-        nuisances: dict[str, float] | str | Path = None,
-        settings: dict | str | Path = None
+        inputs: Union[np.ndarray, str, Path],
+        outputs: Mapping[str, Union[np.ndarray, PathLike]],
+        outputs_ref: Mapping[str, np.ndarray],
+        observations: Union[Mapping[str, int], PathLike] = None,
+        nuisances: Union[Mapping[str, float], PathLike] = None,
+        settings: Union[Mapping[str, Any], PathLike] = None
     ) -> None:
 
         self.X = self._load_array(inputs)
@@ -119,7 +129,7 @@ class TrainData:
         )
 
     @staticmethod
-    def _load_array(x: np.ndarray | str | Path) -> np.ndarray:
+    def _load_array(x: Union[np.ndarray, Sequence[Any], PathLike]) -> np.ndarray:
         if isinstance(x, (str, Path)):
             return np.load(x)
         else:
@@ -138,11 +148,13 @@ class TrainData:
         return loaded_dict
 
     @staticmethod
-    def _load_yaml(data: str | Path | dict) -> dict:
+    def _load_yaml(
+        data: Mapping[str, Union[np.ndarray, PathLike]]
+    ) -> Dict[str, np.ndarray]:
         return load_yaml(data) if isinstance(data, (str, Path)) else data
 
     @property
-    def qoi_names(self) -> set[str]:
+    def qoi_names(self) -> Set[str]:
         return set(self.y_ref.keys())
 
     @property
@@ -155,11 +167,11 @@ class TrainData:
         n_rdf = self.y_ref['rdf'].size // n_bins
         return np.tile(sigmoid(r), n_rdf)
 
-    def write(self, fn_base: str | Path) -> None:
+    def write(self, fn_base: PathLike) -> None:
         fn_base = Path(fn_base).resolve()
 
         # Helper to save .npy files
-        def save_npy(suffix: str, array):
+        def save_npy(suffix: str, array: np.ndarray) -> None:
             np.save(fn_base.with_name(fn_base.name + suffix), array,
                     allow_pickle=False)
 
@@ -191,7 +203,7 @@ class TrainData:
 
 
 class Bounds:
-    def __init__(self, bounds: dict) -> None:
+    def __init__(self, bounds: Mapping[str, Tuple[float, float]]) -> None:
         """
         bounds : dict
             Mapping parameter name -> (lower, upper)
@@ -230,7 +242,7 @@ class Specs:
     """Handles molecular specifications,
     ensuring consistency across multiple inputs."""
 
-    def __init__(self, specs: str | dict | Path) -> None:
+    def __init__(self, specs: Union[dict, PathLike]) -> None:
         self.data = self._load(specs)
 
         # Extract attributes
@@ -242,7 +254,7 @@ class Specs:
         self._bounds = Bounds(self.data['bounds'])
 
     @staticmethod
-    def _load(spec: str | dict | Path) -> dict:
+    def _load(spec: Union[dict, PathLike]) -> dict:
         """Load a specification from a file, dictionary, or path."""
         if isinstance(spec, dict):
             data = spec
@@ -322,21 +334,21 @@ class Specs:
             dtype=int,
         )
 
-    def is_valid(self, params):
-        if isinstance(params, list):
-            params = np.array(params)
-        elif isinstance(params, torch.Tensor):
-            params = params.cpu().numpy()
+    def is_valid(self, params: Union[Sequence[float], ArrayLike]) -> np.ndarray:
+        if isinstance(params, torch.Tensor):
+            arr = params.detach().cpu().numpy()
+        else:
+            arr = np.asarray(params, dtype=float)
 
-        if params.ndim == 1:
-            params = params[np.newaxis, :]
+        if arr.ndim == 1:
+            arr = arr[np.newaxis, :]
 
         lbe, ube = self.bounds_implicit.values.T
         lbi, ubi = self.implicit_param_bounds
 
-        valid_explicit = ((params > lbe) & (params < ube)).all(axis=1)
+        valid_explicit = ((arr >= lbe) & (arr <= ube)).all(axis=1)
 
-        q_explicit = np.sum(params * self.constraint_matrix, axis=1)
+        q_explicit = np.sum(arr * self.constraint_matrix, axis=1)
         q_implicit = self.constraint_charge - q_explicit
         valid_implicit = (q_implicit >= lbi) & (q_implicit <= ubi)
 
@@ -353,8 +365,8 @@ class MCMCResults:
     def __init__(
         self,
         chain: str | object = None,
-        priors: str | Path | list = None,
-        tau: str | Path | list | float = None
+        priors: Union[str, Path, list] = None,
+        tau: Union[str, Path, list, float] = None
     ) -> None:
 
         """Store and process Bayesian inference results."""
@@ -363,13 +375,13 @@ class MCMCResults:
         self.tau = self.load_tau(tau)
         self._chain_samples = None
 
-    def load_chain(self, chain):
+    def load_chain(self, chain: Union[str, Path, object]) -> object:
         """Initialize the chain, handling HDF5 backend if necessary."""
         if isinstance(chain, (str, Path)):
             return initialize_backend(chain)
         return chain
 
-    def load_priors(self, priors: str | Path | dict) -> dict:
+    def load_priors(self, priors: Union[str, Path, dict]) -> dict:
         """Load priors from YAML or dictionary of distributions."""
         if isinstance(priors, (str, Path)):
             return load_yaml(str(priors))
@@ -392,7 +404,7 @@ class MCMCResults:
 
         raise TypeError("Priors must be str, Path or dictionary.")
 
-    def load_tau(self, tau):
+    def load_tau(self, tau: Union[str, Path, list, float, int]) -> np.ndarray:
         """Load tau array from file, list, or numeric array."""
         if isinstance(tau, (str, Path)):
             tau = np.load(str(tau))
@@ -419,7 +431,7 @@ class MCMCResults:
             priors[name] = dist_cls(arg1, arg2, validate_args=False)
         return priors
 
-    def chain_samples(self, discard=None, stride=None):
+    def chain_samples(self, discard: int = None, stride: int = None) -> np.ndarray:
         """
         Retrieve MCMC samples with optional filtering.
         """
@@ -430,16 +442,22 @@ class MCMCResults:
         self._chain_samples = samples
         return samples
 
-    def save_priors(self, fn_out):
+    def save_priors(self, fn_out: Union[str, Path]) -> None:
         """Save priors to a YAML file."""
         save_yaml(self.priors_specs, str(fn_out))
 
-    def save_tau(self, fn_out):
+    def save_tau(self, fn_out: Union[str, Path]) -> None:
         np.save(str(fn_out), self.tau)
 
 
 class InferenceResults(MCMCResults, Specs):
-    def __init__(self, chain, priors, tau, specs) -> None:
+    def __init__(
+        self,
+        chain: Union[str, Path, object] = None,
+        priors: Union[str, Path, list] = None,
+        tau: Union[str, Path, list, float, int] = None,
+        specs: Union[str, Path, dict] = None
+    ) -> None:
         """Store and process learning results."""
         MCMCResults.__init__(self, chain, priors, tau)
         Specs.__init__(self, specs)
@@ -447,7 +465,7 @@ class InferenceResults(MCMCResults, Specs):
         self.samples = None
 
     @property
-    def chain_implicit_(self):
+    def chain_implicit_(self) -> np.ndarray:
         return self.samples
 
     @property
@@ -456,12 +474,12 @@ class InferenceResults(MCMCResults, Specs):
         return self._compute_explicit_params()
 
     @property
-    def labels_implicit_(self):
+    def labels_implicit_(self) -> list:
         """Generate labels for the parameters."""
         return self._get_labels('implicit')
 
     @property
-    def labels_explicit_(self):
+    def labels_explicit_(self) -> list:
         """Generate labels for the explicit parameters."""
         return self._get_labels('explicit')
 
@@ -481,11 +499,11 @@ class InferenceResults(MCMCResults, Specs):
 
         q_implicit = self.total_charge - np.sum(param_modes * self.constraint_matrix)
         param_modes_all = np.insert(param_modes, self.implicit_param_pos, q_implicit)
-        map_all = np.concat((param_modes_all, nuisance_modes))
+        map_all = np.concatenate((param_modes_all, nuisance_modes))
 
         return dict(zip(self.labels_explicit_, map_all))
 
-    def _get_labels(self, kind):
+    def _get_labels(self, kind: str) -> list:
         if kind == 'implicit':
             param_labels = self.bounds_implicit.params.tolist()
         elif kind == 'explicit':
@@ -501,7 +519,7 @@ class InferenceResults(MCMCResults, Specs):
 
         return param_labels + nuisance_labels
 
-    def quantiles(self, confidence=0.95):
+    def quantiles(self, confidence: float = 0.95) -> np.ndarray:
         """
         Compute quantiles of the samples for a given confidence level.
         """
@@ -510,7 +528,11 @@ class InferenceResults(MCMCResults, Specs):
         return np.quantile(self.chain_explicit_, [q_lo, 0.5, q_hi], axis=0)
 
     def get_chain(
-        self, discard=None, stride=None, remove_defects=True, remove_sigma_outliers=True
+        self,
+        discard: int = None,
+        stride: int = None,
+        remove_defects: bool = True,
+        remove_sigma_outliers: bool = True
     ) -> None:
         """
         Retrieve MCMC samples with optional filtering.
@@ -645,7 +667,7 @@ class RandomParamsGenerator(Specs):
         Generate random parameter samples within specified bounds.
     """
 
-    def __init__(self, specs) -> None:
+    def __init__(self, specs: Union[str, Path, dict] = None) -> None:
         super().__init__(specs)
         if (
             not hasattr(self, 'bounds_implicit') or
@@ -676,12 +698,12 @@ class RandomParamsGenerator(Specs):
                     number of implicit parameters."
             )
 
-    def __call__(self, n) -> None:
+    def __call__(self, n: int) -> None:
         """Advance the sampler to skip the next n samples."""
         self.sampler.fast_forward(n)
         self.n_samples += n
 
-    def generate(self, n):
+    def generate(self, n: int) -> np.ndarray:
         """
         Generate random parameter samples within specified bounds.
 

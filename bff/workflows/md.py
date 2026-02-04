@@ -1,6 +1,7 @@
 import argparse
 import subprocess
 import shutil
+from typing import Union
 
 import numpy as np
 
@@ -10,6 +11,9 @@ from ..io.mdp import get_n_frames_target
 from ..structures import Specs
 from ..topology import TopologyModifier
 from ..io.utils import load_yaml
+
+
+PathLike = Union[str, Path]
 
 
 def check_success(fn_trj: str, fn_mdp: str, n_target: int) -> bool:
@@ -30,8 +34,8 @@ def check_success(fn_trj: str, fn_mdp: str, n_target: int) -> bool:
 
 def modify_topology(
     fn_topol: str,
-    specs: str | dict | Specs,
-    params: list | np.ndarray,
+    specs: Union[str, dict, Specs],
+    params: Union[list, np.ndarray],
     implicit: bool,
     fn_out: str
 ) -> None:
@@ -54,7 +58,7 @@ def modify_topology(
     return top_modifier
 
 
-def main(fn_config: str) -> None:
+def main(fn_config: PathLike) -> None:
 
     # Parse the command-line arguments load general configuration
     config = load_yaml(fn_config)

@@ -1,11 +1,13 @@
 import torch
 from .utils import check_tensor, auto_manual_switch
+from typing import Union
 
 
 @auto_manual_switch
 def gaussian_kernel(
     x1: torch.Tensor, x2: torch.Tensor,
-    lengths: float | torch.Tensor, width: float | torch.Tensor,
+    lengths: Union[float, torch.Tensor],
+    width: Union[float, torch.Tensor],
     manual_sqdist: bool = False
 ) -> torch.Tensor:
     """Gaussian (Squared Exponential) kernel.
@@ -16,10 +18,10 @@ def gaussian_kernel(
         First input tensor of shape (n_samples, n_features) or (n_features,).
     x2 : torch.Tensor
         Second input tensor of shape (n_samples, n_features) or (n_features,).
-    lengths : float or torch.Tensor
+    lengths : Union[float, torch.Tensor]
         Length scale(s) for the kernel.
         Can be a single float or a tensor of shape (n_features,).
-    width : float or torch.Tensor
+    width : Union[float, torch.Tensor]
         Width scale(s) for the kernel.
         Can be a single float or a tensor of shape (n_features,).
     manual_sqdist : bool, optional

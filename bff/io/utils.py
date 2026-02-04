@@ -3,11 +3,15 @@ import tarfile
 import yaml
 import numpy as np
 from pathlib import Path
+from typing import Union, List
 
 from .mdp import get_restraints
 
 
-def path_to_str(path: Path) -> str:
+PathLike = Union[str, Path]
+
+
+def path_to_str(path: PathLike) -> str:
     """Convert a Path object to a string."""
     return str(path)
 
@@ -31,14 +35,14 @@ NumpyYAMLEncoder.add_multi_representer(np.ndarray, NumpyYAMLEncoder.represent_nu
 NumpyYAMLEncoder.add_multi_representer(np.generic, NumpyYAMLEncoder.represent_numpy)
 
 
-def save_yaml(data: dict, fn: Path | str) -> None:
+def save_yaml(data: dict, fn: PathLike) -> None:
     """Save a dictionary as YAML to a file."""
     fn = str(fn) if isinstance(fn, Path) else fn
     with open(fn, "w") as f:
         yaml.dump(data, f, Dumper=NumpyYAMLEncoder, default_flow_style=False)
 
 
-def load_yaml(fn: Path | str) -> dict:
+def load_yaml(fn: PathLike) -> dict:
     """Load .yaml file into a dictionary"""
     fn = path_to_str(fn) if isinstance(fn, Path) else fn
     with open(fn, "r") as f:
@@ -70,14 +74,14 @@ class NumpyArrayEncoder(json.JSONEncoder):
         return obj
 
 
-def save_json(data: dict, fn: Path | str) -> None:
+def save_json(data: dict, fn: PathLike) -> None:
     """Save a dictionary as JSON with floats rounded to 3 decimals."""
     fn = str(fn) if isinstance(fn, Path) else fn
     with open(fn, "w") as f:
         json.dump(data, f, cls=NumpyArrayEncoder)
 
 
-def load_json(fn: Path | str) -> dict:
+def load_json(fn: PathLike) -> dict:
     """Save a dictionary as JSON to a file."""
     fn = path_to_str(fn) if isinstance(fn, Path) else fn
     with open(fn, "r") as f:
@@ -85,14 +89,14 @@ def load_json(fn: Path | str) -> dict:
     return file
 
 
-def load_qoi(fn_qoi: Path | str) -> np.ndarray:
+def load_qoi(fn_qoi: PathLike) -> np.ndarray:
     """
     Load quantities of interest from a .npz file.
     """
     return np.load(fn_qoi, allow_pickle=True)
 
 
-def save_qoi(qoi, fn_out: str | Path, settings: dict) -> None:
+def save_qoi(qoi, fn_out: PathLike, settings: dict) -> None:
     """Save quantities of interest to a compressed .npz file.
 
     Parameters
@@ -111,7 +115,7 @@ def save_qoi(qoi, fn_out: str | Path, settings: dict) -> None:
     np.savez_compressed(fn_out, **data)
 
 
-def compress_results(source_dir: Path | str) -> None:
+def compress_results(source_dir: PathLike) -> None:
     """Compress the results into a tarball."""
 
     extensions = {'.tpr', '.xtc', '.yaml', '.top', '.gro'}
@@ -124,14 +128,14 @@ def compress_results(source_dir: Path | str) -> None:
                 tar.add(file_path, arcname=str(arcname))
 
 
-def extract_tarball(fn: Path) -> None:
+def extract_tarball(fn: PathLike) -> None:
     """Extract a tarball file into a directory."""
     fn = path_to_str(fn) if isinstance(fn, Path) else fn
     with tarfile.open(fn, "r:gz") as tar:
         tar.extractall(path=fn.parent)
 
 
-def prepare_path(fn: Path) -> Path:
+def prepare_path(fn: PathLike) -> Path:
     """Prepare a directory from a tarball or validate its existence."""
     if fn.suffix == ".gz":
         train_dir = fn.parent / fn.name.replace(".tar.gz", "")
@@ -145,8 +149,8 @@ def prepare_path(fn: Path) -> Path:
 
 
 def extract_train_dir(
-    train_dir: Path
-) -> tuple[dict, dict, list[Path], list[Path], list[dict]]:
+    train_dir: PathLike
+) -> tuple[dict, dict, List[PathLike], List[PathLike], List[dict]]:
 
     """Extract training directory contents.
 

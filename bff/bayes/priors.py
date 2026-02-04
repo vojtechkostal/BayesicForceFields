@@ -1,11 +1,12 @@
 import torch
 import numpy as np
 from torch.distributions import Normal, Uniform
+from typing import List, Union, Dict
 
 
 def define_param_priors(
-    param_bounds: dict[list], QoI: dict, dist_type: str
-) -> dict[list]:
+    param_bounds: Dict[str, List[float]], QoI: Dict[str, object], dist_type: str
+) -> Dict[str, List[Union[Normal, Uniform]]]:
     """
     Define priors for the model parameters and nuisance parameters.
 
@@ -45,7 +46,7 @@ def define_param_priors(
     return param_priors | nuisance_priors
 
 
-def define_hyper_priors(n_params) -> list[Normal]:
+def define_hyper_priors(n_params: int) -> List[Normal]:
     """
     Define Gaussian priors for model parameters:
     - `lengths` (per parameter): N(-2, 2)
@@ -70,7 +71,7 @@ def define_hyper_priors(n_params) -> list[Normal]:
 
 
 def log_prior(
-    theta: torch.Tensor, priors: list[torch.distributions.Distribution]
+    theta: torch.Tensor, priors: List[torch.distributions.Distribution]
 ) -> torch.Tensor:
     """
     Compute the log prior probabilities for the parameters.

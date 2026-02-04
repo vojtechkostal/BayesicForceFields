@@ -3,6 +3,7 @@ import multiprocessing as mp
 import inspect
 import time
 import warnings
+from typing import Union, List, Dict, Callable
 
 from pathlib import Path
 from .hbonds import compute_all_hbonds, compute_hbonds
@@ -12,6 +13,10 @@ from .restraints import compute_all_restraints, compute_probability_density
 from ..structures import TrainSetInfo, QoI
 from ..tools import prepare_universe
 from ..io.logs import Logger, print_progress, format_time
+
+
+PathLike = Union[str, Path]
+
 
 warnings.filterwarnings(
     "ignore", category=DeprecationWarning, module="MDAnalysis.coordinates.DCD"
@@ -24,10 +29,10 @@ warnings.filterwarnings(
 def analyze_trajectory(
     universe: mda.Universe,
     mol_resname: str,
-    restraints: list,
-    rdf_kwargs: dict = None,
-    hbond_kwargs: dict = None,
-    restraint_kwargs: dict = None,
+    restraints: List[List[float]],
+    rdf_kwargs: Dict = None,
+    hbond_kwargs: Dict = None,
+    restraint_kwargs: Dict = None,
 ) -> QoI:
     """Analyze a single trajectory."""
 
@@ -46,16 +51,16 @@ def analyze_trajectory(
 
 
 def analyze_all_trajectories(
-        fn_topol: list[str],
-        fn_coord: list[str],
-        fn_trj: list[str],
-        restraints: list[list],
-        mol_resname: str,
-        start: int = 0,
-        stop: int = -1,
-        step: int = 1,
-        **kwargs
-) -> list[QoI]:
+    fn_topol: List[str],
+    fn_coord: List[str],
+    fn_trj: List[str],
+    restraints: List[List[float]],
+    mol_resname: str,
+    start: int = 0,
+    stop: int = -1,
+    step: int = 1,
+    **kwargs
+) -> List[QoI]:
     """Analyze all trajectories in the dataset."""
     results = []
     for t, c, trj, r in zip(fn_topol, fn_coord, fn_trj, restraints):
@@ -80,13 +85,13 @@ def analyze_all_trajectories(
     return results
 
 
-def _wrapper(args):
+def _wrapper(args: Dict) -> QoI:
     """Helper function for multiprocessing that unpacks arguments."""
     return analyze_all_trajectories(**args)
 
 
 def analyze_trainset(
-    trainset_dir: str | Path,
+    trainset_dir: PathLike,
     start: int = 1,
     stop: int = None,
     step: int = 1,
@@ -94,7 +99,7 @@ def analyze_trainset(
     progress_stride: int = 10,
     logger: Logger = None,
     **settings
-) -> tuple[list, TrainSetInfo]:
+) -> tuple[List[QoI], TrainSetInfo]:
 
     """Analyze the training set to compute quantities of interest (QoI).
 
@@ -182,7 +187,7 @@ def analyze_trainset(
     return qoi, trainset_info
 
 
-def extract_defaults(fn):
+def extract_defaults(fn: Callable) -> Dict:
     """
     Extracts default values from the function's signature.
 
@@ -204,7 +209,7 @@ def extract_defaults(fn):
     }
 
 
-def get_all_settings(kwargs: dict) -> dict:
+def get_all_settings(kwargs: Dict) -> Dict:
 
     all_kwargs = {'rdf_kwargs': extract_defaults(compute_rdf),
                   'hbond_kwargs': extract_defaults(compute_hbonds),

@@ -16,7 +16,7 @@ def version():
     typer.echo(f"BayesicForceFields version: {bff.__version__}")
 
 
-@app.command()
+@app.command("usage")
 def help():
     """
     Print help message.
@@ -34,9 +34,12 @@ def help():
     typer.echo("  help         Show this help message.")
 
 
+WorkflowMain = Callable[[Path], None]
+
+
 def run_workflow(
     fn_config: Optional[Path],
-    workflow_main: Callable[[Path], None],
+    workflow_main: WorkflowMain,
     workflow_name: str
 ):
     """

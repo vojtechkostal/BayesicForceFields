@@ -3,23 +3,29 @@ import torch
 import numpy as np
 from functools import partial
 from pathlib import Path
+from typing import Union, List, Callable
 
 from .gaussian_process import LocalGaussianProcess, LGPCommittee
 from .likelihoods import loo_log_likelihood, gaussian_log_likelihood
 from .priors import define_param_priors, define_hyper_priors, log_prior
 from ..io.utils import load_yaml, save_yaml
+from ..io.logs import Logger
 from .utils import (
     initialize_backend, initialize_walkers,
     check_device, check_tensor,
     train_test_split,
     find_map, laplace_approximation
 )
+from ..structures import Specs
+
+
+PathLike = Union[str, Path]
 
 
 def log_posterior(
     theta: torch.Tensor,
-    priors: list[torch.distributions.Distribution],
-    log_likelihood_fn: callable,
+    priors: List[torch.distributions.Distribution],
+    log_likelihood_fn: Callable[[torch.Tensor], torch.Tensor],
     device: str,
     numpy_output: bool = True
 ) -> np.ndarray:
@@ -31,9 +37,9 @@ def log_posterior(
     ----------
     theta : torch.Tensor
         Tensor of parameters for which to compute the log-posterior.
-    priors : list[torch.distributions.Distribution]
+    priors : List[torch.distributions.Distribution]
         List of prior distributions for the parameters.
-    log_likelihood_fn : callable
+    log_likelihood_fn : Callable[[torch.Tensor], torch.Tensor]
         Function that computes the log-likelihood given the parameters.
         It must have signature `log_likelihood_fn(theta: torch.Tensor) -> torch.Tensor`.
     device : str
@@ -73,15 +79,15 @@ def log_posterior(
 
 def initialize_mcmc_sampler(
     surrogate: dict,
-    specs: object,
-    QoI: list[str],
+    specs: Specs,
+    QoI: List[str],
     y_true: dict,
     n_walkers: int = None,
     priors_disttype: str = 'normal',
-    fn_backend: str = 'backend.h5',
+    fn_backend: Union[str, Path] = 'backend.h5',
     restart: bool = True,
     device: str = 'cuda:0'
-) -> tuple[np.ndarray, list, emcee.EnsembleSampler]:
+) -> tuple[np.ndarray, List[torch.distributions.Distribution], emcee.EnsembleSampler]:
     """
     Initialize the MCMC sampler for parameter optimization.
 
@@ -162,16 +168,16 @@ def lgp_hyperopt(
     X: torch.Tensor,
     y: torch.Tensor,
     y_mean: torch.Tensor,
-    fn_hyperparams: str | Path,
+    fn_hyperparams: PathLike,
     test_fraction: float,
     n_hyper: int,
     committee: int,
     observations: int,
     nuisance: float,
     device: str,
-    logger: callable,
+    logger: Logger,
     opt_kwargs: dict
-) -> tuple[list[LocalGaussianProcess], tuple]:
+) -> tuple[List[LocalGaussianProcess], tuple]:
     """
     Perform hyperparameter optimization for Local Gaussian Processes (LGPs)
     and construct a committee of LGP models.

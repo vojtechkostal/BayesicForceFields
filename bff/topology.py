@@ -1,10 +1,13 @@
 import numpy as np
 import MDAnalysis as mda
 from MDAnalysis.guesser.tables import masses as MDA_MASSES
+from MDAnalysis.lib.distances import distance_array
 
 from pathlib import Path
 from gmxtop import Topology, MoleculeType
 
+from .data import WATER_3SITE, WATER_4SITE, IONS, WATERS
+from .tools import random_placement, guess_box
 
 MASSES = np.array(list(MDA_MASSES.values()))
 ELEMENTS = list(MDA_MASSES.keys())
@@ -25,6 +28,43 @@ def check_unitcell(universe: mda.Universe, unitcell: list) -> None:
             raise ValueError("Unitcell is not specified.")
         for ts in universe.trajectory:
             ts.dimensions = unitcell
+
+
+def check_topols(fn_topol_1: str, fn_topol_2: str) -> None:
+    """Check if a pair of topologies is consistent."""
+
+    # Load universes
+    u1 = prepare_universe(fn_topol_1)
+    u2 = prepare_universe(fn_topol_2)
+
+    # Do not consider dummy atoms
+    atoms1 = u1.select_atoms('not mass -1 to 0.5')
+    atoms2 = u2.select_atoms('not mass -1 to 0.5')
+
+    # Check if the atomtypes are the same
+    at1 = np.unique(atoms1.types)
+    at2 = np.unique(atoms2.types)
+
+    if not len(at1) == len(at2):
+        raise ValueError(
+            (
+                f'Number of atomtypes do not match between {fn_topol_1} '
+                f'and {fn_topol_2}.'
+            )
+        )
+
+    if not np.all(at1 == at2):
+        raise ValueError(
+            f'Atomtypes do not match between {fn_topol_1} and {fn_topol_2}.'
+        )
+
+    # Check if the atom names are the same
+    names1 = np.unique(atoms1.names)
+    names2 = np.unique(atoms2.names)
+    if not np.all(names1 == names2):
+        raise ValueError(
+            f'Atom names do not match between {fn_topol_1} and {fn_topol_2}.'
+        )
 
 
 def prepare_universe(
@@ -61,6 +101,103 @@ def prepare_universe(
         )
 
     guess_elements(universe)
+
+    return universe
+
+
+def create_box(
+    fn_topol: str,
+    fn_mol: str,
+    fn_out: str,
+    box: np.ndarray = None,
+    min_dist: float = 1.5,
+    disp_limit: float = 0.4
+) -> tuple:
+    """Fills a box with molecules, solvent and ions."""
+
+    # Create universe
+    topol = Topology(fn_topol)
+    universe = fill_universe(topol)
+
+    if box is None:
+        n_heavy = sum(a.mass > 1.1 for a in topol.atoms)
+        box = guess_box(n_heavy)
+    else:
+        box = np.array(box)
+    universe.dimensions = box
+
+    # Insert moleculal positions
+    mol = mda.Universe(fn_mol)  # TODO: get rid of the elements warning
+    pos_mol = mol.atoms.positions - mol.atoms.center_of_mass()
+    coords = insert_molecules(
+        universe, topol, box, pos_mol,
+        min_dist=min_dist, disp_limit=disp_limit
+    )
+    universe.atoms.positions = coords
+
+    # Write positons into a file
+    universe.atoms.write(fn_out)
+
+    return universe, topol
+
+
+def insert_molecules(
+    universe: mda.Universe,
+    topol: Topology,
+    box: np.ndarray,
+    pos_mol: np.ndarray,
+    min_dist: float = 1.5,
+    disp_limit: float = 0.4
+) -> np.ndarray:
+    """Insert molecules into the box."""
+
+    coords = np.zeros((len(topol.atoms), 3))
+    i = 0
+    for residue in topol.residues:
+        n_atoms = len(residue.atoms)
+        if residue.name in WATERS:
+            pos = WATER_3SITE if n_atoms == 3 else WATER_4SITE
+            displacement_limit = box[:3]
+        elif residue.name.lower() in IONS:
+            pos = np.zeros(3)
+            displacement_limit = box[:3] * disp_limit
+        else:
+            pos = pos_mol
+            displacement_limit = box[:3] * disp_limit
+        while True:
+            pos_trial = random_placement(pos.copy(), displacement_limit)
+            distances = distance_array(
+                pos_trial, coords, box=universe.dimensions
+            )
+            if not np.any(distances < min_dist):
+                coords[i:i+n_atoms] = pos_trial
+                break
+        i += n_atoms
+
+    return coords
+
+
+def fill_universe(topol: Topology) -> mda.Universe:
+    """Fill an empty universe with the topology information."""
+    atoms = topol.atoms
+    residues = topol.residues
+    resindices = np.array([i for i, r in enumerate(residues) for _ in r.atoms])
+    segindices = [0] * len(topol.residues)
+
+    # Create universe
+    universe = mda.Universe.empty(
+        n_atoms=len(atoms),
+        n_residues=len(residues),
+        atom_resindex=resindices,
+        residue_segindex=segindices,
+        trajectory=True)
+
+    universe.add_TopologyAttr('name', [a.name for a in atoms])
+    universe.add_TopologyAttr('type', [a.type.name for a in atoms])
+    universe.add_TopologyAttr('resname', [r.name for r in residues])
+    universe.add_TopologyAttr('resid', list(range(1, len(residues) + 1)))
+
+    universe.guess_TopologyAttrs(to_guess=['elements', 'masses'])
 
     return universe
 

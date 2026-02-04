@@ -2,6 +2,7 @@ import logging
 
 import time
 import numpy as np
+from typing import Optional
 
 
 class Logger:
@@ -11,7 +12,11 @@ class Logger:
     """
 
     def __init__(
-        self, name: str, fn_log: str = None, width: int = None, verbose: bool = True
+        self,
+        name: str,
+        fn_log: Optional[str] = None,
+        width: Optional[int] = None,
+        verbose: bool = True
     ) -> None:
 
         """
@@ -19,9 +24,9 @@ class Logger:
         ----------
         name : str
             Name of the logger.
-        fn_log : str, optional
+        fn_log : Optional[str], optional
             Filename to log messages to. If None, logs to console.
-        width : int, default=None
+        width : Optional[int], default=None
             Width for message formatting.
         verbose : bool, default=True
             If False, suppresses logging output.
@@ -83,7 +88,7 @@ class Logger:
 
 
 def print_progress(
-    iterable, total: int, stride: int = 1, logger: Logger = None
+    iterable, total: int, stride: int = 1, logger: Optional[Logger] = None
 ):
     """
     Prints and logs progress of an iterable process,
@@ -143,7 +148,7 @@ def print_progress_mcmc(
     stride: int = 100,
     min_chain_length: int = 100,
     rtol: float = 0.01,
-    logger: Logger = None,
+    logger: Optional[Logger] = None,
     **kwargs
 ) -> None:
     """

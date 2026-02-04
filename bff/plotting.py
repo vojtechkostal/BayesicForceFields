@@ -1,11 +1,18 @@
 import torch
+import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
-import numpy as np
+
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Sequence, Union
 
 from scipy.stats import gaussian_kde
 
 from .structures import InferenceResults
+
+
+PathLike = Union[str, Path]
+ArrayLike = Union[np.ndarray, torch.Tensor]
 
 
 def _wrap_label(s: str, max_per_line: int) -> str:
@@ -19,13 +26,15 @@ def _wrap_label(s: str, max_per_line: int) -> str:
 def plot_marginals(
     results: InferenceResults,
     color_prior: str = 'gray', color_posterior: str = 'tab:red',
-    fn_out: str = None
+    fn_out: Optional[PathLike] = None
 ) -> None:
 
-    param_kinds = set([p.split()[0] for p in results.bounds_explicit.params])
+    param_kinds: List[str] = list(
+        set([p.split()[0] for p in results.bounds_explicit.params])
+    )
     n_param_kinds = len(param_kinds)
 
-    gridspecs = {'wspace': 0.25}
+    gridspecs: Dict[str, float] = {'wspace': 0.25}
     fig, axs = plt.subplots(
         ncols=n_param_kinds,
         nrows=1,
@@ -35,10 +44,10 @@ def plot_marginals(
 
     axs = np.atleast_1d(axs)
 
-    labels_used = {"prior": False, "posterior": False, "bound": False}
-    y_offset = {'charge': 0.2, 'sigma': 0.05}
-    scale = {'charge': 0.1, 'sigma': 0.015}
-    ylabels = {'charge': 'Charge [e]', 'sigma': '$\\sigma$ [nm]'}
+    labels_used: Dict[str, bool] = {"prior": False, "posterior": False, "bound": False}
+    y_offset: Dict[str, float] = {'charge': 0.2, 'sigma': 0.05}
+    scale: Dict[str, float] = {'charge': 0.1, 'sigma': 0.015}
+    ylabels: Dict[str, str] = {'charge': 'Charge [e]', 'sigma': '$\\sigma$ [nm]'}
 
     for i, (p_kind, ax) in enumerate(zip(param_kinds, axs)):
         x_offset = 0
@@ -142,7 +151,10 @@ def plot_marginals(
         ax.tick_params(axis='both', direction='in')
         ax.set_xticks(np.arange(0, len(results.bounds_explicit.params), 1))
 
-        xtick_labels = [_wrap_label(p.split(maxsplit=1)[-1], 4) for p in results.bounds_explicit.params]
+        xtick_labels = [
+            _wrap_label(p.split(maxsplit=1)[-1], 4)
+            for p in results.bounds_explicit.params
+        ]
         ax.set_xticklabels(xtick_labels, rotation=30)
         ax.set_xlabel('Atomtype')
 
@@ -154,15 +166,15 @@ def plot_marginals(
 
 
 def plot_corner(
-    samples,
-    labels=None,
-    levels=5,
-    quantiles=[0.16, 0.5, 0.84],
-    figsize=6,
-    cmap=plt.cm.Reds,
-    scatter_alpha=0.2,
-    fn_out=None,
-    transparent=True
+    samples: ArrayLike,
+    labels: Optional[Sequence[str]] = None,
+    levels: int = 5,
+    quantiles: Sequence[float] = [0.16, 0.5, 0.84],
+    figsize: float = 6,
+    cmap: Any = plt.cm.Reds,
+    scatter_alpha: float = 0.2,
+    fn_out: Optional[PathLike] = None,
+    transparent: bool = True
 ) -> None:
     """
     Corner plot with 1D histograms and 2D KDE contourf + scatter background.

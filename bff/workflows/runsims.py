@@ -4,6 +4,7 @@ import subprocess
 import shutil
 import numpy as np
 from pathlib import Path
+from typing import Any, Union, Tuple, List, Dict
 
 from gmxtop import Topology
 from ..topology import TopologyModifier
@@ -11,6 +12,9 @@ from ..structures import Specs, RandomParamsGenerator
 from ..io.utils import load_yaml, save_yaml, compress_results
 from ..io.schedulers import Slurm
 from ..io.logs import Logger
+
+
+PathLike = Union[str, Path]
 
 
 SCHEDULER_CLASSES = {
@@ -21,7 +25,7 @@ SCHEDULER_CLASSES = {
 MD_SCRIPT = 'BayesicForceFields.bff.workflows.md'
 
 
-def load_config(config: str | Path):
+def load_config(config: PathLike) -> Tuple[dict, bool]:
     """
     Check if the configuration is valid.
     """
@@ -138,7 +142,12 @@ def load_config(config: str | Path):
     return config, validate
 
 
-def dispatch_md_job(hash: str, sample: list, config: dict, job_scheduler: object):
+def dispatch_md_job(
+    hash: str,
+    sample: List[float],
+    config: Dict[str, Any],
+    job_scheduler: object
+) -> Union[None, int]:
     """
     Submit an MD simulation either locally or via a job scheduler.
     """
@@ -175,7 +184,7 @@ def dispatch_md_job(hash: str, sample: list, config: dict, job_scheduler: object
 
 
 # ---- Initialization ----
-def initialize_environment(config, validate):
+def initialize_environment(config: Dict[str, Any], validate: bool) -> Path:
     """
     Set up the directory structure and save settings and initial data.
     """
@@ -252,7 +261,7 @@ def initialize_environment(config, validate):
 
 
 # ---- Job Control ----
-def get_active_jobs(ids, scheduler, chunk_size=1000):
+def get_active_jobs(ids: List[int], scheduler: str, chunk_size: int = 1000) -> int:
     if scheduler != 'slurm':
         raise NotImplementedError
 
@@ -277,7 +286,7 @@ def get_active_jobs(ids, scheduler, chunk_size=1000):
     return n_active
 
 
-def control_jobs(job_ids, scheduler):
+def control_jobs(job_ids: List[int], scheduler: str) -> None:
     """Monitor active jobs until completion."""
     while True:
         if get_active_jobs(job_ids, scheduler) == 0:
@@ -286,7 +295,12 @@ def control_jobs(job_ids, scheduler):
 
 
 # ---- Cleanup ----
-def clean_up_train_dir(samples, data_dir, compress=False, remove=False):
+def clean_up_train_dir(
+    samples: Dict[str, List[float]],
+    data_dir: PathLike,
+    compress: bool = False,
+    remove: bool = False
+) -> None:
     """
     Remove failed simulations and optionally compress results.
     """
@@ -317,7 +331,7 @@ def clean_up_train_dir(samples, data_dir, compress=False, remove=False):
                     print(f"Warning: Failed to remove {f}: {e}")
 
 
-def print_train_summary(fn_specs, logger):
+def print_train_summary(fn_specs: PathLike, logger: Logger) -> None:
     """
     Print a summary of the configuration settings.
     """
@@ -336,7 +350,7 @@ def print_train_summary(fn_specs, logger):
     logger.info(f"total charge: {specs.total_charge}\n", level=1)
 
 
-def print_validate_summary(fn_specs, logger):
+def print_validate_summary(fn_specs: PathLike, logger: Logger) -> None:
     """
     Print a summary of the configuration settings.
     """
@@ -347,7 +361,7 @@ def print_validate_summary(fn_specs, logger):
 
 
 # ---- Main Workflow ----
-def main(fn_config):
+def main(fn_config: PathLike) -> None:
     """
     Main function to execute the training set generation.
     """

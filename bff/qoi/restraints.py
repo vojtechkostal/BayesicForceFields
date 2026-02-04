@@ -3,6 +3,7 @@ import MDAnalysis as mda
 
 from scipy.constants import R
 from scipy.ndimage import gaussian_filter
+from typing import Dict, List
 
 from ..tools import compute_distances
 
@@ -111,7 +112,7 @@ def compute_probability_density(
 
 
 def compute_all_restraints(
-        universe: mda.Universe, restraints: list[dict], **kwargs) -> dict:
+        universe: mda.Universe, restraints: List[Dict], **kwargs) -> Dict:
     """Computes probability density of all restrained coordinates.
 
     Parameters

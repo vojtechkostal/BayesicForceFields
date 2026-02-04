@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+from typing import Union
 
 from ..bff import BFFLearn
 from ..structures import TrainData
@@ -7,7 +8,10 @@ from ..io.logs import Logger
 from ..io.utils import load_yaml
 
 
-def load_config(fn_config: str | Path) -> dict:
+PathLike = Union[str, Path]
+
+
+def load_config(fn_config: PathLike) -> dict:
     fn_config = Path(fn_config).resolve()
     config = load_yaml(fn_config)
     base_dir = fn_config.parent
@@ -15,7 +19,7 @@ def load_config(fn_config: str | Path) -> dict:
     required_keys = ["fn_train", "fn_specs"]
     required_train_fn = ["inputs", "outputs", "outputs_ref", "observations"]
 
-    def resolve_and_check(path: str | Path) -> Path:
+    def resolve_and_check(path: PathLike) -> Path:
         """Resolve a path relative to base_dir and ensure it exists."""
         path = (base_dir / path).resolve()
         if not path.exists():
@@ -62,7 +66,7 @@ def load_config(fn_config: str | Path) -> dict:
     return config
 
 
-def main(fn_config):
+def main(fn_config: PathLike) -> None:
 
     config = load_config(fn_config)
 

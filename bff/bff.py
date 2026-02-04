@@ -1,8 +1,30 @@
 from pathlib import Path
+from typing import (
+    Any,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    TypeAlias,
+    Union,
+)
 
 from .bayes.inference import lgp_hyperopt, initialize_mcmc_sampler
 from .structures import Specs, InferenceResults
 from .io.logs import Logger, print_progress_mcmc
+
+
+# ---- Type aliases (keep signatures readable) ----
+PathLike: TypeAlias = Union[str, Path]
+SpecsLike: TypeAlias = Union[str, Path, Dict[str, Any], Specs]
+
+# Map QoI name -> hyperparam file path
+HyperparamPaths: TypeAlias = Mapping[str, PathLike]
+
+# Map QoI name -> mean specification (float or special sentinel strings like "sigmoid")
+MeansMap: TypeAlias = Mapping[str, Union[float, str]]
 
 
 class BFFLearn:
@@ -39,19 +61,19 @@ class BFFLearn:
         the optimized surrogates and specified parameters.
     """
     def __init__(
-        self, *train_data, specs: str | Path | dict | Specs, logger: Logger = None
+        self, *train_data, specs: SpecsLike, logger: Optional[Logger] = None
     ) -> None:
 
-        self.train_data = train_data
-        self.logger = logger or Logger("BFF")
-        self.lgp = None
-        self.QoI = None
-        self.specs = Specs(specs) if not isinstance(specs, Specs) else specs
+        self.train_data: Tuple[Any, ...] = train_data
+        self.logger: Logger = logger or Logger("BFF")
+        self.lgp: Optional[Dict[str, Any]] = None
+        self.QoI: Optional[List[str]] = None
+        self.specs: Specs = Specs(specs) if not isinstance(specs, Specs) else specs
 
         self.logger.info("=== Bayesian Force Field Learning ===\n", level=0)
 
     @property
-    def _all_qoi(self) -> list[str]:
+    def _all_qoi(self) -> List[str]:
         """
         Get a list of all unique QoI names from the training datasets.
         """
@@ -59,10 +81,10 @@ class BFFLearn:
 
     def setup_lgp(
         self,
-        QoI: list[str] = None,
+        QoI: Optional[Sequence[str]] = None,
         n_max: int = 200,
-        fn_hyper: dict[str | Path] = None,
-        means: dict = {'rdf': 'sigmoid'},
+        fn_hyper: Optional[HyperparamPaths] = None,
+        means: Optional[MeansMap] = None,
         committee: int = 1,
         test_fraction: float = 0.2,
         device: str = 'cuda:0',
@@ -84,7 +106,7 @@ class BFFLearn:
             Dictionary mapping QoI names to file paths for
             loading/saving optimized hyperparameters.
             If None, hyperparameters are optimized from scratch (default is None).
-        means : dict, optional
+        means : MeansMap, optional
             Dictionary mapping QoI names to their mean values for centering.
             Default is {'rdf': 'sigmoid'}.
         committee : int, optional
@@ -146,10 +168,10 @@ class BFFLearn:
         self,
         priors_type: str = 'normal',
         max_iter: int = 100000,
-        n_walkers: int = None,
-        fn_backend: str | Path = './mcmc.h5',
-        fn_priors: str | Path = './priors.yaml',
-        fn_tau: str | Path = './tau.npy',
+        n_walkers: Optional[int] = None,
+        fn_backend: PathLike = './mcmc.h5',
+        fn_priors: PathLike = './priors.yaml',
+        fn_tau: PathLike = './tau.npy',
         restart: bool = True,
         device: str = 'cuda:0',
         **kwargs
@@ -167,11 +189,11 @@ class BFFLearn:
             Maximum number of MCMC iterations (default is 100000).
         n_walkers : int, optional
             Number of MCMC walkers (default is 5 times the number of parameters).
-        fn_backend : str or Path, optional
+        fn_backend : PathLike, optional
             Filename for the MCMC backend storage (default is './mcmc.h5').
-        fn_priors : str or Path, optional
+        fn_priors : PathLike, optional
             Filename to save the priors (default is './priors.yaml').
-        fn_tau : str or Path, optional
+        fn_tau : PathLike, optional
             Filename to save the autocorrelation times (default is './tau.npy').
         restart : bool, optional
             Whether to restart from the last MCMC state if available (default is True).

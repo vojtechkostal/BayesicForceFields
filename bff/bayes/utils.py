@@ -2,6 +2,7 @@ import emcee
 import torch
 
 from torch.autograd.functional import hessian
+from typing import List, Dict, Union, Tuple, Callable
 
 
 def smape(y_true: torch.tensor, y_pred: torch.tensor) -> float:
@@ -28,7 +29,9 @@ def initialize_backend(fn_backend: str):
 
 
 def initialize_walkers(
-    priors: dict, n_walkers: int, specs: object = None
+    priors: Dict[str, torch.distributions.Distribution],
+    n_walkers: int,
+    specs: object = None
 ) -> torch.Tensor:
 
     """
@@ -69,7 +72,10 @@ def initialize_walkers(
     return p0
 
 
-def check_tensor(x, device):
+def check_tensor(
+    x: Union[torch.Tensor, float, int, list, tuple],
+    device: str
+) -> torch.Tensor:
     """Convert input to a torch tensor on the specified device."""
     if not isinstance(x, torch.Tensor):
         return torch.tensor(x, device=device, dtype=torch.float32)
@@ -77,7 +83,7 @@ def check_tensor(x, device):
         return x.to(device, dtype=torch.float32)
 
 
-def check_device(device):
+def check_device(device: str) -> None:
     """Check if the specified device is available."""
     if device.startswith("cuda"):
         if not torch.cuda.is_available():
@@ -88,7 +94,7 @@ def check_device(device):
 
 
 @torch.no_grad()
-def nearest_positive_definite(A):
+def nearest_positive_definite(A: torch.Tensor) -> torch.Tensor:
     """Find the nearest positive definite matrix to A."""
     # Symmetrize
     A_sym = (A + A.T) / 2
@@ -113,7 +119,7 @@ def nearest_positive_definite(A):
 
 def train_test_split(
     X: torch.Tensor, y: torch.Tensor, test_fraction: float = 0.2
-) -> tuple:
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Split the dataset into training and testing sets."""
 
     n = len(X)
@@ -137,29 +143,29 @@ _MANUAL_MODE = False
 
 class enable_manual_dist:
     """Context manager to enable manual pairwise distance computation (Hessian-safe)."""
-    def __enter__(self):
+    def __enter__(self) -> None:
         global _MANUAL_MODE
         self._prev = _MANUAL_MODE
         _MANUAL_MODE = True
 
-    def __exit__(self, *args):
+    def __exit__(self, *args) -> None:
         global _MANUAL_MODE
         _MANUAL_MODE = self._prev
 
 
-def auto_manual_switch(fn):
+def auto_manual_switch(fn: Callable) -> Callable:
     def wrapper(*args, manual_sqdist=False, **kwargs):
         return fn(*args, manual_sqdist=manual_sqdist or _MANUAL_MODE, **kwargs)
     return wrapper
 
 
 def find_max_stable_lr(
-    fn: callable,
+    fn: Callable,
     p0: torch.Tensor,
-    learning_rates: float | torch.Tensor = None,
+    learning_rates: List[Union[float, torch.Tensor]] = None,
     max_iter: int = 100,
-    param_bounds: tuple[float, float] = (-7, 7),
-) -> float | None:
+    param_bounds: Tuple[float, float] = (-7, 7),
+) -> Union[float, None]:
     """Find the largest stable learning rate for gradient-based optimization.
 
     Parameters
@@ -200,14 +206,14 @@ def find_max_stable_lr(
 
 
 def find_map(
-    fn: callable,
+    fn: Callable,
     x0: torch.Tensor,
-    lr: float | torch.Tensor = None,
+    lr: Union[float, torch.Tensor] = None,
     max_iter: int = 10000,
     tol_grad: float = 1e-2,
     device: str = 'cpu',
-    logger: callable = None
-):
+    logger: Callable = None
+) -> torch.Tensor:
 
     logger.info("learning rate search: in progres...", level=2, overwrite=True)
 
@@ -249,10 +255,10 @@ def find_map(
 
 
 def laplace_approximation(
-    fn: callable,
+    fn: Callable,
     map_theta: torch.Tensor,
     device: str = 'cpu'
-) -> tuple[torch.Tensor, torch.Tensor]:
+) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Perform Laplace approximation around MAP estimate.
 

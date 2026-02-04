@@ -1,6 +1,7 @@
 import torch
 from .kernels import gaussian_kernel
 from ..structures import Specs
+from typing import Dict
 
 
 def loo_log_likelihood(
@@ -70,8 +71,8 @@ def loo_log_likelihood(
 
 def gaussian_log_likelihood(
     theta: torch.Tensor,
-    y_true: dict,
-    surrogate: dict,
+    y_true: Dict[str, torch.Tensor],
+    surrogate: Dict[str, object],
     specs: Specs = None,
 ) -> torch.Tensor:
 
