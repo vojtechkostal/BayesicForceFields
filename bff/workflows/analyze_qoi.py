@@ -152,7 +152,7 @@ def main(fn_config: str) -> None:
 
     fn_base = config['base_name']
     train_data.write(fn_base)
-    Specs(trainset_info.specs).save(fn_base.with_name(fn_base.name + '-specs.yaml'))
+    Specs(trainset_info.specs).write(fn_base.with_name(fn_base.name + '-specs.yaml'))
     if config.get('write_raw_qoi', False):
         fn_qoi_train = fn_base.with_name(fn_base.name + '-train.raw.json')
         fn_qoi_ref = fn_base.with_name(fn_base.name + '-ref.raw.json')
