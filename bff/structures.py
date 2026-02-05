@@ -656,20 +656,12 @@ class RandomParamsGenerator(Specs):
         self.n_samples = 0
         self.sampler = LatinHypercube(n_dim)
         self.lbe, self.ube = self.bounds_implicit.values.T
-        self.lbi, self.ubi = getattr(
-            self, 'implicit_param_bounds', (None, None)
+        self.constraint = ChargeConstraint(
+            self.bounds_implicit.values,
+            self.implicit_charge_bound,
+            self.constraint_matrix,
+            self.constraint_charge
         )
-        if self.lbi is None or self.ubi is None:
-            raise AttributeError(
-                "The 'implicit_param_bounds' attribute is not properly "
-                "initialized."
-            )
-
-        if len(self.constraint_matrix) != len(self.bounds_implicit._bounds):
-            raise ValueError(
-                "The constraint matrix must match the\
-                    number of implicit parameters."
-            )
 
     def __call__(self, n: int) -> None:
         """Advance the sampler to skip the next n samples."""
@@ -699,11 +691,6 @@ class RandomParamsGenerator(Specs):
         scaled_samples = samples * (self.ube - self.lbe) + self.lbe
 
         # Validate samples against implicit charge constraints
-        q_explicit = np.sum(scaled_samples * self.constraint_matrix, axis=1)
-        q_implicit = (self.total_charge - q_explicit) / self.implicit_param_count
-        mask = (self.lbi <= q_implicit) & (q_implicit <= self.ubi)
+        mask = self.constraint(scaled_samples)
 
-        # Filtered samples based on the mask
-        filtered_samples = scaled_samples[mask]
-
-        return filtered_samples
+        return scaled_samples[mask]
