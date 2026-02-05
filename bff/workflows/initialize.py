@@ -1,7 +1,7 @@
 import argparse
 import subprocess
 import numpy as np
-from typing import Any, Union, Dict, List
+from typing import Any, Union, Dict, List, Optional
 
 import MDAnalysis as mda
 from MDAnalysis.analysis.distances import distance_array
@@ -12,7 +12,7 @@ from pathlib import Path
 from collections import defaultdict
 
 from gmxtop import Topology
-from ..tools import create_box
+from ..topology import create_box
 from ..io.cp2k import make_cp2k_input
 from ..io.mdp import MDP
 from ..io.utils import load_yaml
@@ -185,28 +185,32 @@ def make_ndx(universe: mda.Universe, selections: List[str], fn_out: str) -> None
 
 def run_md(
     name: str,
-    fn_mdp: str,
-    fn_topol: str,
-    fn_coord: str,
-    fn_ndx: str,
+    fn_mdp: PathLike,
+    fn_topol: PathLike,
+    fn_coord: PathLike,
+    fn_ndx: Optional[PathLike],
     n_steps: int = -2,
     maxwarn: int = 0,
-    fn_log: str = 'gmx.log'
+    fn_log: PathLike = 'gmx.log'
 ) -> None:
 
+    fn_mdp = str(Path(fn_mdp).resolve())
+    fn_topol = str(Path(fn_topol).resolve())
+    fn_coord = str(Path(fn_coord).resolve())
+    fn_ndx = str(Path(fn_ndx).resolve()) if fn_ndx else None
     fn_tpr = str(name) + '.tpr'
 
+    n_steps = str(n_steps)
+    maxwarn = str(maxwarn)
+
     grompp_cmd = [
-        'gmx', 'grompp', '-f', str(fn_mdp), '-c', str(fn_coord),
-        '-p', str(fn_topol), '-o', fn_tpr, '-maxwarn', str(maxwarn)
+        'gmx', 'grompp', '-f', fn_mdp, '-c', fn_coord,
+        '-p', fn_topol, '-o', fn_tpr, '-maxwarn', maxwarn
     ]
     if fn_ndx:
-        grompp_cmd.extend(['-n', str(fn_ndx)])
+        grompp_cmd.extend(['-n', fn_ndx])
 
-    mdrun_cmd = [
-        'gmx', 'mdrun', '-s', fn_tpr, '-deffnm', str(name),
-        '-nsteps', str(n_steps)
-    ]
+    mdrun_cmd = ['gmx', 'mdrun', '-deffnm', name, '-nsteps', n_steps]
 
     with open(fn_log, "a") as f:
         subprocess.run(grompp_cmd, stdout=f, stderr=f, check=True)
@@ -214,14 +218,14 @@ def run_md(
 
 
 def insert_pull_code(
-    fn_mdp: str,
+    fn_mdp: PathLike,
     groups: List[str],
     positions: List[float],
     force_constants: List[float],
     fn_out: str
 ) -> MDP:
 
-    mdp = MDP(str(fn_mdp))
+    mdp = MDP(fn_mdp)
     pull = {
         'pull': 'yes',
         'pull-ncoords': len(groups),
@@ -270,7 +274,7 @@ def create_restraint_window(
     restr_sel: List[str],
     restr_x0: List[float],
     box: np.ndarray,
-    fn_out=None
+    fn_out=Optional[PathLike]
 ) -> None:
     restr_x0 = np.array(restr_x0, dtype=float)
     ags = [[universe.select_atoms('name ' + x)
@@ -287,9 +291,7 @@ def create_restraint_window(
 
     for pos in restr_x0_scaled.T:
         idx = np.argmin(np.sum(np.abs(distances - pos), axis=1))
-        # print(i, pos, idx, np.argmin(np.sum(np.abs(distances - pos), axis=1)))
         fn_out_idx = f"{name}.{suffix}"
-        # win_names.append(fn_out_idx)
         with mda.Writer(fn_out_idx, 'w') as w:
             ts = universe.trajectory[idx]
             ts.dimensions = box
@@ -297,7 +299,11 @@ def create_restraint_window(
 
 
 def strip_topol(
-        fn_topol: str, fn_coords: str, fn_out_topol: str, *fn_out_coords: str) -> None:
+    fn_topol: PathLike,
+    fn_coords: PathLike,
+    fn_out_topol: PathLike,
+    *fn_out_coords: PathLike
+) -> None:
     top = Topology(fn_topol)
     u = mda.Universe(fn_topol, fn_coords, topology_format='ITP')
 
@@ -312,7 +318,7 @@ def strip_topol(
         atoms.write(fn_out, frames=u.trajectory[[-1]])
 
 
-def get_restraint_atom_indices(fn_system: str, names: List[str]) -> np.ndarray:
+def get_restraint_atom_indices(fn_system: PathLike, names: List[str]) -> np.ndarray:
     u = mda.Universe(fn_system)
     indices = []
     for name in names:
@@ -358,7 +364,7 @@ def main(fn_config: PathLike) -> None:
             logger.info("Creating box: Done.", level=2)
 
             fn_topol_processed = fn_coord.with_suffix('.top')
-            topol.write(str(fn_topol_processed))
+            topol.write(fn_topol_processed)
             q = sum(atom.charge for atom in topol.atoms)
             maxwarn = 1 if not np.isclose(q, 0, atol=1e-4) else 0
 
@@ -457,14 +463,14 @@ def main(fn_config: PathLike) -> None:
         cp2k_win_dir.mkdir(exist_ok=True)
 
         # remove_vsites(u, cp2k_win_dir / 'pos.xyz')
-        strip_topol(str(fn_topol_processed),
-                    str(deffnm_nvt) + '.gro',
-                    str(cp2k_win_dir / 'topol.top'),
-                    str(cp2k_win_dir / 'pos.gro'),
-                    str(cp2k_win_dir / 'pos.xyz'))
+        strip_topol(fn_topol_processed,
+                    deffnm_nvt.with_suffix('.gro'),
+                    cp2k_win_dir / 'topol.top',
+                    cp2k_win_dir / 'pos.gro',
+                    cp2k_win_dir / 'pos.xyz')
 
         atom_indices = get_restraint_atom_indices(
-            str(cp2k_win_dir / 'pos.gro'), atoms)
+            cp2k_win_dir / 'pos.gro', atoms)
         restraint_info = [
             {'atoms': ' '.join(map(str, idx)), 'target': x0_, 'k': k_ / 2}
             for idx, x0_, k_ in zip(atom_indices, x0, k)

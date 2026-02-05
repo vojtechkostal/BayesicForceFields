@@ -1,5 +1,9 @@
 from collections import OrderedDict
-from typing import List, Dict
+from typing import List, Dict, Union, Tuple
+from pathlib import Path
+
+
+PathLike = Union[str, Path]
 
 
 class MDP:
@@ -24,7 +28,7 @@ class MDP:
         Writes the current content to a new .mdp file, maintaining formatting.
     """
 
-    def __init__(self, fn_mdp: str) -> None:
+    def __init__(self, fn_mdp: PathLike) -> None:
         """
         Initialize the MDP object and load the content from a file.
 
@@ -35,7 +39,7 @@ class MDP:
         """
         self.content = self._read(fn_mdp)
 
-    def _read(self, fn: str) -> OrderedDict:
+    def _read(self, fn: PathLike) -> OrderedDict:
         """
         Read an .mdp file and parse its content.
 
@@ -68,7 +72,7 @@ class MDP:
                     content[key.strip()] = value.strip()
         return content
 
-    def write(self, fn_out: str) -> None:
+    def write(self, fn_out: PathLike) -> None:
         """
         Write the current content to an .mdp file.
 
@@ -88,7 +92,7 @@ class MDP:
                     f.write(f'{key:<25} = {value}\n')
 
 
-def get_n_frames_target(fn_mdp: str) -> tuple[int | None, int | None]:
+def get_n_frames_target(fn_mdp: PathLike) -> Tuple[int | None, int | None]:
     """Extracts the expected number of frames in the resulting trajectory."""
     mdp_data = MDP(fn_mdp).content
     n_steps = int(mdp_data.get('nsteps'))
@@ -99,10 +103,10 @@ def get_n_frames_target(fn_mdp: str) -> tuple[int | None, int | None]:
         return None, None
 
 
-def get_restraints(fn_mdp: str) -> List[Dict[str, float]]:
+def get_restraints(fn_mdp: PathLike) -> List[Dict[str, float]]:
     """Reads the restraints from the MDP file."""
 
-    mdp = MDP(str(fn_mdp))
+    mdp = MDP(fn_mdp)
     mdp_data = mdp.content
 
     # Check if the pull code is present
