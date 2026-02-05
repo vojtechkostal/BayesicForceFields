@@ -3,28 +3,20 @@ from typing import (
     Any,
     Dict,
     List,
-    Mapping,
     Optional,
     Sequence,
     Tuple,
-    TypeAlias,
     Union,
 )
 
 from .bayes.inference import lgp_hyperopt, initialize_mcmc_sampler
-from .structures import Specs, InferenceResults
+from .structures import Specs, InferenceResults, ChargeConstraint
 from .io.logs import Logger, print_progress_mcmc
 
 
 # ---- Type aliases (keep signatures readable) ----
-PathLike: TypeAlias = Union[str, Path]
-SpecsLike: TypeAlias = Union[str, Path, Dict[str, Any], Specs]
-
-# Map QoI name -> hyperparam file path
-HyperparamPaths: TypeAlias = Mapping[str, PathLike]
-
-# Map QoI name -> mean specification (float or special sentinel strings like "sigmoid")
-MeansMap: TypeAlias = Mapping[str, Union[float, str]]
+PathLike = Union[str, Path]
+SpecsLike = Union[str, Path, Dict[str, Any], Specs]
 
 
 class BFFLearn:
@@ -83,8 +75,8 @@ class BFFLearn:
         self,
         QoI: Optional[Sequence[str]] = None,
         n_max: int = 200,
-        fn_hyper: Optional[HyperparamPaths] = None,
-        means: Optional[MeansMap] = None,
+        fn_hyper: Dict[str, PathLike] = None,
+        means: Optional[Dict[str, float]] = None,
         committee: int = 1,
         test_fraction: float = 0.2,
         device: str = 'cuda:0',
@@ -102,11 +94,11 @@ class BFFLearn:
         n_max : int, optional
             Maximum number of data points used for hyperparameter optimization
             (default is 200).
-        fn_hyper : dict of str or Path, optional
+        fn_hyper : Dict of str or Path, optional
             Dictionary mapping QoI names to file paths for
             loading/saving optimized hyperparameters.
             If None, hyperparameters are optimized from scratch (default is None).
-        means : MeansMap, optional
+        means : Dict, optional
             Dictionary mapping QoI names to their mean values for centering.
             Default is {'rdf': 'sigmoid'}.
         committee : int, optional
@@ -219,11 +211,17 @@ class BFFLearn:
             if qoi in d.qoi_names
         }
 
+        constraint = ChargeConstraint(
+            bounds=self.specs.bounds_implicit.values,
+            implicit_bound=self.specs.implicit_charge_bound,
+            constraint_matrix=self.specs.constraint_matrix,
+            constraint_charge=self.specs.constraint_charge
+        )
+
         p0, priors, sampler = initialize_mcmc_sampler(
             self.lgp,
-            self.specs,
-            self.QoI,
             y_true,
+            constraint,
             n_walkers,
             priors_type,
             fn_backend,
@@ -236,11 +234,11 @@ class BFFLearn:
 
         print_progress_mcmc(sampler, p0, max_iter, logger=self.logger, **kwargs)
         tau = sampler.get_autocorr_time(tol=0)
-        results = InferenceResults(sampler, priors, tau, self.specs.data)
+        results = InferenceResults(sampler, priors, tau, self.specs.data, self.QoI)
 
         if fn_priors:
-            results.save_priors(fn_priors)
+            results.write_priors(fn_priors)
         if fn_tau:
-            results.save_tau(fn_tau)
+            results.write_tau(fn_tau)
 
         return results

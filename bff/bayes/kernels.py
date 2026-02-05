@@ -1,5 +1,6 @@
 import torch
 from .utils import check_tensor, auto_manual_switch
+
 from typing import Union
 
 

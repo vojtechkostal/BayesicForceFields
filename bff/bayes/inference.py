@@ -3,11 +3,11 @@ import torch
 import numpy as np
 from functools import partial
 from pathlib import Path
-from typing import Union, List, Callable
 
 from .gaussian_process import LocalGaussianProcess, LGPCommittee
 from .likelihoods import loo_log_likelihood, gaussian_log_likelihood
-from .priors import define_param_priors, define_hyper_priors, log_prior
+from .priors import define_param_priors, define_hyper_priors
+from .posterior import log_posterior
 from ..io.utils import load_yaml, save_yaml
 from ..io.logs import Logger
 from .utils import (
@@ -16,75 +16,21 @@ from .utils import (
     train_test_split,
     find_map, laplace_approximation
 )
-from ..structures import Specs
+
+from typing import Union, List, Callable, Dict, Optional
 
 
 PathLike = Union[str, Path]
-
-
-def log_posterior(
-    theta: torch.Tensor,
-    priors: List[torch.distributions.Distribution],
-    log_likelihood_fn: Callable[[torch.Tensor], torch.Tensor],
-    device: str,
-    numpy_output: bool = True
-) -> np.ndarray:
-
-    """
-    Computes the log-posterior = log-prior + log-likelihood.
-
-    Parameters
-    ----------
-    theta : torch.Tensor
-        Tensor of parameters for which to compute the log-posterior.
-    priors : List[torch.distributions.Distribution]
-        List of prior distributions for the parameters.
-    log_likelihood_fn : Callable[[torch.Tensor], torch.Tensor]
-        Function that computes the log-likelihood given the parameters.
-        It must have signature `log_likelihood_fn(theta: torch.Tensor) -> torch.Tensor`.
-    device : str
-        Device on which the computations should be performed (e.g., 'cuda:0' or 'cpu').
-    numpy_output : bool, optional
-        If True, returns the log-posterior as a NumPy array.
-        If False, returns it as a PyTorch tensor. Defaults to True.
-
-    Returns
-    -------
-    np.ndarray
-        Log-posterior values for the given parameters.
-    """
-
-    theta = check_tensor(theta, device)
-    if theta.dim() == 1:
-        theta = theta.unsqueeze(0)
-
-    if theta.isnan().any():
-        log_prob = torch.full((theta.shape[0],), -1e10, device=device)
-        if theta._grad_fn:
-            log_prob = log_prob.requires_grad_()
-
-    else:
-        log_likelihood = log_likelihood_fn(theta)
-        log_likelihood = torch.where(
-            torch.isnan(log_likelihood), -torch.inf, log_likelihood)
-
-        log_prob = log_prior(theta, priors) + log_likelihood
-
-    if log_prob.ndim == 1:
-        log_prob = log_prob.squeeze(0)
-    if numpy_output:
-        return log_prob.detach().cpu().numpy()
-    return log_prob
+ArrayLike = Union[np.ndarray, List[float], torch.Tensor]
 
 
 def initialize_mcmc_sampler(
-    surrogate: dict,
-    specs: Specs,
-    QoI: List[str],
-    y_true: dict,
-    n_walkers: int = None,
+    surrogate: Dict[str, LGPCommittee],
+    y_true: Dict[str, np.ndarray],
+    constraint: Callable[[ArrayLike], ArrayLike] = None,
+    n_walkers: Optional[int] = None,
     priors_disttype: str = 'normal',
-    fn_backend: Union[str, Path] = 'backend.h5',
+    fn_backend: PathLike = 'backend.h5',
     restart: bool = True,
     device: str = 'cuda:0'
 ) -> tuple[np.ndarray, List[torch.distributions.Distribution], emcee.EnsembleSampler]:
@@ -95,12 +41,12 @@ def initialize_mcmc_sampler(
     ----------
     surrogate : dict
         Dictionary of surrogate models used for predictions.
-    specs : object
-        Object that contains specifications of the system.
-    QoI : list[str]
-        List of quantities of interest (QoI) to be optimized.
     y_true : dict
         True target values for the model for all QoI.
+    constraint : Callable, optional
+        Constraint function to apply to parameters.
+        Signature should be `constraint(theta: np.ndarray) -> np.ndarray`.
+        Defaults to None.
     n_walkers : int, optional
         Number of walkers in the MCMC sampler.
         If None, defaults to 5 times the number of parameters.
@@ -123,9 +69,16 @@ def initialize_mcmc_sampler(
         Initial parameter values (p0), list of priors, and the initialized sampler.
     """
 
-    # Define priors based on the implicit parameter bounds
-    QoI_n = [q for q, m in surrogate.items() if m.nuisance is None and q in QoI]
-    priors = define_param_priors(specs.bounds_implicit._bounds, QoI_n, priors_disttype)
+    # Determine parameter bounds
+    if constraint is None:
+        # TODO: define broad but meaningfull bounds
+        n_params = [s.n_params for s in surrogate.values()][0]
+        bounds = [-1e5, 1e5] * n_params
+    else:
+        bounds = constraint.bounds
+
+    # priors
+    priors = define_param_priors(bounds, priors_disttype, len(surrogate))
 
     # Initialize backend
     n_dim = len(priors)
@@ -135,23 +88,25 @@ def initialize_mcmc_sampler(
         try:
             p0 = backend.get_last_sample()
         except AttributeError:
-            p0 = initialize_walkers(priors, n_walkers, specs)
+            p0 = initialize_walkers(priors, n_walkers, constraint)
     else:
         backend.reset(n_walkers, n_dim)
-        p0 = initialize_walkers(priors, n_walkers, specs)
+        p0 = initialize_walkers(priors, n_walkers, constraint)
 
     y_true = {qoi: check_tensor(y, device) for qoi, y in y_true.items()}
 
+    # likelihood
     log_likelihood = partial(
         gaussian_log_likelihood,
         y_true=y_true,
         surrogate=surrogate,
-        specs=specs
+        constraint=constraint
     )
 
+    # posterior
     log_probability = partial(
         log_posterior,
-        priors=list(priors.values()),
+        priors=priors,
         log_likelihood_fn=log_likelihood,
         device=device
     )
@@ -176,8 +131,8 @@ def lgp_hyperopt(
     nuisance: float,
     device: str,
     logger: Logger,
-    opt_kwargs: dict
-) -> tuple[List[LocalGaussianProcess], tuple]:
+    opt_kwargs: Dict[str, Union[int, float, str]]
+) -> LGPCommittee:
     """
     Perform hyperparameter optimization for Local Gaussian Processes (LGPs)
     and construct a committee of LGP models.
@@ -251,7 +206,7 @@ def lgp_hyperopt(
         y_mean = check_tensor(y_mean, device='cpu')
 
         priors = define_hyper_priors(X.shape[1])
-        p0 = torch.tensor([p.mean for p in priors.values()])
+        p0 = torch.tensor([p.mean for p in priors])
 
         log_likelihood = partial(
             loo_log_likelihood,
@@ -260,7 +215,7 @@ def lgp_hyperopt(
 
         log_probability = partial(
             log_posterior,
-            priors=list(priors.values()),
+            priors=priors,
             log_likelihood_fn=log_likelihood,
             device='cpu',
             numpy_output=False)

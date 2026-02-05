@@ -1,8 +1,11 @@
 import emcee
 import torch
 
+from pathlib import Path
 from torch.autograd.functional import hessian
 from typing import List, Dict, Union, Tuple, Callable
+
+PathLike = Union[str, Path]
 
 
 def smape(y_true: torch.tensor, y_pred: torch.tensor) -> float:
@@ -23,7 +26,7 @@ def smape(y_true: torch.tensor, y_pred: torch.tensor) -> float:
     return torch.mean(abs_diff / norm)
 
 
-def initialize_backend(fn_backend: str):
+def initialize_backend(fn_backend: PathLike) -> emcee.backends.HDFBackend:
     """Initialize the backend for the MCMC sampler."""
     return emcee.backends.HDFBackend(fn_backend)
 
@@ -31,7 +34,7 @@ def initialize_backend(fn_backend: str):
 def initialize_walkers(
     priors: Dict[str, torch.distributions.Distribution],
     n_walkers: int,
-    specs: object = None
+    constraint: Callable = None
 ) -> torch.Tensor:
 
     """
@@ -54,19 +57,22 @@ def initialize_walkers(
         of the walkers, sampled from the prior distributions.
     """
 
-    if not specs:
+    if not constraint:
         means = torch.tensor([p.mean for p in priors.values()])
         stds = torch.tensor([p.scale for p in priors.values()])
         p0 = torch.normal(means.expand(n_walkers, -1), stds.expand(n_walkers, -1))
     else:
-        n_params = specs.n_params_implicit
+        # n_params = specs.n_params_implicit
+        n_params = constraint.n_params
         n_dim = len(priors)
 
         p0 = torch.empty((n_walkers, n_dim))
         count = 0
         while count < n_walkers:
-            p0_trial = torch.tensor([p.sample().item() for p in priors.values()])
-            if specs.is_valid(p0_trial[:n_params]):
+            # p0_trial = torch.tensor([p.sample().item() for p in priors.values()])
+            p0_trial = torch.tensor([p.sample().item() for p in priors])
+            # if specs.is_valid(p0_trial[:n_params]):
+            if constraint(p0_trial[:n_params]):
                 p0[count] = p0_trial
                 count += 1
     return p0

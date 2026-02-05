@@ -1,7 +1,7 @@
 import torch
 from .kernels import gaussian_kernel
-from ..structures import Specs
-from typing import Dict
+
+from typing import Callable, Dict
 
 
 def loo_log_likelihood(
@@ -73,7 +73,7 @@ def gaussian_log_likelihood(
     theta: torch.Tensor,
     y_true: Dict[str, torch.Tensor],
     surrogate: Dict[str, object],
-    specs: Specs = None,
+    constraint: Callable = None,
 ) -> torch.Tensor:
 
     """Compute the gaussian log likelihood.
@@ -111,11 +111,12 @@ def gaussian_log_likelihood(
         j += model.nuisance is None  # increment j only for free parameters
 
     # Check if the parameters are within the valid bounds
-    if specs is not None:
-        mask = specs.is_valid(params)
-        params, nuisances = params[mask], nuisances_full[mask]
+    if constraint is not None:
+        mask = constraint(params)
     else:
-        mask = slice(None)
+        torch.ones(len(theta), dtype=bool, device=device)
+    params = params[mask]
+    nuisances = nuisances_full[mask]
 
     # Compute the log-likelihod
     log_likelihood = torch.full((len(theta), ), -torch.inf, device=device)

@@ -1,49 +1,43 @@
 import torch
 import numpy as np
 from torch.distributions import Normal, Uniform
-from typing import List, Union, Dict
+
+from typing import List, Union
+
+
+ArrayLike = Union[np.ndarray, torch.Tensor]
 
 
 def define_param_priors(
-    param_bounds: Dict[str, List[float]], QoI: Dict[str, object], dist_type: str
-) -> Dict[str, List[Union[Normal, Uniform]]]:
-    """
-    Define priors for the model parameters and nuisance parameters.
+    bounds: ArrayLike,
+    dist_type: str = "normal",
+    n_nuisance: int = 0
+) -> List[torch.distributions.Distribution]:
 
-    Parameters
-    ----------
-    param_bounds : dict[list]
-        Dict of tuples defining the bounds for each parameter.
-    QoI : dict
-        Dictionary of quantities of interest (QoI).
-    dist_type : str
-        Type of distribution for the priors, either 'normal' or 'uniform'.
+    if dist_type == "normal":
+        means = np.mean(bounds, axis=1).squeeze()
+        widths = 1 / 5 * np.diff(bounds, axis=1).squeeze()
+        param_priors = [
+            Normal(mean, width) for mean, width in zip(means, widths)
+        ]
 
-    Returns
-    -------
-    dict
-        Dict of prior distributions for the parameters and nuisance parameters.
-    """
+    elif dist_type == "uniform":
+        lowers = bounds[:, 0].squeeze()
+        uppers = bounds[:, 1].squeeze()
+        param_priors = [
+            Uniform(lower, upper, validate_args=False)
+            for lower, upper in zip(lowers, uppers)
+        ]
 
-    if dist_type == 'normal':
-        param_priors = {
-            param: Normal(np.mean(bound), 1 / 5 * np.diff(bound)[0])
-            for param, bound in param_bounds.items()
-        }
-    elif dist_type == 'uniform':
-        param_priors = {
-            param: Uniform(bound[0], bound[1], validate_args=False)
-            for param, bound in param_bounds.items()
-        }
     else:
         raise ValueError(
             f'Unknown prior type "{dist_type}". '
             'Options are "normal" or "uniform".'
         )
 
-    nuisance_priors = {f'nuisance {q}': Normal(-2, 2) for q in QoI}
+    nuisance_priors = [Normal(-2, 2) for _ in range(n_nuisance)]
 
-    return param_priors | nuisance_priors
+    return param_priors + nuisance_priors
 
 
 def define_hyper_priors(n_params: int) -> List[Normal]:
@@ -64,10 +58,11 @@ def define_hyper_priors(n_params: int) -> List[Normal]:
             List of Normal distributions representing the priors.
     """
 
-    lengths_priors = {f'length {i}': Normal(-2, 2) for i in range(n_params)}
-    width_prior = {'width': Normal(-2, 2)}
-    sigma_prior = {'sigma': Normal(-2, 3)}
-    return lengths_priors | width_prior | sigma_prior
+    length_scale_priors = [Normal(-2, 2) for _ in range(n_params)]
+    width_prior = Normal(-2, 2)
+    noise_prior = Normal(-2, 3)
+
+    return length_scale_priors + [width_prior, noise_prior]
 
 
 def log_prior(

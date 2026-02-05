@@ -229,6 +229,10 @@ class Bounds:
     def upper(self) -> np.ndarray:
         return self._values[:, 1]
 
+    @property
+    def n(self):
+        return len(self._bounds)
+
     def __repr__(self) -> str:
         return f"Bounds({self._bounds})"
 
@@ -246,9 +250,8 @@ class Specs:
         self.data = self._load(specs)
 
         # Extract attributes
-        self.atoms = self.data.get('atoms', [])
         self.mol_resname = self.data.get('mol_resname', "")
-        self.implicit_atoms = self.data.get('implicit_atoms', "")
+        self.implicit_atoms = self.data.get('implicit_atoms', [])
         self.total_charge = self.data.get('total_charge', 0.0)
         self.constraint_charge = self.data.get('constraint_charge', 0.0)
         self._bounds = Bounds(self.data['bounds'])
@@ -267,13 +270,8 @@ class Specs:
         data['bounds'] = {k: data['bounds'][k] for k in sorted(data['bounds'])}
         return data
 
-    def save(self, fn_out: str):
+    def write(self, fn_out: PathLike) -> None:
         save_yaml(self.data, fn_out)
-
-    @property
-    def atomtype_counts(self):
-        atomtypes, counts = np.unique(list(self.atoms.values()), return_counts=True)
-        return dict(zip(atomtypes, counts))
 
     @property
     def implicit_param(self):
@@ -285,11 +283,7 @@ class Specs:
         return np.argmax(self.bounds_explicit.params == self.implicit_param)
 
     @property
-    def implicit_param_count(self):
-        return len(self.implicit_atoms)
-
-    @property
-    def implicit_param_bounds(self):
+    def implicit_charge_bound(self):
         return self.bounds_explicit.values[self.implicit_param_pos]
 
     @property
@@ -305,11 +299,6 @@ class Specs:
         return self.bounds_implicit.params.size
 
     @property
-    def n_params_explicit(self):
-        """Number of parameters excluding the implicit charge."""
-        return self.bounds_explicit.params.size
-
-    @property
     def bounds_implicit(self):
         bounds_copy = self._bounds._bounds.copy()
         bounds_copy.pop(self.implicit_param, None)
@@ -318,11 +307,6 @@ class Specs:
     @property
     def bounds_explicit(self):
         return self._bounds
-
-    @property
-    def varied_param_names(self):
-        mask = self.bounds_explicit.params != self.implicit_param
-        return self.bounds_explicit.params[mask]
 
     @property
     def constraint_matrix(self):
@@ -334,17 +318,35 @@ class Specs:
             dtype=int,
         )
 
-    def is_valid(self, params: Union[Sequence[float], ArrayLike]) -> np.ndarray:
-        if isinstance(params, torch.Tensor):
-            arr = params.detach().cpu().numpy()
+
+class ChargeConstraint:
+    def __init__(
+        self,
+        bounds: np.ndarray,
+        implicit_bound: tuple[float, float],
+        constraint_matrix: np.ndarray,
+        constraint_charge: float,
+    ) -> None:
+        self.bounds = np.asarray(bounds)
+        self.implicit_bound = np.asarray(implicit_bound)
+        self.constraint_matrix = np.asarray(constraint_matrix)
+        self.constraint_charge = constraint_charge
+
+    @property
+    def n_params(self) -> int:
+        return self.bounds.shape[0]
+
+    def __call__(self, x: np.ndarray) -> bool:
+        if isinstance(x, torch.Tensor):
+            arr = x.detach().cpu().numpy()
         else:
-            arr = np.asarray(params, dtype=float)
+            arr = np.asarray(x, dtype=float)
 
         if arr.ndim == 1:
             arr = arr[np.newaxis, :]
 
-        lbe, ube = self.bounds_implicit.values.T
-        lbi, ubi = self.implicit_param_bounds
+        lbe, ube = self.bounds.T
+        lbi, ubi = self.implicit_bound
 
         valid_explicit = ((arr >= lbe) & (arr <= ube)).all(axis=1)
 
@@ -370,41 +372,54 @@ class MCMCResults:
     ) -> None:
 
         """Store and process Bayesian inference results."""
-        self.chain = self.load_chain(chain) if chain else None
-        self.priors_specs = self.load_priors(priors) if priors else None
-        self.tau = self.load_tau(tau)
+        self.chain = self._load_chain(chain) if chain else None
+        self.priors = self._load_priors(priors) if priors else None
+        self.tau = self._load_tau(tau)
         self._chain_samples = None
 
-    def load_chain(self, chain: Union[str, Path, object]) -> object:
+    def _load_chain(self, chain: Union[str, Path, object]) -> object:
         """Initialize the chain, handling HDF5 backend if necessary."""
         if isinstance(chain, (str, Path)):
             return initialize_backend(chain)
         return chain
 
-    def load_priors(self, priors: Union[str, Path, dict]) -> dict:
-        """Load priors from YAML or dictionary of distributions."""
+    def _load_priors(self, priors: Union[str, PathLike]) -> List:
         if isinstance(priors, (str, Path)):
-            return load_yaml(str(priors))
-        if isinstance(priors, dict):
-            priors_dict = {}
-            for name, p in priors.items():
-                dist_type = type(p).__name__
-                if dist_type == 'Normal':
-                    a, b = float(p.mean), float(p.scale)
-                elif dist_type == 'Uniform':
-                    a, b = float(p.low), float(p.high)
-                else:
-                    raise ValueError(
-                        f"Unsupported distribution type: {dist_type}. "
-                        "Only 'Normal' and 'Uniform' are supported."
-                    )
-                priors_dict[f"{name} {dist_type}"] = [a, b]
+            priors_data = load_yaml(priors)
 
-            return priors_dict
+        elif isinstance(priors, list):
+            priors_data = []
+            for prior in priors:
+                if isinstance(prior, tuple):
+                    priors_data.append(prior)
+                elif isinstance(prior, torch.distributions.Distribution):
+                    dist_type = type(prior).__name__.lower()
+                    if dist_type == 'normal':
+                        arg1, arg2 = float(prior.mean), float(prior.scale)
+                    elif dist_type == 'uniform':
+                        arg1, arg2 = float(prior.low), float(prior.high)
+                    else:
+                        raise ValueError(
+                            f"Unsupported distribution type: {dist_type}"
+                        )
+                    priors_data.append((dist_type, (arg1, arg2)))
 
-        raise TypeError("Priors must be str, Path or dictionary.")
+        priors_list = []
+        for dist_type, (arg1, arg2) in priors_data:
+            if dist_type == 'normal':
+                distribution = Normal(loc=arg1, scale=arg2, validate_args=False)
+            elif dist_type == 'uniform':
+                distribution = Uniform(low=arg1, high=arg2, validate_args=False)
+            else:
+                raise ValueError(f"Unsupported distribution type: {dist_type}")
 
-    def load_tau(self, tau: Union[str, Path, list, float, int]) -> np.ndarray:
+            priors_list.append(distribution)
+
+        self.priors_data = priors_data
+
+        return priors_list
+
+    def _load_tau(self, tau: Union[str, Path, list, float, int]) -> np.ndarray:
         """Load tau array from file, list, or numeric array."""
         if isinstance(tau, (str, Path)):
             tau = np.load(str(tau))
@@ -417,20 +432,6 @@ class MCMCResults:
                 tau = np.ones(self.chain.get_chain().shape[1])
         return np.atleast_1d(tau)
 
-    @property
-    def priors(self):
-        """Reconstruct distributions from specs."""
-        if not self.priors_specs:
-            return {}
-        priors = {}
-        for name, (arg1, arg2) in self.priors_specs.items():
-            dist_name = name.split()[-1]
-            dist_cls = self.DIST_REGISTRY.get(dist_name)
-            if not dist_cls:
-                raise ValueError(f"Unknown distribution '{dist_name}'")
-            priors[name] = dist_cls(arg1, arg2, validate_args=False)
-        return priors
-
     def chain_samples(self, discard: int = None, stride: int = None) -> np.ndarray:
         """
         Retrieve MCMC samples with optional filtering.
@@ -442,12 +443,13 @@ class MCMCResults:
         self._chain_samples = samples
         return samples
 
-    def save_priors(self, fn_out: Union[str, Path]) -> None:
+    def write_priors(self, fn_out: PathLike) -> None:
         """Save priors to a YAML file."""
-        save_yaml(self.priors_specs, str(fn_out))
+        save_yaml(self.priors_data, fn_out)
 
-    def save_tau(self, fn_out: Union[str, Path]) -> None:
-        np.save(str(fn_out), self.tau)
+    def write_tau(self, fn_out: PathLike) -> None:
+        """Save tau array to a .npy file."""
+        np.save(fn_out, self.tau)
 
 
 class InferenceResults(MCMCResults, Specs):
@@ -456,20 +458,22 @@ class InferenceResults(MCMCResults, Specs):
         chain: Union[str, Path, object] = None,
         priors: Union[str, Path, list] = None,
         tau: Union[str, Path, list, float, int] = None,
-        specs: Union[str, Path, dict] = None
+        specs: Union[str, Path, dict] = None,
+        qoi: List[str] = None
     ) -> None:
         """Store and process learning results."""
         MCMCResults.__init__(self, chain, priors, tau)
         Specs.__init__(self, specs)
 
-        self.samples = None
+        self._chain = None
+        self.QoIs = qoi or []
 
     @property
     def chain_implicit_(self) -> np.ndarray:
-        return self.samples
+        return self._chain
 
     @property
-    def chain_explicit_(self) -> np.ndarray:
+    def chain_(self) -> np.ndarray:
         """Get the explicit parameters, computing them if necessary."""
         return self._compute_explicit_params()
 
@@ -479,7 +483,7 @@ class InferenceResults(MCMCResults, Specs):
         return self._get_labels('implicit')
 
     @property
-    def labels_explicit_(self) -> list:
+    def labels_(self) -> list:
         """Generate labels for the explicit parameters."""
         return self._get_labels('explicit')
 
@@ -488,20 +492,18 @@ class InferenceResults(MCMCResults, Specs):
         """Return maximum a posteriori (MAP) estimates for all parameters."""
         param_modes, nuisance_modes = [], []
 
-        for param, label in zip(self.chain_implicit_.T, self.labels_implicit_):
+        for param, label in zip(self.chain_.T, self.labels_):
             x = np.linspace(param.min(), param.max(), 1000)
             density = gaussian_kde(param)
-            mode = x[np.argmax(density(x))]
+            mode = np.round(x[np.argmax(density(x))], 3)
             if "sigma_" in label:
                 nuisance_modes.append(mode)
             else:
                 param_modes.append(mode)
 
-        q_implicit = self.total_charge - np.sum(param_modes * self.constraint_matrix)
-        param_modes_all = np.insert(param_modes, self.implicit_param_pos, q_implicit)
-        map_all = np.concatenate((param_modes_all, nuisance_modes))
+        map_all = np.concatenate((param_modes, nuisance_modes))
 
-        return dict(zip(self.labels_explicit_, map_all))
+        return dict(zip(self.labels_, map_all))
 
     def _get_labels(self, kind: str) -> list:
         if kind == 'implicit':
@@ -512,9 +514,8 @@ class InferenceResults(MCMCResults, Specs):
             raise ValueError(f"Unknown kind '{kind}'. Use 'implicit' or 'explicit'.")
 
         nuisance_labels = [
-            f'$\\sigma_{{\\mathrm{{{p.split()[1]}}}}}$'
-            for p in list(self.priors.keys())
-            if 'nuisance' in p
+            f'$\\sigma_{{\\mathrm{{{qoi}}}}}$'
+            for qoi in self.QoIs
         ]
 
         return param_labels + nuisance_labels
@@ -525,7 +526,7 @@ class InferenceResults(MCMCResults, Specs):
         """
         q_lo = (1 - confidence) / 2
         q_hi = 1 - q_lo
-        return np.quantile(self.chain_explicit_, [q_lo, 0.5, q_hi], axis=0)
+        return np.quantile(self.chain_, [q_lo, 0.5, q_hi], axis=0)
 
     def get_chain(
         self,
@@ -539,33 +540,32 @@ class InferenceResults(MCMCResults, Specs):
         """
 
         n = self.n_params_implicit
-        chain_samples = self.chain_samples(discard, stride).copy()
-        chain_samples[:, n:] = np.exp(chain_samples[:, n:])
+        samples = self.chain_samples(discard, stride).copy()
+        samples[:, n:] = np.exp(samples[:, n:])
 
         if remove_defects:
             bounds = self.bounds_implicit.values
-            data = chain_samples[:, :self.n_params_implicit]
+            data = samples[:, :self.n_params_implicit]
             mask = np.all(
                 np.logical_and(data >= bounds[:, 0], data <= bounds[:, 1]),
                 axis=1
             )
-            chain_samples = chain_samples[mask]
+            samples = samples[mask]
 
         if remove_sigma_outliers:
             # Remove outliers based on nuisance parameters
-            nuisance_params = chain_samples[:, self.n_params_implicit:]
+            nuisance_params = samples[:, self.n_params_implicit:]
             treshold = np.quantile(nuisance_params, 0.99, axis=0)
             mask = np.all(nuisance_params <= treshold, axis=1)
-            chain_samples = chain_samples[mask]
+            samples = samples[mask]
 
-        self.samples = chain_samples
+        self._chain = samples
 
     def sample_posterior(
         self,
         n_samples: int = 10,
         distribution: str = 'normal',
         confidence: float = 0.9,
-        complete: bool = False,
         fn_out: str = None
     ) -> np.ndarray:
         """
@@ -573,7 +573,7 @@ class InferenceResults(MCMCResults, Specs):
         either uniform or Laplace distribution.
         """
         lower, upper = (1 - confidence) / 2, 1 - (1 - confidence) / 2
-        samples = self.chain_implicit_[:, :self.n_params_implicit]
+        samples = self.chain_[:, :self.bounds_explicit.n]
         confint = np.quantile(samples, [lower, upper], axis=0)
 
         if distribution == 'normal':
@@ -587,55 +587,27 @@ class InferenceResults(MCMCResults, Specs):
                 )
             )
 
-        samples_out = np.empty((n_samples, len(self.bounds_implicit.params)))
-        uniform_range = np.diff(confint, axis=0).ravel()
-
-        i, attempts, max_attempts = 0, 0, n_samples * 1000  # Safety limit
-
-        while i < n_samples and attempts < max_attempts:
-            if distribution == 'uniform':
-                random_values = np.random.rand(len(uniform_range)) * uniform_range
-                sample = random_values + confint[0]
-                sample.reshape(1, -1)
+        if distribution == "normal":
+            if cov.size == 1:
+                samples = np.random.normal(mean, cov, size=n_samples)
             else:
-                if cov.size == 1:
-                    sample = np.random.normal(mean, cov, size=1)[:, np.newaxis]
-                else:
-                    sample = np.random.multivariate_normal(mean, cov, size=1)
-
-            is_within_confint = np.all(
-                np.logical_and(sample >= confint[0], sample <= confint[1])
-            )
-            if is_within_confint and self.is_valid(sample):
-                samples_out[i] = sample
-                i += 1
-            attempts += 1
-
-        if i < n_samples:
-            raise RuntimeError(
-                "Failed to generate enough valid samples within max attempts."
-            )
-
-        if complete:
-            q_explicit = np.sum(samples_out * self.constraint_matrix, axis=1)
-            q_implicit = self.total_charge - q_explicit
-            samples_out = np.insert(
-                samples_out, self.implicit_param_pos, q_implicit, axis=1)
-
-            param_names = self.bounds_explicit.params.tolist()
-        else:
-            param_names = self.bounds_implicit.params.tolist()
+                samples = np.random.multivariate_normal(mean, cov, size=n_samples)
+        elif distribution == "uniform":
+            uniform_range = np.diff(confint, axis=0).ravel()
+            n = len(uniform_range)
+            samples = np.random.rand(n_samples, n) * uniform_range + confint[0]
 
         if fn_out:
             if fn_out.endswith('.npy'):
-                np.save(fn_out, samples_out)
+                np.save(fn_out, samples)
             elif fn_out.endswith('.yaml'):
-                samples_dict = dict(zip(param_names, samples_out.T))
+                param_names = self.bounds_explicit.params.tolist()
+                samples_dict = dict(zip(param_names, samples.T))
                 save_yaml(samples_dict, fn_out)
             else:
                 raise ValueError('fn_out must end with .npy or .yaml')
 
-        return samples_out
+        return samples
 
     def _compute_explicit_params(self) -> np.ndarray:
         """
@@ -643,8 +615,9 @@ class InferenceResults(MCMCResults, Specs):
         """
 
         params = self.chain_implicit_[:, :self.n_params_implicit]
+        n_implicit = len(self.implicit_atoms)
         q_explicit = np.sum(params * self.constraint_matrix, axis=1)
-        q_implicit = (self.total_charge - q_explicit) / self.implicit_param_count
+        q_implicit = (self.total_charge - q_explicit) / n_implicit
         return np.insert(
             self.chain_implicit_, self.implicit_param_pos, q_implicit, axis=1)
 
