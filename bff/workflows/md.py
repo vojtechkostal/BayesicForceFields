@@ -87,7 +87,7 @@ def main(fn_config: PathLike) -> None:
     job_scheduler = config['job_scheduler']
     run_dir = data_dir if job_scheduler == 'local' else Path('./').resolve()
 
-    fn_log = str(data_dir / 'gmx.log')
+    fn_log = data_dir / 'gmx.log'
     md_specs = zip(fn_mdp_em, fn_mdp_prod, fn_coord, fn_topol, fn_ndx, n_steps)
     success = []
     with open(fn_log, 'a+') as log:
@@ -100,7 +100,7 @@ def main(fn_config: PathLike) -> None:
             fn_tpr = run_dir / f"{deffnm}.tpr"
 
             # Create topology with new parameters
-            fn_top_new = str(run_dir / f"md-{hash}-{i:03d}.top")
+            fn_top_new = run_dir / f"md-{hash}-{i:03d}.top"
             _ = modify_topology(top, specs, params, implicit, fn_top_new)
 
             # Skip running the simulation if specified
@@ -131,7 +131,7 @@ def main(fn_config: PathLike) -> None:
             )
 
             subprocess.run(
-                [gmx_cmd, 'mdrun', '-s', fn_tpr, '-deffnm', deffnm,
+                [gmx_cmd, 'mdrun', '-deffnm', deffnm,
                  '-nsteps', str(steps), '-dlb', 'yes', '-ntmpi', '1'],
                 cwd=run_dir, stdout=log, stderr=log
             )

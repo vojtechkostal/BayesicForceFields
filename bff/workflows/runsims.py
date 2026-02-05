@@ -217,7 +217,6 @@ def initialize_environment(config: Dict[str, Any], validate: bool) -> Path:
 
         specs_data = {
             'mol_resname': config['mol_resname'],
-            # 'atoms': atoms,
             'implicit_atoms': implicit_atoms,
             'bounds': bounds_resolved,
             'total_charge': config['total_charge'],
@@ -237,7 +236,7 @@ def initialize_environment(config: Dict[str, Any], validate: bool) -> Path:
     for i, (fn_top, fn_coords, fn_mdp_em, fn_mdp_prod, fn_ndx) in enumerate(files):
 
         # Write topology file
-        Topology(fn_top).write(str(data_dir / f'topol-{i:03d}.top'))
+        Topology(fn_top).write(data_dir / f'topol-{i:03d}.top')
 
         # File mapping: (source, destination filename template)
         file_map = {
