@@ -2,6 +2,7 @@ import torch
 import numpy as np
 from .kernels import gaussian_kernel
 from .utils import check_tensor, nearest_positive_definite, smape
+
 from typing import Union, Dict, List
 
 
@@ -128,6 +129,10 @@ class LGPCommittee:
     def size(self) -> int:
         return len(self.lgps)
 
+    @property
+    def n_params(self) -> int:
+        return self.lgps[0].n_params
+
     def predict(self, X: torch.Tensor) -> torch.Tensor:
         """
         Predict outputs by averaging predictions from all LGP models.
@@ -178,7 +183,7 @@ class LGPCommittee:
         return (
             f"{self.__class__.__name__}(\n"
             f"  committee_size={self.size},\n"
-            f"  n_params={self.lgps[0].n_params},\n"
+            f"  n_params={self.n_params},\n"
             f"  testset error={self.error},\n"
             f")"
         )
