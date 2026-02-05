@@ -59,13 +59,13 @@ def plot_marginals(
             if p_kind in name
         ]
         y_scale = np.abs(np.max(bounds_raw) - np.min(bounds_raw))
-        for param in results.labels_explicit_:
+        for param in results.labels_:
             if p_kind not in param:
                 continue
             if len(param.split()) == 1:
                 continue
-            atomtype_idx = results.labels_explicit_.index(param)
-            posterior = results.chain_explicit_[:, atomtype_idx]
+            atomtype_idx = results.labels_.index(param)
+            posterior = results.chain_[:, atomtype_idx]
             bound = results.bounds_explicit._bounds[param]
 
             x_min = bound[0] - y_offset[p_kind]
@@ -76,9 +76,8 @@ def plot_marginals(
             if param == results.implicit_param:
                 pass
             else:
-                all_keys = results.priors.keys()
-                prior_key = ''.join(key for key in all_keys if f'{param} ' in key)
-                prior = results.priors[prior_key]
+                idx_prior = results.bounds_implicit.params.tolist().index(param)
+                prior = results.priors[idx_prior]
                 y = prior.log_prob(x).exp()
                 ax.fill_between(
                     - y * scale[p_kind] + x_offset,
@@ -190,6 +189,10 @@ def plot_corner(
     colors = cmap(np.linspace(0, 1, levels))
     colors[0, -1] = 0.0  # set alpha of lowest level to 0
     transparent_cmap = ListedColormap(colors)
+
+    # wrap labels
+    if labels is not None:
+        labels = [_wrap_label(label, 4) for label in labels]
 
     xlims = (samples.min(axis=0), samples.max(axis=0))
     for i in range(n_params):
