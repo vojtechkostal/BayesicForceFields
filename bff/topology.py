@@ -9,6 +9,24 @@ from gmxtop import Topology, MoleculeType
 from .data import WATER_3SITE, WATER_4SITE, IONS, WATERS
 from .tools import random_placement, guess_box
 
+import warnings
+
+
+# 1) MDAnalysis DeprecationWarning from ITPParser (elements guessing transition)
+warnings.filterwarnings(
+    "ignore",
+    category=DeprecationWarning,
+    module=r"MDAnalysis\.topology\.ITPParser",
+)
+
+# 2) MDAnalysis UserWarning about missing coordinate reader (topology-only file)
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message=r"No coordinate reader found for .*\.top\. Skipping this file\.",
+    module=r"MDAnalysis\.core\.universe",
+)
+
 MASSES = np.array(list(MDA_MASSES.values()))
 ELEMENTS = list(MDA_MASSES.keys())
 
