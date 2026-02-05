@@ -213,12 +213,11 @@ def initialize_environment(config: Dict[str, Any], validate: bool) -> Path:
         group_charge = top_modifier.group_charge(group)
         constraint_charge = target_charge - top_modifier.total_charge + group_charge
 
-        atoms = {atom.name: atom.type.name for atom in top_modifier.mol.atoms}
         implicit_atoms = [atom.name for atom in top_modifier.implicit_atoms]
 
         specs_data = {
             'mol_resname': config['mol_resname'],
-            'atoms': atoms,
+            # 'atoms': atoms,
             'implicit_atoms': implicit_atoms,
             'bounds': bounds_resolved,
             'total_charge': config['total_charge'],
@@ -229,13 +228,9 @@ def initialize_environment(config: Dict[str, Any], validate: bool) -> Path:
         config['constraint_charge'] = constraint_charge
         config['implicit_atoms'] = implicit_atoms
 
-        # Check if all targetted atoms are present in the molecules
-        # and check for clashes with implicit atoms or duplicate definitions
-        # additionaly, modify bounds to be named by atom names in the case of charges
-
         # Save the Specs data into a file
         fn_specs = data_dir / 'specs.yaml'
-        Specs(specs_data).save(fn_specs)
+        Specs(specs_data).write(fn_specs)
 
     gmx_keys = ['fn_topol', 'fn_coordinates', 'fn_mdp_em', 'fn_mdp_prod', 'fn_ndx']
     files = zip(*(config['gromacs'][key] for key in gmx_keys))
