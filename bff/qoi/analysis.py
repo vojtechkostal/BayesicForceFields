@@ -11,7 +11,7 @@ from .rdf import compute_all_rdfs, compute_rdf
 from .restraints import compute_all_restraints, compute_probability_density
 
 from ..structures import TrainSetInfo, QoI
-from ..tools import prepare_universe
+from ..topology import prepare_universe
 from ..io.logs import Logger, print_progress, format_time
 
 
