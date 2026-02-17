@@ -75,7 +75,7 @@ def initialize_mcmc_sampler(
         n_params = [s.n_params for s in surrogate.values()][0]
         bounds = [-1e5, 1e5] * n_params
     else:
-        bounds = constraint.bounds
+        bounds = constraint.explicit_bounds
 
     # priors
     priors = define_param_priors(bounds, priors_disttype, len(surrogate))

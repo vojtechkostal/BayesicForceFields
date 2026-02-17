@@ -221,6 +221,32 @@ def find_map(
     logger: Callable = None
 ) -> torch.Tensor:
 
+    """Find the maximum a posteriori (MAP) estimate
+    using gradient-based optimization.
+
+    Parameters
+    ----------
+    fn : Callable
+        Objective function to maximize (log-posterior).
+    x0 : torch.Tensor
+        Initial parameter vector.
+    lr : float or torch.Tensor, optional
+        Learning rate for optimization. If None, it will be determined by a search.
+    max_iter : int
+        Maximum number of optimization iterations.
+    tol_grad : float
+        Gradient norm threshold for convergence.
+    device : str
+        Device to perform computations on.
+    logger : Callable, optional
+        Logger for progress updates. Should accept a string and a level argument.
+
+    Returns
+    -------
+    torch.Tensor
+        The MAP estimate found by optimization.
+    """
+
     logger.info("learning rate search: in progres...", level=2, overwrite=True)
 
     lr_opt = 0.5 * find_max_stable_lr(fn, x0, learning_rates=lr)
@@ -267,6 +293,15 @@ def laplace_approximation(
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Perform Laplace approximation around MAP estimate.
+
+    Parameters
+    ----------
+    fn : Callable
+        Objective function to approximate (log-posterior).
+    map_theta : torch.Tensor
+        MAP estimate around which to perform the approximation.
+    device : str
+        Device to perform computations on.
 
     Returns
     -------

@@ -211,6 +211,9 @@ def extract_defaults(fn: Callable) -> Dict:
 
 def get_all_settings(kwargs: Dict) -> Dict:
 
+    """Get all settings for the analysis functions,
+    combining defaults and user-provided values."""
+
     all_kwargs = {'rdf_kwargs': extract_defaults(compute_rdf),
                   'hbond_kwargs': extract_defaults(compute_hbonds),
                   'restraint_kwargs': extract_defaults(compute_probability_density)}

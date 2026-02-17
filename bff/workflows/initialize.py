@@ -33,9 +33,9 @@ def check_gmx_available(gmx_cmd: str = 'gmx') -> None:
         )
     except (subprocess.CalledProcessError, FileNotFoundError):
         raise RuntimeError(
-            f"GROMACS ({gmx_cmd}) is not available.\n"
+            "GROMACS is not available.\n"
             "Please make sure that your Gromacs executable is available "
-            "from the command line."
+            "from the command line via e.g. gmx command."
         )
 
 
@@ -330,7 +330,7 @@ def get_restraint_atom_indices(fn_system: PathLike, names: List[str]) -> np.ndar
 
 
 def get_fn_mdp(fn: PathLike) -> Path:
-    fn_mdp = Path(__file__).parent.parent / 'data' / 'mdp' / fn
+    fn_mdp = Path(__file__).parent.parent.parent / 'data' / 'mdp' / fn
     return fn_mdp.resolve()
 
 

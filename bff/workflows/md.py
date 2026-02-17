@@ -45,10 +45,12 @@ def modify_topology(
 
     if implicit:
         constraint_charge = specs.constraint_charge
-        params_dict = dict(zip(specs.bounds_implicit.params, params))
+        param_names = specs.bounds.without(specs.implicit_param).names
     else:
         constraint_charge = None
-        params_dict = dict(zip(specs.bounds_explicit.params, params))
+        param_names = specs.bounds.params
+
+    params_dict = dict(zip(param_names, params))
 
     top_modifier = TopologyModifier(fn_topol, specs.mol_resname, specs.implicit_atoms)
     top_modifier.update_params(params_dict, constraint_charge)

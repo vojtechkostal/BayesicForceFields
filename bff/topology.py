@@ -222,9 +222,46 @@ def fill_universe(topol: Topology) -> mda.Universe:
 
 class TopologyModifier(Topology):
 
+    """A class for modifying Gromacs topologies.
+
+    Parameters
+    ----------
+    fn_topol : str | Path
+        Path to the topology file to be modified.
+    mol_resname : str
+        Residue name of the molecule to be modified.
+    implicit_atomnames : list[str] | str
+        Atom names or types to be treated as implicit
+        (i.e., their charges will be adjusted to satisfy a charge constraint).
+        Can be a single string if only one atom is implicit.
+
+    Properties
+    ----------
+    mol : MoleculeType
+        The molecule type corresponding to `mol_resname`.
+    n_mol : int
+        The number of molecules of type `mol_resname` in the topology.
+    implicit_atoms : list[Atom]
+        List of Atom objects corresponding to the implicit atoms.
+    implicit_param : str
+        A string representing the charge parameter for the implicit atoms.
+    total_charge : float
+        The total charge of the molecule before applying any constraints.
+
+    Methods
+    -------
+    group_charge(atomnames: list[str]) -> float
+        Calculate the total charge of a group of atoms specified by their names.
+    resolve_params
+        Resolve parameter keys that may contain atom types into specific atom names.
+    update_params
+        Update the topology parameters based on the provided dictionary
+        and apply charge constraints if specified.
+    """
+
     def __init__(
         self,
-        fn_topol: str | Path,
+        fn_topol: Path | str,
         mol_resname: str,
         implicit_atomnames: list[str] | str
     ) -> None:

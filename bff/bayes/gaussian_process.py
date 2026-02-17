@@ -26,6 +26,26 @@ class LocalGaussianProcess:
         Observation noise standard deviation.
     device : str
         Device on which tensors are stored (e.g., "cpu" or "cuda").
+
+    Attributes
+    ----------
+    Kdd_inv : torch.Tensor
+        Inverse of the training covariance matrix.
+
+    Methods
+    -------
+    predict(Xi: torch.Tensor) -> torch.Tensor
+        Predict outputs for given input points.
+
+    Properties
+    ----------
+    n_params : int
+        Number of input parameters (features).
+    y_size : int
+        Dimensionality of the output values.
+    hyperparameters : Dict[str, Union[np.ndarray, float]]
+        Dictionary of hyperparameters used in the model.
+
     """
 
     def __init__(
@@ -111,6 +131,29 @@ class LGPCommittee:
     ----------
     lgps : list of LocalGaussianProcess
         List of LGP models.
+    n_observations : int
+        Number of observations used to train each LGP model.
+    nuisance : float, optional
+        Nuisance parameter for model selection (default is None).
+    stochastic : bool, optional
+        If True, randomly select one model for prediction instead of averaging
+        (default is False).
+
+    Properties
+    ----------
+    size : int
+        Number of LGP models in the committee.
+    n_params : int
+        Number of input parameters (features) used by the LGP models.
+
+    Methods
+    -------
+    predict(X: torch.Tensor) -> torch.Tensor
+        Predict outputs by averaging predictions from all LGP models
+        or randomly selecting one if stochastic is True.
+    validate(X_test: torch.Tensor, y_test: torch.Tensor) -> float
+        Validate the committee by computing the
+        mean squared error of predictions against test data.
     """
     def __init__(
         self,

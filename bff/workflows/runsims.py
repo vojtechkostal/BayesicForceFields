@@ -8,7 +8,7 @@ from typing import Any, Union, Tuple, List, Dict
 
 from gmxtop import Topology
 from ..topology import TopologyModifier
-from ..structures import Specs, RandomParamsGenerator
+from ..structures import Specs, RandomParamsGenerator, ChargeConstraint
 from ..io.utils import load_yaml, save_yaml, compress_results
 from ..io.schedulers import Slurm
 from ..io.logs import Logger
@@ -336,7 +336,7 @@ def print_train_summary(fn_specs: PathLike, logger: Logger) -> None:
     logger.info("=== Generating training set ===\n", level=0)
     logger.info(f"molecule name: {specs.mol_resname}", level=1)
     logger.info("parameters:", level=1)
-    for name, b in specs.bounds_explicit._bounds.items():
+    for name, b in specs.bounds.by_name.items():
         if name == specs.implicit_param:
             logger.info(f"{name}: {b} (implicit)", level=2)
         else:
@@ -373,9 +373,12 @@ def main(fn_config: PathLike) -> None:
         n_total = len(inputs)
     else:
         print_train_summary(fn_specs, logger)
-        sampler = RandomParamsGenerator(fn_specs)
         iterator = range(config['n_samples'])
         n_total = config['n_samples']
+
+        # prepare the parameter sampler
+        constraint = ChargeConstraint(fn_specs)
+        sampler = RandomParamsGenerator(constraint.explicit_bounds, constraint)
 
     # Main loop to generate samples
     samples = {}
@@ -395,7 +398,7 @@ def main(fn_config: PathLike) -> None:
             hash = f"{idx:0{pad}d}"
             max_attempts = 1000
             for _ in range(max_attempts):
-                sample = sampler.generate(1)
+                sample = sampler(1)
                 if sample.size > 0:
                     sample = sample.squeeze(0)
                     break

@@ -15,7 +15,7 @@ class Logger:
         self,
         name: str,
         fn_log: Optional[str] = None,
-        width: Optional[int] = None,
+        width: Optional[int] = 100,
         verbose: bool = True
     ) -> None:
 
@@ -26,7 +26,7 @@ class Logger:
             Name of the logger.
         fn_log : Optional[str], optional
             Filename to log messages to. If None, logs to console.
-        width : Optional[int], default=None
+        width : Optional[int], default=100
             Width for message formatting.
         verbose : bool, default=True
             If False, suppresses logging output.
@@ -68,8 +68,7 @@ class Logger:
         """
 
         # determine width of the line automatically if not set
-        if self.width is None:
-            width = len(message) + 10
+        width = len(message) + 10 if self.width is None else self.width
 
         if self.verbose:
             if level < 1:

@@ -10,7 +10,7 @@ from typing import (
 )
 
 from .bayes.inference import lgp_hyperopt, initialize_mcmc_sampler
-from .structures import Specs, InferenceResults, ChargeConstraint
+from .structures import Specs, MCMCResults, InferenceResults, ChargeConstraint
 from .io.logs import Logger, print_progress_mcmc
 
 
@@ -42,6 +42,12 @@ class BFFLearn:
         A dictionary to hold the optimized LGP surrogate models for each QoI.
     QoI : list[str], optional
         A list of Quantity of Interest names that will be optimized.
+
+    Properties
+    ----------
+    _all_qoi
+        A property that returns a sorted list of all unique QoI names
+        from the training datasets.
 
     Methods
     -------
@@ -136,8 +142,8 @@ class BFFLearn:
                 y_mean = means.get(qoi, 0.0)
 
             lgp_qoi = lgp_hyperopt(
-                X=trainset.X,
-                y=trainset.y[qoi],
+                X=trainset.inputs,
+                y=trainset.outputs[qoi],
                 y_mean=y_mean,
                 fn_hyperparams=fn_hyper.get(qoi),
                 test_fraction=test_fraction,
@@ -205,18 +211,13 @@ class BFFLearn:
             raise ValueError("LGP surrogate not set up. Call 'setup_LGP' first.")
 
         y_true = {
-            qoi: d.y_ref[qoi]
+            qoi: d.outputs_ref[qoi]
             for d in self.train_data
             for qoi in self.QoI
             if qoi in d.qoi_names
         }
 
-        constraint = ChargeConstraint(
-            bounds=self.specs.bounds_implicit.values,
-            implicit_bound=self.specs.implicit_charge_bound,
-            constraint_matrix=self.specs.constraint_matrix,
-            constraint_charge=self.specs.constraint_charge
-        )
+        constraint = ChargeConstraint(self.specs.data)
 
         p0, priors, sampler = initialize_mcmc_sampler(
             self.lgp,
@@ -234,11 +235,13 @@ class BFFLearn:
 
         print_progress_mcmc(sampler, p0, max_iter, logger=self.logger, **kwargs)
         tau = sampler.get_autocorr_time(tol=0)
-        results = InferenceResults(sampler, priors, tau, self.specs.data, self.QoI)
+
+        mcmc = MCMCResults(chain_src=sampler, priors_src=priors, tau_src=tau)
+        results = InferenceResults(mcmc=mcmc, specs=self.specs, qoi_names=self.QoI)
 
         if fn_priors:
-            results.write_priors(fn_priors)
+            mcmc.write_priors(fn_priors)
         if fn_tau:
-            results.write_tau(fn_tau)
+            mcmc.write_tau(fn_tau)
 
         return results

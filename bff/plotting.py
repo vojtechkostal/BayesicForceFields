@@ -30,7 +30,7 @@ def plot_marginals(
 ) -> None:
 
     param_kinds: List[str] = list(
-        set([p.split()[0] for p in results.bounds_explicit.params])
+        set([p.split()[0] for p in results.specs.bounds.names])
     )
     n_param_kinds = len(param_kinds)
 
@@ -52,32 +52,32 @@ def plot_marginals(
     for i, (p_kind, ax) in enumerate(zip(param_kinds, axs)):
         x_offset = 0
         x_lim_low = -0.5
-        x_lim_high = sum(1 for name in results.bounds_explicit.params if p_kind in name)
+        x_lim_high = sum(1 for name in results.specs.bounds.names if p_kind in name)
         bounds_raw = [
             bound
-            for name, bound in results.bounds_explicit._bounds.items()
+            for name, bound in results.specs.bounds.by_name.items()
             if p_kind in name
         ]
         y_scale = np.abs(np.max(bounds_raw) - np.min(bounds_raw))
-        for param in results.labels_:
+        for param in results.labels:
             if p_kind not in param:
                 continue
             if len(param.split()) == 1:
                 continue
-            atomtype_idx = results.labels_.index(param)
-            posterior = results.chain_[:, atomtype_idx]
-            bound = results.bounds_explicit._bounds[param]
+            idx = results.labels.index(param)
+            bound = results.specs.bounds.by_name[param]
 
             x_min = bound[0] - y_offset[p_kind]
             x_max = bound[1] + y_offset[p_kind]
             x = torch.linspace(x_min, x_max, 1000)
 
             # Plot prior
-            if param == results.implicit_param:
+            if param == results.specs.implicit_param:
                 pass
             else:
-                idx_prior = results.bounds_implicit.params.tolist().index(param)
-                prior = results.priors[idx_prior]
+                bounds = results.specs.bounds.without(results.specs.implicit_param)
+                idx_prior = bounds.names.tolist().index(param)
+                prior = results.mcmc.priors[idx_prior]
                 y = prior.log_prob(x).exp()
                 ax.fill_between(
                     - y * scale[p_kind] + x_offset,
@@ -90,6 +90,7 @@ def plot_marginals(
                 x_lim_low = min(- (max(y) * scale[p_kind] * 1.1), -0.6)
 
             # Posterior
+            posterior = results.posterior_samples[:, idx]
             kde = gaussian_kde(posterior)
             posterior_kde = kde.evaluate(x)
             ax.fill_between(
@@ -148,11 +149,11 @@ def plot_marginals(
         y_high = np.max(bounds_raw) + 0.25 * y_scale
         ax.set_ylim(y_low, y_high)
         ax.tick_params(axis='both', direction='in')
-        ax.set_xticks(np.arange(0, len(results.bounds_explicit.params), 1))
+        ax.set_xticks(np.arange(0, len(results.specs.bounds.names), 1))
 
         xtick_labels = [
             _wrap_label(p.split(maxsplit=1)[-1], 4)
-            for p in results.bounds_explicit.params
+            for p in results.specs.bounds.names
         ]
         ax.set_xticklabels(xtick_labels, rotation=30)
         ax.set_xlabel('Atomtype')

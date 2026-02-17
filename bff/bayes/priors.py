@@ -14,6 +14,21 @@ def define_param_priors(
     n_nuisance: int = 0
 ) -> List[torch.distributions.Distribution]:
 
+    """Define priors for model parameters based on
+    specified bounds and distribution type.
+
+    Parameters
+    ----------
+        bounds : ArrayLike
+            An array of shape (n_params, 2) containing
+            lower and upper bounds for each parameter.
+        dist_type : str, optional
+            Type of distribution to use for priors ("normal" or "uniform"),
+            by default "normal".
+        n_nuisance : int, optional
+            Number of nuisance parameters to include with fixed priors, by default 0.
+    """
+
     if dist_type == "normal":
         means = np.mean(bounds, axis=1).squeeze()
         widths = 1 / 5 * np.diff(bounds, axis=1).squeeze()
