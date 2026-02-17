@@ -1,0 +1,4 @@
+[atomtypes]
+; name     mass      charge   ptype   sigma        epsilon
+OW_spc       8      15.9994  0.0000  A   3.16557e-01  6.50629e-01
+HW_spc       1       1.0080  0.0000  A   0.00000e+00  0.00000e+00
