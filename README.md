@@ -19,18 +19,18 @@ The LGP hyperparameters are optimized and their uncertainty can be propagated to
 * [gmxtop](https://github.com/vojtechkostal/gmxtop) (Topology handling)
 
 ## Installation
-0. > [!WARNING] Install prerequisites:
-    - `PyTorch` (Local Gaussian Process evaluations): this cannot be automatized yet, install (preferably the GPU version) follwing instructions here: https://pytorch.org/get-started/locally/
-    - `Gromacs` (molecular dynamics engine): needed to be accessible from command line via `gmx` (or similar) commands in order to run MD simulations.
-    - `gmxtop` (Gromacs topology handling): Follow installation instructions here: https://github.com/vojtechkostal/gmxtop
-
 1. Clone this repository and (preferably) create and activate a new environment using `mamba` or `conda` as:
 ```sh
 cd BayesicForceFields
 mamba env create -f ./environment.yaml
 mamba activate bff
 ```
+> [!WARNING] 2. Install prerequisites:
+    - `PyTorch` (Local Gaussian Process evaluations): this cannot be automatized yet, install (preferably the GPU version) follwing instructions here: https://pytorch.org/get-started/locally/ \
+    - `Gromacs` (molecular dynamics engine): needed to be accessible from command line via `gmx` (or similar) commands in order to run MD simulations.\
+    - `gmxtop` (Gromacs topology handling): Follow installation instructions here: https://github.com/vojtechkostal/gmxtop
 
+3. Install BFF as:
 ```sh
 pip install -e .
 ```
@@ -73,13 +73,11 @@ bff analyze config.yaml
 
 5. Learn the posterior distribution.
 Infer the most likely set of force-field parameters that reproduce the reference data.
-This step can be executed either via command line as the steps above (usefull when working on a cluster) but it also can be done in a jupyter notebook which is convenient for the subsequent visualization and analysis.
+This step can be executed either via command line as the steps above (usefull when working on a cluster) but it also can be done in a jupyter notebook which is convenient for the subsequent visualization and analysis (go to `05-learning-interactive`).
 ```sh
 cd ../05-learning
 bff learn config.yaml
 ```
 
-or you can open a jupyter notebook (`analysis.ipynb`) in the `05-learning-interactive` directory and run the optimization interactively.
-
 6. Visualization
-Using the afforementioned jupyter notebook, you can either use the interactive code there or you can load the generated files and visualize results.
+Use the jupyter notebook in `06-visualize` to visualize results obtained in step 5
