@@ -1,0 +1,37 @@
+# Required arguments
+project: ace
+gmx_cmd: gmx
+fn_topol:
+  - ./topol.top
+  - ./topol-ions.top
+  - ./topol-ions.top
+fn_mol:
+  - ./ace.gro
+  - ./ace.gro
+  - ./ace.gro
+charge:
+  - -1
+  - 1
+  - 1
+mult:
+  - 1
+  - 1
+  - 1
+restr_sel:  # Selection strings for restraint atoms (optional, empty by default)
+  - [null]
+  - ['C2 CAL']
+  - ['C2 CAL']
+restr_x0:  # Restraint distances (optional, empty by default)
+  - [null]
+  - [0.35]
+  - [0.50]
+restr_k:  # Force constants (optional, empty by default)
+  - [null]
+  - [20000]
+  - [20000]
+box:
+  - [15.7107, 15.7107, 15.7107, 90, 90, 90]
+  - [15.7480, 15.7480, 15.7480, 90, 90, 90]
+  - [15.7480, 15.7480, 15.7480, 90, 90, 90]
+nsteps_npt: 0
+nsteps_nvt: 100000

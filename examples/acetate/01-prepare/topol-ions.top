@@ -1,0 +1,15 @@
+#include "./ff/defaults.itp"
+#include "./ff/ace-atomtypes.itp"
+#include "./ff/ions-atomtypes.itp"
+#include "./ff/water-atomtypes.itp"
+#include "./ff/ace.itp"
+#include "./ff/ions.itp"
+#include "./ff/water.itp"
+
+[ system ]
+Aqueous calcium acetate
+
+[ molecules ]
+ACE        1
+CAL        1
+SOL      128
