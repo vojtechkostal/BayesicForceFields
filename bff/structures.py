@@ -256,15 +256,14 @@ class Bounds:
     by_name: Mapping[str, Tuple[float, float]]
 
     def __post_init__(self):
-        # sorted_items = sorted(self.by_name.items())
-        # for name, (lower, upper) in sorted_items:
-        for name, (lower, upper) in self.by_name.items():
+        sorted_items = sorted(self.by_name.items())
+        for name, (lower, upper) in sorted_items:
             if lower > upper:
                 raise ValueError(
                     f"Lower bound {lower} is greater than upper bound {upper} "
                     f"for parameter '{name}'."
                 )
-            object.__setattr__(self, "_items", self.by_name.items())
+            object.__setattr__(self, "_items", sorted_items)
 
     @property
     def names(self) -> np.ndarray:
@@ -348,7 +347,7 @@ class Specs:
         else:
             raise TypeError(f"Unsupported source type: {type(source)}")
 
-        # data["bounds"] = {k: data["bounds"][k] for k in sorted(data["bounds"].keys())}
+        data["bounds"] = {k: data["bounds"][k] for k in sorted(data["bounds"].keys())}
 
         object.__setattr__(self, "data", data)
         object.__setattr__(self, "mol_resname", data.get("mol_resname", ""))
