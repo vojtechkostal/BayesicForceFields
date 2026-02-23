@@ -26,7 +26,9 @@ def load_config(fn_config: str) -> dict:
         if key not in config['aimd']:
             raise ValueError(f"Missing required key in AIMD configuration: {key}")
         for i, fn in enumerate(config['aimd'][key]):
-            config['aimd'][key][i] = (base_dir / fn).resolve()
+            resolved_path = (base_dir / fn).resolve()
+            if not resolved_path.exists():
+                raise FileNotFoundError(f"AIMD file not found: {resolved_path}")
 
     aimd_lengths = [len(config['aimd'][key]) for key in aimd_keys]
     if len(set(aimd_lengths)) != 1:
