@@ -304,7 +304,7 @@ def clean_up_train_dir(
     for hash, params in samples.items():
         fn_trial = sorted(data_dir.glob(f'*-{hash}-*.xtc'))  # sort by filename
         if fn_trial and all(f.exists() for f in fn_trial):
-            samples_to_store[hash] = {
+            samples_to_store[str(hash)] = {
                 'params': params,
                 'fn_trj': [f.name for f in fn_trial]
             }
