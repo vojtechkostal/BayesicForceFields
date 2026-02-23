@@ -35,7 +35,7 @@ total_charge: -0.80
 n_samples: 10
 compress: false
 cleanup: true
-store: false
+store: ['xtc']
 python: python3.13
 gmx_cmd: gmx
 job_scheduler: slurm
