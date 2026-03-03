@@ -118,6 +118,7 @@ def compute_all_rdfs(
     """
 
     # Get unique atomtypes of the molecule (w/o virtual sites)
+    mol = universe.select_atoms(f'resname {mol_resname}')
     mask = mol.masses > 0.5
     mol_atomtypes = residue[mask]
 
