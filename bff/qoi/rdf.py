@@ -117,10 +117,9 @@ def compute_all_rdfs(
         Formated as [r, g], where r, g are distances, rdf respectively
     """
 
-    # Get unique atomtypes of the molecule
-    for residue in universe.residues:
-        if residue.resname == mol_resname:
-            mol_atomtypes = np.unique(residue.atoms.types)
+    # Get unique atomtypes of the molecule (w/o virtual sites)
+    mask = mol.masses > 0.5
+    mol_atomtypes = residue[mask]
 
     rdfs = {}
     atoms_solvent = universe.select_atoms(solvent_sel)
