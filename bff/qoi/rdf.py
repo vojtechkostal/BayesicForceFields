@@ -120,7 +120,7 @@ def compute_all_rdfs(
     # Get unique atomtypes of the molecule (w/o virtual sites)
     mol = universe.select_atoms(f'resname {mol_resname}')
     mask = mol.masses > 0.5
-    mol_atomtypes = mol[mask]
+    mol_atomtypes = np.unique(mol[mask].types)
 
     rdfs = {}
     atoms_solvent = universe.select_atoms(solvent_sel)
