@@ -48,6 +48,7 @@ def plot_marginals(
     y_offset: Dict[str, float] = {'charge': 0.2, 'sigma': 0.05}
     scale: Dict[str, float] = {'charge': 0.1, 'sigma': 0.015}
     ylabels: Dict[str, str] = {'charge': 'Charge [e]', 'sigma': '$\\sigma$ [nm]'}
+    xlabels: Dict[str, str] = {'charge': 'Atom', 'sigma': 'Atomtype'}
 
     for i, (p_kind, ax) in enumerate(zip(param_kinds, axs)):
         x_offset = 0
@@ -162,7 +163,9 @@ def plot_marginals(
             if p_kind in p
         ]
         ax.set_xticklabels(xtick_labels, rotation=30)
-        ax.set_xlabel('Atomtype')
+        ax.set_xlabel(xlabels.get(p_kind, 'Parameter'))
+
+        fig.align_xlabels()
 
     if fn_out is not None:
         plt.savefig(fn_out, bbox_inches='tight')
