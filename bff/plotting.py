@@ -67,8 +67,8 @@ def plot_marginals(
             idx = results.labels.index(param)
             bound = results.specs.bounds.by_name[param]
 
-            x_min = bound[0] - y_offset[p_kind]
-            x_max = bound[1] + y_offset[p_kind]
+            x_min = bound[0] - y_offset.get(p_kind, 0.1)
+            x_max = bound[1] + y_offset.get(p_kind, 0.1)
             x = torch.linspace(x_min, x_max, 1000)
 
             # Plot prior
@@ -80,21 +80,21 @@ def plot_marginals(
                 prior = results.mcmc.priors[idx_prior]
                 y = prior.log_prob(x).exp()
                 ax.fill_between(
-                    - y * scale[p_kind] + x_offset,
+                    - y * scale.get(p_kind, 0.1) + x_offset,
                     x,
                     color=color_prior,
                     lw=0,
                     label='prior' if not labels_used["prior"] else None,
                 )
                 labels_used["prior"] = True
-                x_lim_low = min(- (max(y) * scale[p_kind] * 1.1), -0.6)
+                x_lim_low = min(- (max(y) * scale.get(p_kind, 0.1) * 1.1), -0.6)
 
             # Posterior
             posterior = results.posterior_samples[:, idx]
             kde = gaussian_kde(posterior)
             posterior_kde = kde.evaluate(x)
             ax.fill_between(
-                posterior_kde * scale[p_kind] + x_offset,
+                posterior_kde * scale.get(p_kind, 0.1) + x_offset,
                 x,
                 color=color_posterior,
                 lw=0,
@@ -102,7 +102,10 @@ def plot_marginals(
             )
 
             labels_used["posterior"] = True
-            x_lim_high = max((max(posterior_kde) * scale[p_kind] + x_offset) * 1.1, 0.5)
+            x_lim_high = max(
+                (max(posterior_kde) * scale.get(p_kind, 0.1) + x_offset) * 1.1,
+                0.5
+            )
 
             # Bound as errorbar
             bound_center = np.mean(bound)
@@ -134,7 +137,7 @@ def plot_marginals(
 
             x_offset += 1
 
-            ax.set_ylabel(ylabels[p_kind])
+            ax.set_ylabel(ylabels.get(p_kind, p_kind))
             if i == 0:
                 ax.legend(
                     ncol=3,
@@ -149,11 +152,14 @@ def plot_marginals(
         y_high = np.max(bounds_raw) + 0.25 * y_scale
         ax.set_ylim(y_low, y_high)
         ax.tick_params(axis='both', direction='in')
-        ax.set_xticks(np.arange(0, len(results.specs.bounds.names), 1))
+
+        n_labels = len([name for name in results.specs.bounds.names if p_kind in name])
+        ax.set_xticks(np.arange(0, n_labels, 1))
 
         xtick_labels = [
             _wrap_label(p.split(maxsplit=1)[-1], 4)
             for p in results.specs.bounds.names
+            if p_kind in p
         ]
         ax.set_xticklabels(xtick_labels, rotation=30)
         ax.set_xlabel('Atomtype')
