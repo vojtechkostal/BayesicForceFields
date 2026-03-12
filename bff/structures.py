@@ -421,7 +421,7 @@ class ChargeConstraint(Specs):
 
         self.explicit_bounds = self.bounds.without(self.implicit_param).array
         self.implicit_bounds = self.bounds.by_name[self.implicit_param]
-   
+
         if self.explicit_bounds.ndim != 2 or self.explicit_bounds.shape[1] != 2:
             raise ValueError("Bounds must be a 2D array with shape (n_params, 2).")
 

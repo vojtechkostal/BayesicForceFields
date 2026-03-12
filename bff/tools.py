@@ -77,6 +77,16 @@ def sigmoid(x: np.ndarray, x0: float = 3, scale: float = 5) -> np.ndarray:
     return 1 / (1 + np.exp(- arg))
 
 
+def rdf_sigmoid_mean(settings: dict, ref_rdf: np.ndarray) -> np.ndarray:
+    """Create a sigmoid function for concatenated RDFs."""
+    n_bins = settings['rdf_kwargs']['n_bins']
+    r0, r1 = settings['rdf_kwargs']['r_range']
+    dr_half = (r1 - r0) / (2 * n_bins)
+    r = np.linspace(r0, r1, n_bins, endpoint=False) + dr_half
+    n_rdf = ref_rdf.size // n_bins
+    return np.tile(sigmoid(r), n_rdf)
+
+
 def extract_defaults(fn: Callable) -> dict[str, object]:
     """
     Extract default values from the function signature.

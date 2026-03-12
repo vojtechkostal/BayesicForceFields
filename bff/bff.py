@@ -1,247 +1,232 @@
 from pathlib import Path
 from typing import (
     Any,
+    Callable,
     Dict,
-    List,
     Optional,
     Sequence,
-    Tuple,
     Union,
 )
 
 from .bayes.inference import lgp_hyperopt, initialize_mcmc_sampler
-from .structures import Specs, MCMCResults, InferenceResults, ChargeConstraint
+from .bayes.gaussian_process import LGPCommittee
+from .structures import (
+    Specs, MCMCResults, TrainData
+)
 from .io.logs import Logger, print_progress_mcmc
+from .tools import rdf_sigmoid_mean
+
+import numpy as np
+import torch
 
 
 # ---- Type aliases (keep signatures readable) ----
 PathLike = Union[str, Path]
 SpecsLike = Union[str, Path, Dict[str, Any], Specs]
+ArrayLike = Union[np.ndarray, torch.Tensor]
 
 
-class BFFLearn:
+def train_lgp(
+    *train_data: TrainData,
+    qoi: Optional[Sequence[str]] = None,
+    y_means: Optional[Dict[str, ArrayLike | float | str]] = None,
+    n_hyper_max: int = 200,
+    fn_hyperparams: Optional[Dict[str, PathLike]] = None,
+    committee_size: int = 1,
+    test_fraction: float = 0.2,
+    device: str = "cuda",
+    logger: Optional[Logger] = None,
+    **kwargs,
+) -> Dict[str, LGPCommittee]:
     """
-    Main optimization class for Bayesian Force Field (BFF) parameter optimization
-    employing Local Gaussian Processes as surrogate models.
+    Train Local Gaussian Process surrogate models for each QoI.
 
     Parameters
     ----------
-    train_data : tuple
-        Training datasets, each containing QoI (Quantity of Interest).
+    *train_data : TrainData
+        One or more training datasets, each containing QoI outputs.
+    qoi : sequence of str, optional
+        QoI names to train surrogates for. Defaults to all QoIs found in the data.
+    y_means : dict, optional
+        Per-QoI mean values for centering. Defaults to 0 for each QoI.
+        if "sigmoid", a sigmoid function will be used for RDFs.
+    n_hyper_max : int
+        Maximum number of samples used for hyperparameter optimisation.
+    fn_hyperparams : dict, optional
+        Mapping from QoI name to path for loading/saving hyperparameters.
+    committee_size : int
+        Number of LGP models in each committee ensemble.
+    test_fraction : float
+        Fraction of data reserved for testing.
+    device : str
+        Torch device string (e.g. 'cpu', 'cuda', 'cuda:1').
     logger : Logger, optional
-        An instance of a Logger for logging information.
-        If not provided, a default Logger with the name "BFF" is used.
+        Logger instance. If None, a default Logger is created.
+    **kwargs
+        Additional keyword arguments forwarded to the MAP optimiser.
 
-    Attributes
-    ----------
-    train_data : tuple
-        The training datasets provided during initialization.
-    logger : Logger
-        The logger instance used for logging.
-    lgp : dict, optional
-        A dictionary to hold the optimized LGP surrogate models for each QoI.
-    QoI : list[str], optional
-        A list of Quantity of Interest names that will be optimized.
-
-    Properties
-    ----------
-    _all_qoi
-        A property that returns a sorted list of all unique QoI names
-        from the training datasets.
-
-    Methods
+    Returns
     -------
-    setup_LGP
-        Sets up the LGP surrogates for the specified QoIs
-        using the provided training data.
-    run
-        Runs the MCMC sampling process using
-        the optimized surrogates and specified parameters.
+    dict[str, LGPCommittee]
+        Trained surrogate committee for each QoI.
+
+    Raises
+    ------
+    ValueError
+        If requested QoIs are not present in any training dataset.
     """
-    def __init__(
-        self, *train_data, specs: SpecsLike, logger: Optional[Logger] = None
-    ) -> None:
+    logger = logger or Logger("BFF")
+    y_means = y_means or {}
+    fn_hyperparams = fn_hyperparams or {}
 
-        self.train_data: Tuple[Any, ...] = train_data
-        self.logger: Logger = logger or Logger("BFF")
-        self.lgp: Optional[Dict[str, Any]] = None
-        self.QoI: Optional[List[str]] = None
-        self.specs: Specs = Specs(specs) if not isinstance(specs, Specs) else specs
+    # index datasets by the QoIs they contain
+    qoi_to_dataset: Dict[str, TrainData] = {
+        name: dataset
+        for dataset in train_data
+        for name in dataset.qoi_names
+    }
 
-        self.logger.info("=== Bayesian Force Field Learning ===\n", level=0)
+    available_qoi = sorted(qoi_to_dataset)
+    requested_qoi = list(qoi) if qoi is not None else available_qoi
 
-    @property
-    def _all_qoi(self) -> List[str]:
-        """
-        Get a list of all unique QoI names from the training datasets.
-        """
-        return sorted({qoi for d in self.train_data for qoi in d.qoi_names})
-
-    def setup_lgp(
-        self,
-        QoI: Optional[Sequence[str]] = None,
-        n_max: int = 200,
-        fn_hyper: Dict[str, PathLike] = None,
-        means: Optional[Dict[str, float]] = None,
-        committee: int = 1,
-        test_fraction: float = 0.2,
-        device: str = 'cuda:0',
-        obs_factor: int = 1,
-        **kwargs
-    ):
-        """
-        Set up Local Gaussian Process (LGP) surrogates for the specified QoIs.
-
-        Parameters
-        ----------
-        QoI : list of str, optional
-            List of Quantity of Interest names to optimize.
-            If None, all QoIs from the training data are used.
-        n_max : int, optional
-            Maximum number of data points used for hyperparameter optimization
-            (default is 200).
-        fn_hyper : Dict of str or Path, optional
-            Dictionary mapping QoI names to file paths for
-            loading/saving optimized hyperparameters.
-            If None, hyperparameters are optimized from scratch (default is None).
-        means : Dict, optional
-            Dictionary mapping QoI names to their mean values for centering.
-            Default is {'rdf': 'sigmoid'}.
-        committee : int, optional
-            Number of LGP models in the ensemble (default is 1).
-        test_fraction : float, optional
-            Fraction of the data to reserve for testing (default is 0.2).
-        device : str, optional
-            Device to perform computations on (e.g., 'cpu' or 'cuda:0')
-            (default is 'cuda:0').
-        obs_factor : int, optional
-            Factor to multiply the number of observations by (default is 1).
-        **kwargs
-            Additional arguments passed to the MAP optimizer.
-        """
-
-        self.QoI = QoI or self._all_qoi
-        means = means or {}
-        fn_hyper = fn_hyper or {}
-
-        self.logger.info("Optimizing LGP surrogates", level=0)
-        self.logger.info("-------------------------", level=0)
-
-        lgp = {}
-        for qoi in self.QoI:
-
-            self.logger.info(f"QoI: {qoi}", level=1)
-
-            trainset = next(d for d in self.train_data if qoi in d.qoi_names)
-            N = (trainset.observations.get(qoi) or 0) * obs_factor
-            nuisance = trainset.nuisances.get(qoi, None)
-
-            if qoi == "rdf" and means.get("rdf") == "sigmoid":
-                y_mean = trainset.rdf_sigmoid_mean
-            else:
-                y_mean = means.get(qoi, 0.0)
-
-            lgp_qoi = lgp_hyperopt(
-                X=trainset.inputs,
-                y=trainset.outputs[qoi],
-                y_mean=y_mean,
-                fn_hyperparams=fn_hyper.get(qoi),
-                test_fraction=test_fraction,
-                n_hyper=n_max,
-                committee=committee,
-                observations=N,
-                nuisance=nuisance,
-                device=device,
-                logger=self.logger,
-                opt_kwargs=kwargs
-            )
-
-            lgp[qoi] = lgp_qoi
-
-        self.lgp = lgp
-
-        self.logger.info("", level=0)
-
-    def run(
-        self,
-        priors_type: str = 'normal',
-        max_iter: int = 100000,
-        n_walkers: Optional[int] = None,
-        fn_backend: PathLike = './mcmc.h5',
-        fn_priors: PathLike = './priors.yaml',
-        fn_tau: PathLike = './tau.npy',
-        restart: bool = True,
-        device: str = 'cuda:0',
-        **kwargs
-    ) -> InferenceResults:
-
-        """
-        Run MCMC posterior sampling using the optimized LGP surrogates.
-
-        Parameters
-        ----------
-        priors_type : str, optional
-            Type of prior distributions to use ('normal' or 'uniform')
-            (default is 'normal').
-        max_iter : int, optional
-            Maximum number of MCMC iterations (default is 100000).
-        n_walkers : int, optional
-            Number of MCMC walkers (default is 5 times the number of parameters).
-        fn_backend : PathLike, optional
-            Filename for the MCMC backend storage (default is './mcmc.h5').
-        fn_priors : PathLike, optional
-            Filename to save the priors (default is './priors.yaml').
-        fn_tau : PathLike, optional
-            Filename to save the autocorrelation times (default is './tau.npy').
-        restart : bool, optional
-            Whether to restart from the last MCMC state if available (default is True).
-        device : str, optional
-            Device to perform computations on (e.g., 'cpu' or 'cuda:0')
-            (default is 'cuda:0').
-        **kwargs
-            Additional arguments passed to the progress printing function.
-
-        Returns
-        -------
-        OptimizationResults
-            An object containing the MCMC sampling results, including samples, priors,
-            and autocorrelation times.
-        """
-        if not self.lgp:
-            raise ValueError("LGP surrogate not set up. Call 'setup_LGP' first.")
-
-        y_true = {
-            qoi: d.outputs_ref[qoi]
-            for d in self.train_data
-            for qoi in self.QoI
-            if qoi in d.qoi_names
-        }
-
-        constraint = ChargeConstraint(self.specs.data)
-
-        p0, priors, sampler = initialize_mcmc_sampler(
-            self.lgp,
-            y_true,
-            constraint,
-            n_walkers,
-            priors_type,
-            fn_backend,
-            restart,
-            device
+    missing = set(requested_qoi) - set(available_qoi)
+    if missing:
+        raise ValueError(
+            f"QoI not found in any training dataset: {', '.join(sorted(missing))}. "
+            f"Available: {', '.join(available_qoi)}"
         )
 
-        self.logger.info("MCMC posterior sampling", level=0)
-        self.logger.info("-----------------------", level=0)
+    logger.info("=== Optimizing LGP surrogates ===", level=0)
+    logger.info("", level=0)
 
-        print_progress_mcmc(sampler, p0, max_iter, logger=self.logger, **kwargs)
-        tau = sampler.get_autocorr_time(tol=0)
+    models: Dict[str, LGPCommittee] = {}
 
-        mcmc = MCMCResults(chain_src=sampler, priors_src=priors, tau_src=tau)
-        results = InferenceResults(mcmc=mcmc, specs=self.specs, qoi_names=self.QoI)
+    for name in requested_qoi:
+        logger.info(f"QoI: {name}", level=1)
 
-        if fn_priors:
-            mcmc.write_priors(fn_priors)
-        if fn_tau:
-            mcmc.write_tau(fn_tau)
+        dataset = qoi_to_dataset[name]
 
-        return results
+        mean = y_means.get(name, 0)
+        if name == "rdf" and mean == "sigmoid":
+            mean = rdf_sigmoid_mean(dataset.settings, dataset.outputs_ref[name])
+
+        models[name] = lgp_hyperopt(
+            X=dataset.inputs,
+            y=dataset.outputs[name],
+            y_mean=y_means.get(name, 0),
+            fn_hyperparams=fn_hyperparams.get(name),
+            test_fraction=test_fraction,
+            n_hyper=n_hyper_max,
+            committee=committee_size,
+            observations=dataset.observations[name],
+            nuisance=dataset.nuisances.get(name),
+            device=device,
+            logger=logger,
+            opt_kwargs=kwargs,
+        )
+
+        logger.info("", level=0)
+
+    return models
+
+
+def learn(
+    y_ref: Dict[str, ArrayLike],
+    models: Dict[str, LGPCommittee],
+    constraint: Optional[Callable] = None,
+    priors_disttype: str = "normal",
+    max_iter: int = 1000,
+    n_walkers: Optional[int] = None,
+    fn_chain: PathLike = "./mcmc.h5",
+    fn_priors: Optional[PathLike] = "./priors.yaml",
+    fn_tau: Optional[PathLike] = "./tau.yaml",
+    restart: bool = True,
+    device: str = "cuda",
+    logger: Optional[Logger] = None,
+    **kwargs,
+) -> MCMCResults:
+    """
+    Run MCMC posterior sampling using pre-trained LGP surrogate models.
+
+    Parameters
+    ----------
+    y_ref : dict[str, ArrayLike]
+        Reference (target) values for each QoI.
+    models : dict[str, LGPCommittee]
+        Trained LGP surrogate committees, one per QoI.
+    constraint : callable, optional
+        Callable that returns a boolean mask for valid parameter samples
+        (e.g. ChargeConstraint). If None, no constraint is applied.
+    priors_disttype : str
+        Prior distribution type, either 'normal' or 'uniform'.
+    max_iter : int
+        Maximum number of MCMC iterations.
+    n_walkers : int, optional
+        Number of ensemble walkers. Defaults to 5 x n_params if None.
+    fn_chain : PathLike
+        Path to the HDF5 backend file for storing the MCMC chain.
+    fn_priors : PathLike, optional
+        Path to write the prior distributions as YAML. Skipped if None.
+    fn_tau : PathLike, optional
+        Path to write autocorrelation times. Skipped if None.
+    restart : bool
+        If True, resume from the last saved state in fn_chain when available.
+    device : str
+        Torch device string (e.g. 'cpu', 'cuda', 'cuda:1').
+    logger : Logger, optional
+        Logger instance. A default Logger is created if None.
+    **kwargs
+        Additional keyword arguments forwarded to print_progress_mcmc.
+
+    Returns
+    -------
+    MCMCResults
+        Object containing the sampler chain, priors, and autocorrelation times.
+
+    Raises
+    ------
+    ValueError
+        If the QoI keys in y_ref and models do not match.
+    """
+    logger = logger or Logger("BFF")
+
+    if set(y_ref) != set(models):
+        missing_in_models = set(y_ref) - set(models)
+        missing_in_ref = set(models) - set(y_ref)
+        raise ValueError(
+            "QoI keys in y_ref and models must match.\n"
+            + (
+                f"  Missing in models: {sorted(missing_in_models)}\n"
+                if missing_in_models else ""
+            )
+            + (
+                f"  Missing in y_ref:  {sorted(missing_in_ref)}\n"
+                if missing_in_ref else ""
+            )
+        )
+
+    logger.info("=== Parameter Learning ===", level=0)
+    logger.info("", level=0)
+
+    p0, priors, sampler = initialize_mcmc_sampler(
+        surrogate=models,
+        y_true=y_ref,
+        constraint=constraint,
+        n_walkers=n_walkers,
+        priors_disttype=priors_disttype,
+        fn_backend=fn_chain,
+        restart=restart,
+        device=device,
+    )
+
+    print_progress_mcmc(sampler, p0, max_iter, logger=logger, **kwargs)
+
+    tau = sampler.get_autocorr_time(tol=0)
+    mcmc = MCMCResults(chain_src=sampler, priors_src=priors, tau_src=tau)
+
+    if fn_priors:
+        mcmc.write_priors(fn_priors)
+    if fn_tau:
+        mcmc.write_tau(fn_tau)
+
+    return mcmc
