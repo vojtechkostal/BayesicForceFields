@@ -114,7 +114,7 @@ def gaussian_log_likelihood(
     if constraint is not None:
         mask = constraint(params)
     else:
-        torch.ones(len(theta), dtype=bool, device=device)
+        mask = torch.ones(len(theta), dtype=bool, device=device)
     params = params[mask]
     nuisances = nuisances_full[mask]
 
