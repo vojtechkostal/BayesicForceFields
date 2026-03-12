@@ -58,8 +58,8 @@ def initialize_walkers(
     """
 
     if not constraint:
-        means = torch.tensor([p.mean for p in priors.values()])
-        stds = torch.tensor([p.scale for p in priors.values()])
+        means = torch.tensor([p.mean for p in priors])
+        stds = torch.tensor([p.scale for p in priors])
         p0 = torch.normal(means.expand(n_walkers, -1), stds.expand(n_walkers, -1))
     else:
         # n_params = specs.n_params_implicit
