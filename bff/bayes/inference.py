@@ -123,12 +123,12 @@ def lgp_hyperopt(
     X: torch.Tensor,
     y: torch.Tensor,
     y_mean: torch.Tensor,
-    fn_hyperparams: PathLike,
     test_fraction: float,
     n_hyper: int,
     committee: int,
     observations: int,
     nuisance: float,
+    fn_out: PathLike,
     device: str,
     logger: Logger,
     opt_kwargs: Dict[str, Union[int, float, str]]
@@ -145,8 +145,6 @@ def lgp_hyperopt(
         Target values of shape (n_samples, output_dim).
     y_mean : torch.Tensor
         Mean of the target values (used for centering).
-    fn_hyperparams : str or Path
-        Path to file to load/save optimized hyperparameters.
     test_fraction : float
         Fraction of the data to reserve for testing.
     n_hyper : int
@@ -157,6 +155,8 @@ def lgp_hyperopt(
         Number of observations.
     nuisance : float
         Nuisance parameter value.
+    fn_out : PathLike
+        Path to save the trained LGP committee model.
     device : str
         Device to perform computations on (e.g., 'cpu' or 'cuda').
     logger : callable
@@ -175,65 +175,42 @@ def lgp_hyperopt(
     # Split the data into training and testing sets
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_fraction)
 
-    # Check if the hyperparameters file exists
-    fn_hyperparams = Path(fn_hyperparams) if fn_hyperparams else None
-    reuse_hyper = fn_hyperparams and fn_hyperparams.exists()
+    # Optimization of the hyperparameters
+    n_hyper = min(n_hyper, len(X_train))
 
-    if reuse_hyper:
-        # Read hyperparameters from the file
-        hyperparams = load_yaml(fn_hyperparams)
-        lengths = hyperparams['lengths']
-        widths = hyperparams['widths']
-        sigmas = hyperparams['sigmas']
+    X_hyper = check_tensor(X_train[:n_hyper], device='cpu')
+    y_hyper = check_tensor(y_train[:n_hyper], device='cpu')
+    y_mean = check_tensor(y_mean, device='cpu')
 
-        # Ensure that the hyperparameters from the file match the committee size
-        if (
-            len(lengths) != committee or
-            len(widths) != committee or
-            len(sigmas) != committee
-        ):
-            raise ValueError(
-                f"Number of hyperparameters in {fn_hyperparams}"
-                f" does not match the ensemble size {committee}."
-            )
+    priors = define_hyper_priors(X.shape[1])
+    p0 = torch.tensor([p.mean for p in priors])
 
+    log_likelihood = partial(
+        loo_log_likelihood,
+        X=X_hyper,
+        y=y_hyper-y_mean)
+
+    log_probability = partial(
+        log_posterior,
+        priors=priors,
+        log_likelihood_fn=log_likelihood,
+        device='cpu',
+        numpy_output=False)
+
+    map_theta = find_map(log_probability, p0, logger=logger, **opt_kwargs)
+
+    if committee > 1:
+        cov = laplace_approximation(log_probability, map_theta, device='cpu')
+        hyper_dist = torch.distributions.MultivariateNormal(map_theta, cov)
+        hyper_samples = hyper_dist.sample((committee,))
     else:
-        # Optimization of the hyperparameters
-        n_hyper = min(n_hyper, len(X_train))
+        hyper_samples = map_theta.unsqueeze(0)
 
-        X_hyper = check_tensor(X_train[:n_hyper], device='cpu')
-        y_hyper = check_tensor(y_train[:n_hyper], device='cpu')
-        y_mean = check_tensor(y_mean, device='cpu')
-
-        priors = define_hyper_priors(X.shape[1])
-        p0 = torch.tensor([p.mean for p in priors])
-
-        log_likelihood = partial(
-            loo_log_likelihood,
-            X=X_hyper,
-            y=y_hyper-y_mean)
-
-        log_probability = partial(
-            log_posterior,
-            priors=priors,
-            log_likelihood_fn=log_likelihood,
-            device='cpu',
-            numpy_output=False)
-
-        map_theta = find_map(log_probability, p0, logger=logger, **opt_kwargs)
-
-        if committee > 1:
-            cov = laplace_approximation(log_probability, map_theta, device='cpu')
-            hyper_dist = torch.distributions.MultivariateNormal(map_theta, cov)
-            hyper_samples = hyper_dist.sample((committee,))
-        else:
-            hyper_samples = map_theta.unsqueeze(0)
-
-        # Split hyperparameters
-        hyper_samples = hyper_samples.exp()
-        lengths = hyper_samples[:, :-2]
-        widths = hyper_samples[:, -2]
-        sigmas = hyper_samples[:, -1]
+    # Split hyperparameters
+    hyper_samples = hyper_samples.exp()
+    lengths = hyper_samples[:, :-2]
+    widths = hyper_samples[:, -2]
+    sigmas = hyper_samples[:, -1]
 
     # Create committee of LGPs
     logger.info(f'Committee: 0/{committee}', level=2, overwrite=True)
@@ -252,13 +229,8 @@ def lgp_hyperopt(
         level=2
     )
 
-    # Save hyperparameters if a file is specified
-    if fn_hyperparams and not reuse_hyper:
-        committee_data = {
-            'lengths': np.array([lgp.hyperparameters['lengths'] for lgp in lgps]),
-            'widths':  np.array([lgp.hyperparameters['width'] for lgp in lgps]),
-            'sigmas': np.array([lgp.hyperparameters['sigma'] for lgp in lgps]),
-        }
-        save_yaml(committee_data, fn_hyperparams)
+    # Save models
+    if fn_out:
+        lgp_committee.write(fn_out)
 
     return lgp_committee
