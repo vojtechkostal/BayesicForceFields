@@ -6,7 +6,7 @@ if platform.system() == "Darwin":
     os.environ["OMP_NUM_THREADS"] = "1"  # Limit OpenMP threads to 1
     os.environ["MKL_NUM_THREADS"] = "1"  # Limit MKL threads to 1
 
-from . import bff
+from .bff import BFFLearner
 from . import plotting
 from . import qoi
 from . import data
