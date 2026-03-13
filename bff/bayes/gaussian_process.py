@@ -3,7 +3,10 @@ import numpy as np
 from .kernels import gaussian_kernel
 from .utils import check_tensor, nearest_positive_definite, smape
 
-from typing import Union, Dict, List
+from pathlib import Path
+from typing import Union, Dict, List, Self
+
+PathLike = Union[str, Path]
 
 
 class LocalGaussianProcess:
@@ -108,6 +111,18 @@ class LocalGaussianProcess:
         mean = self.y_mean + (Kid @ self.Kdd_inv) @ (self.y_train - self.y_mean)
 
         return mean.clamp(0, None)
+    
+    @property
+    def state(self):
+        return {
+            "X_train": self.X_train,
+            "y_train": self.y_train,
+            "y_mean": self.y_mean,
+            "lengths": self.lengths,
+            "width": self.width,
+            "sigma": self.sigma,
+            "device": self.device,
+        }
 
     def __repr__(self) -> str:
         hp = self.hyperparameters
@@ -221,6 +236,33 @@ class LGPCommittee:
         if isinstance(y_test, torch.Tensor):
             y_test = y_test.cpu().numpy()
         self.error = smape(y_test, y_pred) * 100
+
+    @classmethod
+    def load(cls, fn: PathLike) -> Self:
+
+        state = torch.load(fn)
+        lgps = [LocalGaussianProcess(**lgp_state) for lgp_state in state["lgps"]]
+        cls = cls(
+            lgps=lgps,
+            n_observations=state["n_observations"],
+            nuisance=state["nuisance"],
+            stochastic=state["stochastic"],
+        )
+        cls.error = state["error"]
+        return cls
+
+    def write(self, fn_out: PathLike) -> None:
+
+        state = {
+            "n_observations": self.observations,
+            "nuisance": self.nuisance,
+            "stochastic": self.stochastic,
+            "error": self.error,
+            "lgps": [lgp.state for lgp in self.lgps],
+        }
+
+        torch.save(state, fn_out)
+
 
     def __repr__(self) -> str:
         return (
