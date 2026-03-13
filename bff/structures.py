@@ -4,7 +4,7 @@ from typing import (
     Any, Callable,
     Dict, List, Mapping,
     Optional, Sequence,
-    Tuple, Union, Set
+    Tuple, Union, Self
 )
 
 import numpy as np
@@ -16,7 +16,6 @@ from scipy.stats import gaussian_kde
 
 from .bayes.utils import initialize_backend
 from .io.utils import load_yaml, save_yaml, extract_train_dir
-from .tools import sigmoid
 
 
 PathLike = Union[str, Path]
@@ -103,126 +102,63 @@ class TrainSetInfo:
         self.settings = settings or {}
 
 
-@dataclass
-class TrainData:
-    """Data structure for training surrogate models.
-
-    Parameters
-    ----------
-    inputs : np.ndarray or PathLike
-        Array of input parameter samples or path to a .npy file containing it.
-    outputs : dict of str to np.ndarray or PathLike
-        Dictionary mapping QoI names to arrays of predicted values
-        or paths to .npy files.
-    outputs_ref : dict of str to np.ndarray or PathLike
-        Dictionary mapping QoI names to arrays of reference values
-        or paths to .npy files.
-    observations : dict of str to int or PathLike, optional (default None)
-        Dictionary mapping QoI names to the number of observations
-        or path to a YAML file containing it.
-    nuisances : dict of str to float or PathLike, optional (default None)
-        Dictionary mapping QoI names to nuisance parameters
-        (e.g., noise levels) or path to a YAML file containing it.
-    settings : dict or PathLike, optional (default None)
-    """
-
-    inputs: Union[np.ndarray, PathLike]
-    outputs: Union[Dict[str, np.ndarray], PathLike]
-    outputs_ref: Union[Dict[str, np.ndarray], PathLike]
-    observations: Optional[Union[Dict[str, int], PathLike]] = None
-    nuisances: Optional[Union[Dict[str, float], PathLike]] = None
-    settings: Optional[Union[Dict[str, Any], PathLike]] = None
+@dataclass(slots=True)
+class QoIDataset:
+    name: str
+    inputs: np.ndarray
+    outputs: np.ndarray
+    outputs_ref: np.ndarray
+    n_observations: int = 0
+    nuisance: float = 0.0
+    settings: PathLike | dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
-        self.inputs = self._load_array(self.inputs)
-        self.outputs = self._load_dict(self.outputs)
-        self.outputs_ref = self._load_dict(self.outputs_ref)
-        self.observations = self._load_yaml(self.observations) or {}
-        self.nuisances = self._load_yaml(self.nuisances) or {}
-        self.settings = self._load_yaml(self.settings) or {}
+        self.name = self.name
+        self.inputs = np.asarray(self.inputs, dtype=float)
+        self.outputs = np.asarray(self.outputs, dtype=float)
+        self.outputs_ref = np.asarray(self.outputs_ref, dtype=float)
 
-        if len(self.inputs) != len(next(iter(self.outputs.values()))):
+        if self.inputs.shape[0] != self.outputs.shape[0]:
             raise ValueError(
-                "Number of input samples does not match number of output samples.")
-        if self.outputs.keys() != self.outputs_ref.keys():
-            raise ValueError("Output keys do not match reference output keys.")
+                f"Number of input samples ({self.inputs.shape[0]}) does not match "
+                f"number of output samples ({self.outputs.shape[0]})."
+            )
 
-    @staticmethod
-    def _load_array(x: Union[np.ndarray, Sequence[Any], PathLike]) -> np.ndarray:
-        """Load an array from a .npy file or convert a sequence to a numpy array."""
-        return np.load(x) if isinstance(x, (str, Path)) else np.asarray(x)
-
-    @staticmethod
-    def _load_dict(d: dict) -> dict:
-        """Load a dictionary of arrays from .npy files or
-        convert values to numpy arrays."""
-        loaded: dict[str, np.ndarray] = {}
-        for qoi_name, data in d.items():
-            arr = np.load(data) if isinstance(data, (str, Path)) else np.asarray(data)
-            loaded[qoi_name] = np.asarray(arr.item() if arr.ndim == 0 else arr)
-
-        return loaded
-
-    @staticmethod
-    def _load_yaml(
-        data: Mapping[str, Union[np.ndarray, PathLike]]
-    ) -> Dict[str, np.ndarray]:
-        return load_yaml(data) if isinstance(data, (str, Path)) else data
+        if self.outputs.shape[1] != self.outputs_ref.shape[0]:
+            raise ValueError(
+                f"Number of output features ({self.outputs.shape[1]}) does not match "
+                f"number of reference output features ({self.outputs_ref.shape[0]})."
+            )
 
     @property
-    def qoi_names(self) -> Set[str]:
-        """Get the set of QoI names from the outputs reference data."""
-        return set(self.outputs_ref.keys())
+    def n_samples(self) -> int:
+        return self.inputs.shape[0]
 
-    @property
-    def rdf_sigmoid_mean(self) -> np.ndarray:
-        """Create a sigmoid function for concatenated RDFs."""
-        n_bins = self.settings['rdf_kwargs']['n_bins']
-        r0, r1 = self.settings['rdf_kwargs']['r_range']
-        dr_half = (r1 - r0) / (2 * n_bins)
-        r = np.linspace(r0, r1, n_bins, endpoint=False) + dr_half
-        n_rdf = self.outputs_ref['rdf'].size // n_bins
-        return np.tile(sigmoid(r), n_rdf)
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "inputs": self.inputs,
+            "outputs": self.outputs,
+            "outputs_ref": self.outputs_ref,
+            "n_observations": self.n_observations,
+            "nuisance": self.nuisance,
+            "settings": self.settings,
+        }
 
-    def write(self, fn_base: PathLike) -> None:
-        """Write the training data to disk with a common base filename.
+    @classmethod
+    def load(cls, fn_dataset: PathLike) -> Self:
+        data = torch.load(Path(fn_dataset).resolve(), weights_only=False)
+        return cls(**data)
 
-        Parameters
-        ----------
-        fn_base : PathLike
-            Base filename (without extension) for saving the training data.
-        """
-        fn_base = Path(fn_base).resolve()
-
-        # Helper to save .npy files
-        def save_npy(suffix: str, array: np.ndarray) -> None:
-            np.save(fn_base.with_name(fn_base.name + suffix), array,
-                    allow_pickle=False)
-
-        # Save inputs
-        save_npy("-train-inputs.npy", self.inputs)
-
-        # Save outputs
-        for qoi, data in self.outputs.items():
-            save_npy(f"-train-{qoi}.npy", data)
-
-        # Save reference data
-        for qoi, data in self.outputs_ref.items():
-            save_npy(f"-ref-{qoi}.npy", data)
-
-        # Save YAML files
-        save_yaml(self.settings or {},
-                  fn_base.with_name(fn_base.name + "-settings.yaml"))
-        save_yaml(self.observations or {},
-                  fn_base.with_name(fn_base.name + "-observations.yaml"))
-        save_yaml(self.nuisances or {},
-                  fn_base.with_name(fn_base.name + "-nuisances.yaml"))
+    def write(self, fn_out: PathLike) -> None:
+        torch.save(self.to_dict(), Path(fn_out).resolve())
 
     def __repr__(self):
         return (
-            "TrainData\n"
-            f"n_samples: {len(self.inputs)}\n"
-            f"QoIs: {', '.join(self.qoi_names)}"
+            f"QoIData(n_samples={self.n_samples}, "
+            f"n_features={self.outputs.shape[1]}, "
+            f"n_observations={self.n_observations}, "
+            f"nuisance={self.nuisance})"
         )
 
 
