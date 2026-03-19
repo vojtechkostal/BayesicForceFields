@@ -73,7 +73,7 @@ def initialize_mcmc_sampler(
     if constraint is None:
         # TODO: define broad but meaningfull bounds
         n_params = [s.n_params for s in surrogate.values()][0]
-        bounds = [-1e5, 1e5] * n_params
+        bounds = np.tile([-1e5, 1e5], (n_params, 1))
     else:
         bounds = constraint.explicit_bounds
 

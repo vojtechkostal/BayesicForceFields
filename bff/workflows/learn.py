@@ -2,7 +2,7 @@ import sys
 from pathlib import Path
 from typing import Union
 
-from ..bff import BFFLearn
+from ..bff import train_lgp, learn
 from ..structures import TrainData
 from ..io.logs import Logger
 from ..io.utils import load_yaml
@@ -16,7 +16,7 @@ def load_config(fn_config: PathLike) -> dict:
     config = load_yaml(fn_config)
     base_dir = fn_config.parent
 
-    required_keys = ["fn_train", "fn_specs"]
+    required_keys = ["fn_specs", 'lgp_train', 'mcmc', 'fn_train']
     required_train_fn = ["inputs", "outputs", "outputs_ref", "observations"]
 
     def resolve_and_check(path: PathLike) -> Path:
@@ -72,11 +72,25 @@ def main(fn_config: PathLike) -> None:
 
     logger = Logger(name='learn', fn_log=config['fn_log'])
 
-    train_data = [TrainData(**files) for files in config['fn_train']]
-    learner = BFFLearn(*train_data, specs=config['fn_specs'], logger=logger)
+    # train LGP surrogates for the requested QoIs
+    train_datasets = config['fn_train']
+    train_data = [TrainData(**files) for files in train_datasets]
+    models = train_lgp(*train_data, **config.get('lgp_train', {}), logger=logger)
 
-    learner.setup_lgp(**config.get('lgp', {}))
-    learner.run(**config.get('mcmc', {}))
+    # run MCMC sampling to learn the posterior distribution over parameters
+    y_ref = {
+        qoi: dataset.outputs_ref[qoi]
+        for dataset in train_data
+        for qoi in dataset.outputs_ref
+    }
+    mcmc = learn(y_ref=y_ref, models=models, **config.get('mcmc', {}), logger=logger)
+
+    if 'fn_priors' in config.get('mcmc', {}):
+        fn_priors = config['mcmc']['fn_priors']
+        mcmc.write_priors(fn_priors)
+    if 'fn_tau' in config.get('mcmc', {}):
+        fn_tau = config['mcmc']['fn_tau']
+        mcmc.write_tau(fn_tau)
 
 
 if __name__ == "__main__":
