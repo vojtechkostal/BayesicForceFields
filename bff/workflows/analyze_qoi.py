@@ -2,12 +2,12 @@ import time
 import numpy as np
 
 from pathlib import Path
-from typing import List, Dict
+from typing import List
 
 from ..qoi.analysis import analyze_trainset, analyze_all_trajectories, get_all_settings
 from ..io.logs import Logger
 from ..io.utils import load_yaml, save_json
-from ..structures import QoI, TrainData, Specs
+from ..structures import QoI, QoIDataset
 
 
 def load_config(fn_config: str) -> dict:
@@ -53,42 +53,27 @@ def load_config(fn_config: str) -> dict:
     return config
 
 
-def _flatten_qoi(
-    sample: List[QoI], valid_qoi: List[str], valid_hb: np.ndarray[str] = None
-) -> Dict[str, List[float]]:
-    """Group QoI values without flattening."""
+def _get_sample_qoi(
+    sample: List[QoI], qoi_name: str, valid_hb: np.ndarray[str] = None
+) -> List[float]:
+    sample_values = []
+    for trj in sample:
+        qoi_values = getattr(trj, qoi_name, None)
+        if qoi_values is None:
+            raise ValueError(
+                f"QoI '{qoi_name}' not found in training sample trajectory."
+            )
+        elif qoi_name in {"rdf", "restr"}:
+            for _, (_, y) in qoi_values.items():
+                sample_values.extend(y)
+        elif qoi_name == "hb":
+            for hb_name in valid_hb:
+                sample_values.append(trj.hb.get(hb_name, 0))
+        else:
+            pass  # TODO: handle other QoI types if needed
+            sample_values.extend(qoi_values)
 
-    blocks = {attr: [] for attr in valid_qoi}
-    for s in sample:
-        for attr in valid_qoi:
-            if not hasattr(s, attr):
-                continue
-            val = getattr(s, attr)
-            if attr in {"rdf", "restr"}:
-                for _, (_, y) in val.items():
-                    blocks[attr].extend(y)
-            elif attr == "hb":
-                blocks[attr].extend(s.hb.get(hb_name, 0) for hb_name in valid_hb)
-            else:
-                blocks[attr].extend(val)
-    return blocks
-
-
-def _infer_observations(
-    qoi: List[QoI], valid_hb: np.ndarray[str] = None
-) -> Dict[str, int]:
-    observations = {}
-    for i in qoi:
-        for name, n in i.observations.items():
-            observations[name] = observations.get(name, 0) + n
-
-    # if "hb" in observations:
-    #    observations["hb"] = len(valid_hb)
-
-    if "restr" in observations and "rdf" in observations:
-        observations["restr"] = observations["rdf"]
-
-    return observations
+    return sample_values
 
 
 def main(fn_config: str) -> None:
@@ -116,51 +101,51 @@ def main(fn_config: str) -> None:
     )
     t1 = time.time()
     logger.info(f"Reference QoI: Done. ({t1 - t0:.1f} s)", level=1, overwrite=True)
+    logger.info("", level=0)
 
     valid_hb = np.unique([name for s in qoi_ref if hasattr(s, "hb") for name in s.hb])
     valid_qoi = {name for trj in qoi_ref for name in trj.names}
 
-    y_true = {
-        qoi: np.array(values)
-        for qoi, values in _flatten_qoi(qoi_ref, valid_qoi, valid_hb).items()
-    }
+    logger.info("Saving QoI data: in progress...", level=1, overwrite=True)
+    for qoi_name in valid_qoi:
+        output_ref = _get_sample_qoi(qoi_ref, qoi_name, valid_hb)
+        output_train = [
+            _get_sample_qoi(sample, qoi_name, valid_hb) for sample in qoi_train
+        ]
 
-    y_train = {
-        qoi: np.array([
-            _flatten_qoi(sample, valid_qoi, valid_hb)[qoi]
-            for sample in qoi_train
-        ])
-        for qoi in valid_qoi
-    }
+        n_obs = sum(len(getattr(trj, qoi_name, [])) for trj in qoi_ref)
 
-    if config['ffmd'].get('observations') is not None:
-        observations = config['ffmd']['observations']
-    else:
-        observations = _infer_observations(qoi_ref, valid_hb)
+        data = QoIDataset(
+            name=qoi_name,
+            inputs=trainset_info.inputs,
+            outputs=output_train,
+            outputs_ref=output_ref,
+            n_observations=n_obs,
+            nuisance=None,
+            settings=settings
+        )
 
-    if config['ffmd'].get('nuisances') is not None:
-        nuisances = config['ffmd']['nuisances']
-    else:
-        nuisances = {}
+        # save the data
+        fn_base = config['base_name']
+        fn_out = fn_base.with_name(config['base_name'].name + f'-{qoi_name}.pt')
+        data.write(fn_out)
 
-    train_data = TrainData(
-        inputs=trainset_info.inputs,
-        outputs=y_train,
-        outputs_ref=y_true,
-        observations=observations,
-        nuisances=nuisances,
-        settings=settings
-    )
+    t2 = time.time()
+    logger.info(f"Saving QoI data: Done. ({t2 - t1:.1f} s)", level=1, overwrite=True)
+    logger.info("", level=0)
 
-    fn_base = config['base_name']
-    train_data.write(fn_base)
-    Specs(trainset_info.specs).write(fn_base.with_name(fn_base.name + '-specs.yaml'))
+    # save raw data
     if config.get('write_raw_qoi', False):
-        fn_qoi_train = fn_base.with_name(fn_base.name + '-train.raw.json')
-        fn_qoi_ref = fn_base.with_name(fn_base.name + '-ref.raw.json')
+        logger.info("Saving raw QoI data: in progress...", level=1, overwrite=True)
+        fn_out = fn_base.with_name(config['base_name'].name + '.raw.json')
 
-        qoi_train_dict = [[trj.__dict__ for trj in sample] for sample in qoi_train]
-        qoi_ref_dict = [trj.__dict__ for trj in qoi_ref]
-
-        save_json(qoi_train_dict, fn_qoi_train)
-        save_json(qoi_ref_dict, fn_qoi_ref)
+        qoi_train_raw = [[trj.__dict__ for trj in sample] for sample in qoi_train]
+        qoi_ref_raw = [trj.__dict__ for trj in qoi_ref]
+        raw_data = {
+            "train": qoi_train_raw,
+            "ref": qoi_ref_raw,
+        }
+        save_json(raw_data, fn_out)
+        t3 = time.time()
+        logger.info(
+            f"Saving raw QoI data: Done. ({t3 - t2:.1f} s)", level=1, overwrite=True)

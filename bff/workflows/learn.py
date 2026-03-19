@@ -2,8 +2,8 @@ import sys
 from pathlib import Path
 from typing import Union
 
-from ..bff import train_lgp, learn
-from ..structures import TrainData
+from ..bff import BFFLearner
+from ..structures import QoIDataset, ChargeConstraint
 from ..io.logs import Logger
 from ..io.utils import load_yaml
 
@@ -16,8 +16,7 @@ def load_config(fn_config: PathLike) -> dict:
     config = load_yaml(fn_config)
     base_dir = fn_config.parent
 
-    required_keys = ["fn_specs", 'lgp_train', 'mcmc', 'fn_train']
-    required_train_fn = ["inputs", "outputs", "outputs_ref", "observations"]
+    required_keys = ["fn_specs", "datasets"]
 
     def resolve_and_check(path: PathLike) -> Path:
         """Resolve a path relative to base_dir and ensure it exists."""
@@ -27,31 +26,25 @@ def load_config(fn_config: PathLike) -> dict:
         return path
 
     # --- validate required keys ---
-    for key in required_keys:
-        if key not in config:
-            raise ValueError(f"Missing required key in configuration: '{key}'")
+    missing = [key for key in required_keys if key not in config]
+    if missing:
+        raise ValueError(
+            "Missing required key(s) in configuration: "
+            f"{', '.join(repr(k) for k in missing)}"
+        )
 
-    # --- validate training data entries ---
-    fn_train = config["fn_train"]
-    if not isinstance(fn_train, list):
-        raise ValueError("'fn_train' must be a list of training data file paths.")
+    datasets = config.get("datasets")
+    if not datasets:
+        raise ValueError("Missing 'qoi' in 'lgp_train' configuration.")
 
-    for i, train_files in enumerate(fn_train):
-        if not isinstance(train_files, dict):
+    for qoi_name, qoi_data in datasets.items():
+        try:
+            qoi_data["data"] = resolve_and_check(qoi_data["data"])
+            qoi_data["mean"] = qoi_data["mean"]
+        except KeyError as exc:
             raise ValueError(
-                f"Training entry {i} must be a dictionary of file paths."
-            )
-        for req_fn in required_train_fn:
-            if req_fn not in train_files:
-                raise ValueError(
-                    f"Missing required key '{req_fn}' in training data entry {i}."
-                )
-
-            if req_fn in ["inputs", "settings", "observations"]:
-                train_files[req_fn] = resolve_and_check(train_files[req_fn])
-            else:  # dict of QoI → file path
-                for qoi, fn in train_files[req_fn].items():
-                    train_files[req_fn][qoi] = resolve_and_check(fn)
+                f"Missing {exc.args[0]!r} for QoI '{qoi_name}' in 'lgp_train.qoi'."
+            ) from None
 
     # --- validate fn_specs ---
     config["fn_specs"] = resolve_and_check(config["fn_specs"])
@@ -69,29 +62,20 @@ def load_config(fn_config: PathLike) -> dict:
 def main(fn_config: PathLike) -> None:
 
     config = load_config(fn_config)
-
-    logger = Logger(name='learn', fn_log=config['fn_log'])
+    logger = Logger("BFF", config.get("fn_log"))
 
     # train LGP surrogates for the requested QoIs
-    train_datasets = config['fn_train']
-    train_data = [TrainData(**files) for files in train_datasets]
-    models = train_lgp(*train_data, **config.get('lgp_train', {}), logger=logger)
+    datasets = [
+        QoIDataset.load(qoi["data"])
+        for qoi in config["datasets"].values()
+    ]
+    qoi = config.get("qoi", None)
 
-    # run MCMC sampling to learn the posterior distribution over parameters
-    y_ref = {
-        qoi: dataset.outputs_ref[qoi]
-        for dataset in train_data
-        for qoi in dataset.outputs_ref
-    }
-    mcmc = learn(y_ref=y_ref, models=models, **config.get('mcmc', {}), logger=logger)
+    charge_constraint = ChargeConstraint(config["fn_specs"])
 
-    if 'fn_priors' in config.get('mcmc', {}):
-        fn_priors = config['mcmc']['fn_priors']
-        mcmc.write_priors(fn_priors)
-    if 'fn_tau' in config.get('mcmc', {}):
-        fn_tau = config['mcmc']['fn_tau']
-        mcmc.write_tau(fn_tau)
-
+    learner = BFFLearner(*datasets, logger=logger)
+    learner.train(**config.get("lgp_train", {}))
+    learner.run(qoi=qoi, constraint=charge_constraint, **config.get("mcmc", {}))
 
 if __name__ == "__main__":
     fn_config = sys.argv[1]
