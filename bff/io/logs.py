@@ -4,6 +4,20 @@ import time
 import numpy as np
 from typing import Optional
 
+from ..mcmc.sampler import Sampler
+
+
+def fmt_row(values, columns):
+    return " | ".join(f"{v:^{w}}" for v, (_, w) in zip(values, columns))
+
+
+def fmt_rule(columns):
+    return "-+-".join("-" * w for _, w in columns)
+
+
+def fmt_rule_bold(columns):
+    return "===".join("=" * w for _, w in columns)
+
 
 class Logger:
     """
@@ -141,12 +155,12 @@ def print_progress(
 
 
 def print_progress_mcmc(
-    sampler,
+    sampler: Sampler,
     p0: np.ndarray,
+    *,
     max_iter: int,
-    stride: int = 100,
-    min_chain_length: int = 100,
-    rtol: float = 0.01,
+    restart: bool = True,
+    fn_chain: Optional[str] = None,
     logger: Optional[Logger] = None,
     **kwargs
 ) -> None:
@@ -155,7 +169,7 @@ def print_progress_mcmc(
 
     Parameters
     ----------
-    sampler : object
+    sampler : Sampler
         The MCMC sampler with methods
         `sample`, `get_autocorr_time`, and attribute `iteration`.
     p0 : array-like
@@ -176,73 +190,95 @@ def print_progress_mcmc(
         Additional arguments passed to the sampler's `sample` method.
     """
 
-    t0 = time.time()
-    tau = np.inf
-    generator = sampler.sample(
-        p0, iterations=max_iter, progress=False, store=True, **kwargs
+    columns = [
+        ("it.", 11),
+        ("phase", 10),
+        ("R-hat max", 12),
+        ("ESS min", 10),
+        ("tau CV max", 12),
+        ("it/s", 8),
+    ]
+
+    conv_width = sum(w for _, w in columns[2:5]) + 2 * 3
+
+    header_top = (
+        f"{'it.':^{columns[0][1]}} | "
+        f"{'phase':^{columns[1][1]}} | "
+        f"{'convergence':^{conv_width}} | "
+        f"{'it/s':^{columns[5][1]}}"
     )
-    pad = len(str(max_iter))
-    logger = logger or Logger('mcmc')
 
-    for i, sample in enumerate(generator, start=1):
-        it = sampler.iteration
-        if it >= max_iter:
-            logger.info(f"MCMC did not converge in {it} iterations.", level=2)
-            break
+    header_mid = fmt_row([
+        "",
+        "",
+        "R-hat max",
+        "ESS min",
+        "tau CV max",
+        "",
+    ], columns)
 
-        if i == 1:
-            progress_str = f"it. {0:>{pad}}/{max_iter}".rjust(pad)
-            logger.info(progress_str, level=1, overwrite=True)
+    rhat_tol = kwargs.get("rhat_tol", 1.01)
+    ess_target = kwargs.get("ess_min", 100)
+    tau_cv_tol = kwargs.get("tau_cv_tol", 0.2)
+    header_targets = fmt_row([
+        f"{max_iter:.0f}",
+        "-",
+        f"{rhat_tol:.3g}",
+        f"{ess_target:.0f}",
+        f"{tau_cv_tol:.3g}",
+        "-",
+    ], columns)
 
-        # Check convergence every `stride` steps
-        if it % stride == 0:
-            converged, progress_chain, progress_fluct, tau_new = mcmc_convergence(
-                sampler, it, tau, min_chain_length, rtol
-            )
-            tau = tau_new
-            elapsed_time = time.time() - t0
-            it_per_sec = int((i + 1) / elapsed_time) if elapsed_time > 0 else 0
+    rule = fmt_rule(columns)
+    rule_bold = fmt_rule_bold(columns)
 
-            logger.info(
-                f"it. {it:>{pad}}/{max_iter}".rjust(pad) + " | "
-                f"{it_per_sec} it/s | "
-                "convergence: "
-                f"length = {100 * progress_chain:3.0f}%, "
-                f"fluctuations = {100 * progress_fluct:3.0f}%",
-                level=1,
-                overwrite=True
-            )
+    # Print persistent header once
+    if logger is not None:
+        logger.info(header_top, level=0)
+        logger.info(rule, level=0)
+        logger.info(header_mid, level=0)
+        logger.info(header_targets, level=0)
+        logger.info(rule_bold, level=0)
+    last_line_len = len(rule)
 
-            if converged:
-                t1 = time.time()
-                logger.info(
-                    f"MCMC converged in {it} it. & {format_time(t1 - t0)}", level=1
-                )
-                break
+    for state in sampler.run(
+        p0,
+        n_steps=max_iter,
+        restart=restart,
+        fn_chain=fn_chain,
+        **kwargs,
+    ):
+        if state.phase == "sampling" and state.convergence is not None:
+            row = [
+                f"{state.step}",
+                state.phase,
+                f"{state.convergence.max_rhat:.6f}",
+                f"{state.convergence.min_ess:.0f}",
+                f"{state.convergence.tau_cv.max().item():.6f}",
+                f"{state.it_per_sec:.0f}",
+            ]
+        else:
+            row = [
+                f"{state.step}",
+                state.phase,
+                "-",
+                "-",
+                "-",
+                f"{state.it_per_sec:.0f}" if state.it_per_sec is not None else "-",
+            ]
 
+        line = fmt_row(row, columns).ljust(last_line_len)
 
-def mcmc_convergence(
-        sampler, it: int, tau: np.ndarray, min_chain_length: int, rtol: float
-) -> tuple[bool, float, float, np.ndarray]:
-    """Check convergence of MCMC sampling based on autocorrelation times."""
+        if logger is not None:
+            logger.info(line, level=0, overwrite=True)
 
-    tau_new = sampler.get_autocorr_time(tol=0)
-    converged = False
-
-    # Calculate convergence criteria
-    crit_chain = tau_new * min_chain_length
-    crit_fluct = (
-        np.abs(tau - tau_new) / tau_new
-        if np.any(tau_new > 0)
-        else np.inf
-    )
-    progress_chain = np.clip(it / crit_chain.max(), 0, 1)
-    progress_fluct = np.clip(rtol / np.max(crit_fluct), 0, 1)
-
-    if np.all(crit_chain < it) and np.all(crit_fluct < rtol):
-        converged = True
-
-    return converged, progress_chain, progress_fluct, tau_new
+    logger.info(line, level=0)
+    logger.info("", level=0)
+    if sampler.converged:
+        logger.info("MCMC sampling converged successfully.", level=0)
+    else:
+        logger.info(
+            "MCMC sampling did not converge within the maximum iterations.", level=0)
 
 
 def format_time(seconds: float) -> str:

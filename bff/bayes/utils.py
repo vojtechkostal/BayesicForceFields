@@ -80,13 +80,14 @@ def initialize_walkers(
 
 def check_tensor(
     x: Union[torch.Tensor, float, int, list, tuple],
-    device: str
+    device: str,
+    dtype: torch.dtype = torch.float32
 ) -> torch.Tensor:
     """Convert input to a torch tensor on the specified device."""
     if not isinstance(x, torch.Tensor):
-        return torch.tensor(x, device=device, dtype=torch.float32)
+        return torch.tensor(x, device=device, dtype=dtype)
     else:
-        return x.to(device, dtype=torch.float32)
+        return x.to(device, dtype=dtype)
 
 
 def check_device(device: str) -> None:
