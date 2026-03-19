@@ -46,7 +46,7 @@ class BFFLearner:
         device: str = "cuda",
         **kwargs,
     ) -> None:
-        
+
         y_means = y_means or {}
 
         self.logger.info("=== Optimizing LGP surrogates ===", level=0)
@@ -60,7 +60,7 @@ class BFFLearner:
                     f"Invalid dataset type: {type(dataset)}. "
                     "Expected QoIDataset or path to a QoIDataset file."
                 )
-            
+
             self.logger.info(f"QoI: {qoi}", level=1)
 
             fn_model = Path(f"{qoi}.lgp").resolve()
@@ -68,7 +68,8 @@ class BFFLearner:
                 model = LGPCommittee.load(fn_model)
                 self.models[qoi] = model
 
-                self.logger.info(f"Model already trained. | MAPE = {model.error:.2f}", level=2)
+                self.logger.info(
+                    f"Model already trained. | MAPE = {model.error:.2f}", level=2)
                 self.logger.info("", level=0)
                 continue
 
@@ -109,7 +110,7 @@ class BFFLearner:
         device: str = "cuda",
         **kwargs,
     ) -> MCMCResults:
-        
+
         qoi = set(qoi) if qoi else set(self.models.keys())
         missing = qoi - self.models.keys()
         if missing:
@@ -121,26 +122,35 @@ class BFFLearner:
         self.logger.info("=== Parameter Learning ===", level=0)
         self.logger.info("", level=0)
 
-        y_ref = {dataset.name: dataset.outputs_ref for dataset in self.datasets if dataset.name in qoi}
-        models = {q: model for q, model in self.models.items() if qoi in qoi}
+        y_ref = {
+            dataset.name: dataset.outputs_ref
+            for dataset in self.datasets
+            if dataset.name in qoi
+        }
 
         p0, priors, sampler = initialize_mcmc_sampler(
-            surrogate=models,
+            surrogate=self.models,
             y_true=y_ref,
             constraint=constraint,
             n_walkers=n_walkers,
             priors_disttype=priors_disttype,
-            fn_backend=fn_chain,
-            restart=restart,
             device=device,
         )
 
-        print_progress_mcmc(sampler, p0, max_iter, logger=self.logger, **kwargs)
+        print_progress_mcmc(
+            sampler,
+            p0,
+            max_iter=max_iter,
+            logger=self.logger,
+            restart=restart,
+            fn_chain=fn_chain,
+            **kwargs
+        )
 
-        tau = sampler.get_autocorr_time(tol=0)
-        mcmc = MCMCResults(chain_src=sampler, priors_src=priors, tau_src=tau)
+        # tau = sampler.get_autocorr_time(tol=0)
+        # mcmc = MCMCResults(chain_src=sampler, priors_src=priors, tau_src=tau)
 
-        if fn_priors:
-            mcmc.write_priors(fn_priors)
-        if fn_tau:
-            mcmc.write_tau(fn_tau)
+        # if fn_priors:
+        #     mcmc.write_priors(fn_priors)
+        # if fn_tau:
+        #     mcmc.write_tau(fn_tau)
