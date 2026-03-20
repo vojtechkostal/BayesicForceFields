@@ -2,7 +2,7 @@ import torch
 import time
 
 from pathlib import Path
-from typing import Optional, Callable, Tuple
+from typing import Any, Optional, Callable, Tuple
 from dataclasses import dataclass
 
 from .proposal import Proposal
@@ -15,14 +15,150 @@ from .convergence import (
 
 
 @dataclass
-class StateInfo:
+class Checkpoint:
     step: int
     total_steps: int
     phase: str
+    warmup: int
+    thin: int
+    progress_stride: int
+    p: Optional[torch.Tensor] = None
+    logp: Optional[torch.Tensor] = None
+    accepted: Optional[torch.Tensor] = None
+    posterior: Optional[torch.Tensor] = None
     acceptance_rate: Optional[float] = None
     scale: Optional[float] = None
     convergence: Optional[ConvergenceInfo] = None
     it_per_sec: Optional[float] = None
+    rng_state: Optional[torch.Tensor] = None
+    proposal_state: Optional[dict[str, Any]] = None
+    converged: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "p": self.p,
+            "logp": self.logp,
+            "accepted": self.accepted,
+            "posterior": self.posterior,
+            "step": self.step,
+            "total_steps": self.total_steps,
+            "warmup": self.warmup,
+            "thin": self.thin,
+            "progress_stride": self.progress_stride,
+            "rng_state": self.rng_state,
+            "proposal_state": self.proposal_state,
+            "converged": self.converged,
+            "phase": self.phase,
+            "acceptance_rate": self.acceptance_rate,
+            "scale": self.scale,
+            "it_per_sec": self.it_per_sec,
+            "convergence": self._serialize_convergence(self.convergence),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Checkpoint":
+        posterior = data.get("posterior", data.get("chain"))
+        if posterior is None:
+            raise KeyError("Checkpoint is missing 'posterior'.")
+        convergence = cls._deserialize_convergence(data.get("convergence"))
+        return cls(
+            p=data["p"],
+            logp=data["logp"],
+            accepted=data["accepted"],
+            posterior=posterior,
+            step=int(data["step"]),
+            total_steps=int(data["total_steps"]),
+            phase=data.get("phase", "sampling"),
+            acceptance_rate=data.get("acceptance_rate"),
+            scale=data.get("scale"),
+            convergence=convergence,
+            it_per_sec=data.get("it_per_sec"),
+            warmup=int(data["warmup"]),
+            thin=int(data["thin"]),
+            progress_stride=int(data["progress_stride"]),
+            rng_state=data["rng_state"],
+            proposal_state=data["proposal_state"],
+            converged=bool(data.get("converged", False)),
+        )
+
+    @classmethod
+    def load(cls, fn: Path | str) -> "Checkpoint":
+        return cls.from_dict(torch.load(fn, weights_only=False))
+
+    def write(self, fn: Path | str) -> None:
+        torch.save(self.to_dict(), fn)
+
+    def restore(
+        self,
+        sampler: "Sampler",
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, int]:
+        if self.p is None or self.logp is None or self.accepted is None:
+            raise ValueError("Checkpoint is missing sampler state.")
+        if self.posterior is None:
+            raise ValueError("Checkpoint is missing posterior samples.")
+        if self.rng_state is None or self.proposal_state is None:
+            raise ValueError("Checkpoint is missing restart metadata.")
+
+        p = sampler._to_tensor(self.p)
+        logp = sampler._to_tensor(self.logp)
+        accepted = sampler._to_tensor(self.accepted).to(torch.int64)
+
+        posterior = sampler._to_tensor(self.posterior)
+        if posterior.numel():
+            sampler._chain = [
+                posterior[i].detach().clone() for i in range(posterior.shape[0])
+            ]
+        else:
+            sampler._chain = []
+
+        sampler.rng.set_state(self.rng_state)
+        sampler.proposal.load_state_dict(self.proposal_state)
+        sampler.converged = self.converged
+
+        return p, logp, accepted, self.step
+
+    @property
+    def tau(self) -> torch.Tensor | None:
+        if self.convergence is None or self.convergence.tau is None:
+            return None
+        tau = self.convergence.tau
+        return tau.mean(dim=0) if tau.ndim > 1 else tau
+
+    @staticmethod
+    def _serialize_convergence(
+        convergence: Optional[ConvergenceInfo],
+    ) -> dict[str, torch.Tensor | None] | None:
+        if convergence is None:
+            return None
+        return {
+            "rhat": convergence.rhat.cpu() if convergence.rhat is not None else None,
+            "tau": convergence.tau.cpu() if convergence.tau is not None else None,
+            "ess": convergence.ess.cpu() if convergence.ess is not None else None,
+            "mean_rel_change": (
+                convergence.mean_rel_change.cpu()
+                if convergence.mean_rel_change is not None
+                else None
+            ),
+            "std_rel_change": (
+                convergence.std_rel_change.cpu()
+                if convergence.std_rel_change is not None
+                else None
+            ),
+        }
+
+    @staticmethod
+    def _deserialize_convergence(
+        data: dict[str, torch.Tensor | None] | None,
+    ) -> Optional[ConvergenceInfo]:
+        if data is None:
+            return None
+        return ConvergenceInfo(
+            rhat=data.get("rhat"),
+            tau=data.get("tau"),
+            ess=data.get("ess"),
+            mean_rel_change=data.get("mean_rel_change"),
+            std_rel_change=data.get("std_rel_change"),
+        )
 
 
 class Sampler:
@@ -69,6 +205,10 @@ class Sampler:
 
         self._chain: list[torch.Tensor] = []
         self.converged = False
+        self._warmup = 0
+        self._thin = 1
+        self._progress_stride = 1
+        self._total_steps = 0
 
     @property
     def chain(self) -> torch.Tensor:
@@ -160,125 +300,17 @@ class Sampler:
             std_rel_change=std_rel_change,
         )
 
-    def _write_checkpoint(
-        self,
-        fn: Path | None,
-        *,
-        p: torch.Tensor,
-        logp: torch.Tensor,
-        accepted: torch.Tensor,
-        step: int,
-        total_steps: int,
-        warmup: int,
-        thin: int,
-        progress_stride: int,
-        state,
-    ) -> None:
-        """Write restartable checkpoint."""
-        if fn is None:
-            return
-
-        checkpoint_dict = {
-            "p": p.detach().cpu(),
-            "logp": logp.detach().cpu(),
-            "accepted": accepted.detach().cpu(),
-            "chain": self.chain.detach().cpu(),
-            "step": step,
-            "total_steps": total_steps,
-            "warmup": warmup,
-            "thin": thin,
-            "progress_stride": progress_stride,
-            "rng_state": self.rng.get_state(),
-            "proposal_state": self.proposal.state_dict(),
-            "converged": self.converged,
-            "state": {
-                "step": state.step,
-                "total_steps": state.total_steps,
-                "phase": state.phase,
-                "acceptance_rate": state.acceptance_rate,
-                "scale": state.scale,
-                "it_per_sec": state.it_per_sec,
-                "convergence": (
-                    {
-                        "rhat": (
-                            state.convergence.rhat.cpu()
-                            if state.convergence
-                            and state.convergence.rhat is not None
-                            else None
-                        ),
-                        "tau": (
-                            state.convergence.tau.cpu()
-                            if state.convergence
-                            and state.convergence.tau is not None
-                            else None
-                        ),
-                        "ess": (
-                            state.convergence.ess.cpu()
-                            if state.convergence
-                            and state.convergence.ess is not None
-                            else None
-                        ),
-                        "mean_rel_change": (
-                            state.convergence.mean_rel_change.cpu()
-                            if state.convergence
-                            and state.convergence.mean_rel_change is not None
-                            else None
-                        ),
-                        "std_rel_change": (
-                            state.convergence.std_rel_change.cpu()
-                            if state.convergence
-                            and state.convergence.std_rel_change is not None
-                            else None
-                        ),
-                    }
-                    if state.convergence
-                    else None
-                ),
-            }
-        }
-
-        torch.save(checkpoint_dict, fn)
-
-    def _load_checkpoint(
-        self,
-        fn: Path,
-        *,
-        warmup: int,
-        thin: int,
-        total_steps: int,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, int]:
-        ckpt = torch.load(fn, weights_only=False)
-
-        if ckpt["warmup"] != warmup:
+    def _validate_checkpoint(self, checkpoint: Checkpoint) -> None:
+        if checkpoint.warmup != self._warmup:
             raise ValueError(
-                f"Checkpoint warmup={ckpt['warmup']} "
-                f"does not match requested warmup={warmup}.")
-        if ckpt["thin"] != thin:
+                f"Checkpoint warmup={checkpoint.warmup} "
+                f"does not match requested warmup={self._warmup}."
+            )
+        if checkpoint.thin != self._thin:
             raise ValueError(
-                f"Checkpoint thin={ckpt['thin']} "
-                f"does not match requested thin={thin}.")
-
-        p = self._to_tensor(ckpt["p"])
-        logp = self._to_tensor(ckpt["logp"])
-        accepted = self._to_tensor(ckpt["accepted"]).to(torch.int64)
-
-        chain = self._to_tensor(ckpt["chain"])
-        if chain.numel():
-            self._chain = [chain[i].detach().clone() for i in range(chain.shape[0])]
-        else:
-            self._chain = []
-
-        self.rng.set_state(ckpt["rng_state"])
-        self.proposal.load_state_dict(ckpt["proposal_state"])
-        self.converged = bool(ckpt.get("converged", False))
-
-        start_step = int(ckpt["step"])
-        if start_step >= total_steps:
-            raise ValueError(
-                f"Checkpoint step={start_step} "
-                f"already reached total_steps={total_steps}.")
-
-        return p, logp, accepted, start_step
+                f"Checkpoint thin={checkpoint.thin} "
+                f"does not match requested thin={self._thin}."
+            )
 
     def _should_stop(
         self,
@@ -300,6 +332,9 @@ class Sampler:
 
         return rhat_ok and ess_ok and tau_cv_ok
 
+    def write_posterior(self, fn: Path | str) -> None:
+        torch.save({"posterior": self.chain.detach().cpu()}, fn)
+
     def run(
         self,
         p0: torch.Tensor,
@@ -307,7 +342,7 @@ class Sampler:
         warmup: int = 500,
         thin: int = 1,
         progress_stride: int = 100,
-        fn_chain: Optional[str | Path] = None,
+        fn_checkpoint: Optional[str | Path] = None,
         restart: bool = False,
         rhat_tol: float = 1.01,
         ess_min: int = 100,
@@ -345,27 +380,26 @@ class Sampler:
 
         Yields
         ------
-        StateInfo
-            Progrss snapshot for monitoring
+        Checkpoint
+            Progress snapshot for monitoring and restart.
         """
 
-        fn_chain = Path(fn_chain) if fn_chain is not None else None
+        fn_checkpoint = Path(fn_checkpoint) if fn_checkpoint is not None else None
         self.converged = False
-
-        total_steps = warmup + n_steps
+        self._warmup = warmup
+        self._thin = thin
+        self._progress_stride = progress_stride
+        self._total_steps = warmup + n_steps
 
         if restart:
-            if fn_chain is None or not fn_chain.exists():
+            if fn_checkpoint is None or not fn_checkpoint.exists():
                 raise ValueError("restart=True requires an existing checkpoint file.")
             p_probe = self._validate_inputs(p0, n_steps, warmup, thin, progress_stride)
             _, n_dim = p_probe.shape
             self.proposal.initialize(n_dim)
-            p, logp, accepted, start_step = self._load_checkpoint(
-                fn_chain,
-                warmup=warmup,
-                thin=thin,
-                total_steps=total_steps,
-            )
+            checkpoint = Checkpoint.load(fn_checkpoint)
+            self._validate_checkpoint(checkpoint)
+            p, logp, accepted, start_step = checkpoint.restore(self)
         else:
             p = self._validate_inputs(p0, n_steps, warmup, thin, progress_stride)
             n_walkers, n_dim = p.shape
@@ -378,7 +412,7 @@ class Sampler:
         n_walkers, n_dim = p.shape
         last_report_time = time.time()
 
-        for t in range(start_step, total_steps):
+        for t in range(start_step, self._total_steps):
 
             # propose and evaluate
             proposals = self._to_tensor(self.proposal.propose(p, self.rng))
@@ -398,7 +432,10 @@ class Sampler:
                 if (t - warmup) % thin == 0:
                     self._chain.append(p.detach().clone())
 
-            report_progress = ((t + 1) % progress_stride == 0) or (t == total_steps - 1)
+            report_progress = (
+                ((t + 1) % self._progress_stride == 0)
+                or (t == self._total_steps - 1)
+            )
             if not report_progress:
                 continue
 
@@ -406,7 +443,7 @@ class Sampler:
             now = time.time()
             elapsed = max(now - last_report_time, 1e-12)
             steps_since_start = t + 1 - start_step if t + 1 > start_step else 1
-            step_count = min(progress_stride, steps_since_start)
+            step_count = min(self._progress_stride, steps_since_start)
             it_per_sec = step_count / elapsed
             last_report_time = now
 
@@ -420,38 +457,41 @@ class Sampler:
                 total_accepted = accepted.sum().item()
                 acceptance_rate = total_accepted / (n_sampling_steps_done * n_walkers)
 
-            # report progress
-            state = StateInfo(
-                step=t + 1,
-                total_steps=total_steps,
-                phase=phase,
-                acceptance_rate=acceptance_rate,
-                scale=self.proposal.info().get("scale"),
-                convergence=convergence,
-                it_per_sec=it_per_sec,
-            )
-
-            self._write_checkpoint(
-                fn_chain,
-                p=p,
-                logp=logp,
-                accepted=accepted,
-                step=t + 1,
-                total_steps=total_steps,
-                warmup=warmup,
-                thin=thin,
-                state=state,
-                progress_stride=progress_stride,
-            )
-
-            yield state
-
-            # Early stopping based on convergence diagnostics
-            if self._should_stop(
+            should_stop = self._should_stop(
                 convergence,
                 rhat_tol=rhat_tol,
                 ess_min=ess_min,
                 tau_cv_max=tau_cv_max,
-            ):
+            )
+            if should_stop:
                 self.converged = True
+
+            # report progress
+            checkpoint = Checkpoint(
+                step=t + 1,
+                total_steps=self._total_steps,
+                phase=phase,
+                warmup=self._warmup,
+                thin=self._thin,
+                progress_stride=self._progress_stride,
+                p=p.detach().cpu(),
+                logp=logp.detach().cpu(),
+                accepted=accepted.detach().cpu(),
+                posterior=self.chain.detach().cpu(),
+                acceptance_rate=acceptance_rate,
+                scale=self.proposal.info().get("scale"),
+                convergence=convergence,
+                it_per_sec=it_per_sec,
+                rng_state=self.rng.get_state(),
+                proposal_state=self.proposal.state_dict(),
+                converged=self.converged,
+            )
+
+            if fn_checkpoint is not None:
+                checkpoint.write(fn_checkpoint)
+
+            yield checkpoint
+
+            # Early stopping based on convergence diagnostics
+            if should_stop:
                 break

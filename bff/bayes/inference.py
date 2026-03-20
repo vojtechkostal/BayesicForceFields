@@ -1,4 +1,3 @@
-# import emcee
 import torch
 import numpy as np
 from functools import partial
@@ -6,7 +5,7 @@ from pathlib import Path
 
 from .gaussian_process import LocalGaussianProcess, LGPCommittee
 from .likelihoods import loo_log_likelihood, gaussian_log_likelihood
-from .priors import define_param_priors, define_hyper_priors
+from .priors import Prior, Priors
 from .posterior import log_posterior
 from ..io.logs import Logger
 from .utils import (
@@ -33,7 +32,7 @@ def initialize_mcmc_sampler(
     n_walkers: Optional[int] = None,
     priors_disttype: str = 'normal',
     device: str = 'cuda:0'
-) -> tuple[np.ndarray, List[torch.distributions.Distribution], Sampler]:
+) -> tuple[np.ndarray, Priors, Sampler]:
     """
     Initialize the MCMC sampler for parameter optimization.
 
@@ -59,8 +58,8 @@ def initialize_mcmc_sampler(
 
     Returns
     -------
-    tuple[np.ndarray, list, emcee.EnsembleSampler]
-        Initial parameter values (p0), list of priors, and the initialized sampler.
+    tuple[np.ndarray, Priors, Sampler]
+        Initial walker positions, priors, and the initialized sampler.
     """
 
     # Determine parameter bounds
@@ -72,14 +71,24 @@ def initialize_mcmc_sampler(
         bounds = constraint.explicit_bounds
 
     # priors
-    priors = define_param_priors(bounds, priors_disttype, len(surrogate))
+    param_names = None
+    if constraint is not None and hasattr(constraint, "bounds") and hasattr(constraint, "implicit_param"):
+        param_names = constraint.bounds.without(constraint.implicit_param).names.tolist()
+
+    priors = Priors.from_bounds(
+        bounds=bounds,
+        dist_type=priors_disttype,
+        n_nuisance=len(surrogate),
+        names=param_names,
+        nuisance_names=[f"log_sigma_{qoi}" for qoi in surrogate],
+    )
 
     # Initialize backend
     n_dim = len(priors)
     n_walkers = 5 * n_dim if n_walkers is None else n_walkers
-    p0 = initialize_walkers(priors, n_walkers, constraint)
+    p0 = initialize_walkers(priors.distributions, n_walkers, constraint)
     cov = check_tensor(
-        torch.diag(torch.tensor([p.scale for p in priors])**2),
+        torch.diag(torch.tensor(priors.scales, dtype=torch.float32) ** 2),
         device=device
     )
     proposal = AdaptiveGaussianProposal(cov, device=device)
@@ -177,8 +186,15 @@ def lgp_hyperopt(
     y_hyper = check_tensor(y_train[:n_hyper], device='cpu')
     y_mean = check_tensor(y_mean, device='cpu')
 
-    priors = define_hyper_priors(X.shape[1])
-    p0 = torch.tensor([p.mean for p in priors])
+    n_params = X.shape[1]
+    priors = Priors(
+        [Prior("normal", -2.0, 2.0, name=f"length_{i}") for i in range(n_params)]
+        + [
+            Prior("normal", -2.0, 2.0, name="width"),
+            Prior("normal", -2.0, 3.0, name="noise"),
+        ]
+    )
+    p0 = torch.tensor(priors.means, dtype=torch.float32)
 
     log_likelihood = partial(
         loo_log_likelihood,

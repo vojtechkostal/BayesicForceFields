@@ -7,18 +7,6 @@ from typing import Optional
 from ..mcmc.sampler import Sampler
 
 
-def fmt_row(values, columns):
-    return " | ".join(f"{v:^{w}}" for v, (_, w) in zip(values, columns))
-
-
-def fmt_rule(columns):
-    return "-+-".join("-" * w for _, w in columns)
-
-
-def fmt_rule_bold(columns):
-    return "===".join("=" * w for _, w in columns)
-
-
 class Logger:
     """
     A logging utility that supports logging to a file
@@ -160,7 +148,7 @@ def print_progress_mcmc(
     *,
     max_iter: int,
     restart: bool = True,
-    fn_chain: Optional[str] = None,
+    fn_checkpoint: Optional[str] = None,
     logger: Optional[Logger] = None,
     **kwargs
 ) -> None:
@@ -173,7 +161,7 @@ def print_progress_mcmc(
         The MCMC sampler with methods
         `sample`, `get_autocorr_time`, and attribute `iteration`.
     p0 : array-like
-        Initial parameter vector for the MCMC chain.
+        Initial parameter vector for the MCMC posterior sampling.
     max_iter : int
         Maximum number of iterations.
     stride : int, default=100
@@ -190,95 +178,67 @@ def print_progress_mcmc(
         Additional arguments passed to the sampler's `sample` method.
     """
 
-    columns = [
-        ("it.", 11),
-        ("phase", 10),
-        ("R-hat max", 12),
-        ("ESS min", 10),
-        ("tau CV max", 12),
-        ("it/s", 8),
-    ]
-
-    conv_width = sum(w for _, w in columns[2:5]) + 2 * 3
-
-    header_top = (
-        f"{'it.':^{columns[0][1]}} | "
-        f"{'phase':^{columns[1][1]}} | "
-        f"{'convergence':^{conv_width}} | "
-        f"{'it/s':^{columns[5][1]}}"
-    )
-
-    header_mid = fmt_row([
-        "",
-        "",
-        "R-hat max",
-        "ESS min",
-        "tau CV max",
-        "",
-    ], columns)
+    logger = logger or Logger("mcmc-progress")
 
     rhat_tol = kwargs.get("rhat_tol", 1.01)
     ess_target = kwargs.get("ess_min", 100)
     tau_cv_tol = kwargs.get("tau_cv_tol", 0.2)
-    header_targets = fmt_row([
-        f"{max_iter:.0f}",
-        "-",
-        f"{rhat_tol:.3g}",
-        f"{ess_target:.0f}",
-        f"{tau_cv_tol:.3g}",
-        "-",
-    ], columns)
 
-    rule = fmt_rule(columns)
-    rule_bold = fmt_rule_bold(columns)
+    logger.info("Posterior sampling: in progress...", level=1, overwrite=True)
 
-    # Print persistent header once
-    if logger is not None:
-        logger.info(header_top, level=0)
-        logger.info(rule, level=0)
-        logger.info(header_mid, level=0)
-        logger.info(header_targets, level=0)
-        logger.info(rule_bold, level=0)
-    last_line_len = len(rule)
+    if fn_checkpoint is not None:
+        logger.info(f"Checkpoint: {fn_checkpoint}", level=2)
 
+    line = ""
     for state in sampler.run(
         p0,
         n_steps=max_iter,
         restart=restart,
-        fn_chain=fn_chain,
+        fn_checkpoint=fn_checkpoint,
         **kwargs,
     ):
-        if state.phase == "sampling" and state.convergence is not None:
-            row = [
-                f"{state.step}",
-                state.phase,
-                f"{state.convergence.max_rhat:.6f}",
-                f"{state.convergence.min_ess:.0f}",
-                f"{state.convergence.tau_cv.max().item():.6f}",
-                f"{state.it_per_sec:.0f}",
-            ]
+        total_steps = state.total_steps
+        sampling_steps = total_steps - state.warmup
+        if state.phase == "warmup":
+            phase_progress = f"warmup: {state.step}/{state.warmup}"
         else:
-            row = [
-                f"{state.step}",
-                state.phase,
-                "-",
-                "-",
-                "-",
-                f"{state.it_per_sec:.0f}" if state.it_per_sec is not None else "-",
-            ]
+            sampling_step = max(state.step - state.warmup, 0)
+            phase_progress = f"sampling: {sampling_step}/{sampling_steps}"
 
-        line = fmt_row(row, columns).ljust(last_line_len)
+        if state.phase == "sampling" and state.convergence is not None:
+            line = (
+                f"Posterior sampling: it. {state.step}/{total_steps} | "
+                f"{phase_progress} | "
+                f"R-hat max: {state.convergence.max_rhat:.4f}/{rhat_tol:.4f} | "
+                f"ESS min: {state.convergence.min_ess:.0f}/{ess_target:.0f} | "
+                f"tau CV max: "
+                f"{state.convergence.tau_cv.max().item():.4f}/{tau_cv_tol:.4f}"
+            )
+            if state.acceptance_rate is not None:
+                line += f" | acc: {state.acceptance_rate:.3f}"
+            if state.it_per_sec is not None:
+                line += f" | {state.it_per_sec:.0f} it/s"
+        else:
+            line = (
+                f"Posterior sampling: it. {state.step}/{total_steps} | "
+                f"{phase_progress}"
+            )
+            if state.acceptance_rate is not None:
+                line += f" | acc: {state.acceptance_rate:.3f}"
+            if state.it_per_sec is not None:
+                line += f" | {state.it_per_sec:.0f} it/s"
+        logger.info(line, level=1, overwrite=True)
 
-        if logger is not None:
-            logger.info(line, level=0, overwrite=True)
-
-    logger.info(line, level=0)
+    if line:
+        logger.info(line, level=1)
     logger.info("", level=0)
     if sampler.converged:
-        logger.info("MCMC sampling converged successfully.", level=0)
+        logger.info("Posterior sampling: Done.", level=1)
     else:
         logger.info(
-            "MCMC sampling did not converge within the maximum iterations.", level=0)
+            "Posterior sampling: Failed to converge within the maximum iterations.",
+            level=1,
+        )
 
 
 def format_time(seconds: float) -> str:

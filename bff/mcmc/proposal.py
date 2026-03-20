@@ -77,7 +77,7 @@ class AdaptiveGaussianProposal(Proposal):
         proposal_cov: Optional[torch.Tensor] = None,
         adapt: bool = True,
         adapt_start: int = 100,
-        adapt_interval: int = 100,
+        adapt_interval: int = 10,
         target_acceptance: float = 0.234,
         device: str | torch.device = "cpu",
         dtype: torch.dtype = torch.float32,

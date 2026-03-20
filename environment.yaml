@@ -2,13 +2,13 @@ name: bff
 channels:
   - conda-forge
 dependencies:
-  - python
+  - python>=3.9
   - ipython
-  - ipywidgets
   - ipykernel
+  - ipywidgets
   - numpy
   - scipy
+  - matplotlib
   - pyyaml
   - mdanalysis
-  - emcee
   - typer

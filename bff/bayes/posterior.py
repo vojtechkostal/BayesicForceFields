@@ -2,13 +2,13 @@ import torch
 import numpy as np
 
 from typing import List, Callable
-from .priors import log_prior
+from .priors import Priors, log_prior
 from .utils import check_tensor
 
 
 def log_posterior(
     theta: torch.Tensor,
-    priors: List[torch.distributions.Distribution],
+    priors: Priors | List[torch.distributions.Distribution],
     log_likelihood_fn: Callable[[torch.Tensor], torch.Tensor],
     device: str,
     numpy_output: bool = True
