@@ -9,18 +9,17 @@ from typing import (
 
 import numpy as np
 import torch
-from emcee.ensemble import EnsembleSampler
-from torch.distributions import Normal, Uniform
 from scipy.stats.qmc import LatinHypercube
 from scipy.stats import gaussian_kde
 
-from .bayes.utils import initialize_backend
+from .bayes.priors import Priors
+from .mcmc.sampler import Sampler
+from .mcmc.convergence import integrated_autocorr_time
 from .io.utils import load_yaml, save_yaml, extract_train_dir
 
 
 PathLike = Union[str, Path]
 ArrayLike = Union[np.ndarray, torch.Tensor]
-PriorSpec = tuple[str, tuple[float, float]]
 
 
 def lookup(filename, directories: Sequence[PathLike]) -> Path:
@@ -406,277 +405,190 @@ class ChargeConstraint(Specs):
         return in_explicit_bounds & in_implicit_bounds
 
 
-class MCMCResults:
-    """Container for MCMC results, including the chain,
-    priors, and autocorrelation times.
-
-    Parameters
-    ----------
-    chain_src : object or PathLike, optional
-        An object representing the MCMC chain (e.g., an emcee backend)
-        or a path to a file containing the chain data. Defaults to None.
-    priors_src : list or PathLike, optional
-        A list of prior specifications
-        (e.g., tuples of distribution type and parameters)
-        or a path to a YAML file containing the priors. Defaults to None.
-    tau_src : array-like or PathLike, optional
-        An array of autocorrelation times or a path to a file containing the tau data.
-        Defaults to None.
-
-    Attributes
-    ----------
-    chain : EnsembleSampler or None
-        The loaded MCMC chain object.
-    priors_data : list
-        The normalized priors data loaded from the source.
-    priors : list
-        The list of torch.distributions objects representing the priors.
-    tau : np.ndarray
-        The array of autocorrelation times for each parameter.
-
-    Methods
-    -------
-    get_chain(discard: int, thin: int) -> np.ndarray
-        Retrieve the MCMC samples from the chain, applying burn-in and thinning.
-    write_priors(fn_out: PathLike) -> None
-        Write the priors data to a YAML file.
-    write_tau(fn_out: PathLike) -> None
-        Write the autocorrelation times to a .npy file.
-    """
-
-    def __init__(
-        self,
-        chain_src: Optional[Union[PathLike, EnsembleSampler]] = None,
-        priors_src: Optional[Union[PathLike, list]] = None,
-        tau_src: Optional[Union[PathLike, list, float, int, np.ndarray]] = None,
-    ) -> None:
-        self.chain = self._load_chain(chain_src)
-        if priors_src is not None:
-            self.priors_data = self._normalize_priors(priors_src)
-        else:
-            self.priors_data = []
-        self.priors = self._build_priors(self.priors_data) if self.priors_data else None
-        self.tau = self._load_tau(tau_src)
-        self._chain_samples = None
-
-    @staticmethod
-    def _load_chain(
-        chain_src: Optional[Union[PathLike, EnsembleSampler]]
-    ) -> EnsembleSampler | None:
-        """Load the MCMC chain from a backend file
-        or return the provided chain object."""
-        if chain_src is None:
-            return None
-        if isinstance(chain_src, (str, Path)):
-            return initialize_backend(chain_src)
-        return chain_src
-
-    def _normalize_priors(self, priors_src: Union[PathLike, list]) -> list[PriorSpec]:
-        """Normalize the priors data from the source into a consistent format."""
-        if isinstance(priors_src, (str, Path)):
-            raw = load_yaml(priors_src)
-        else:
-            raw = priors_src
-        normalized: list[PriorSpec] = []
-
-        for item in raw:
-            if isinstance(item, (tuple, list)):
-                name, (a, b) = item
-                normalized.append((str(name).lower(), (float(a), float(b))))
-            elif isinstance(item, torch.distributions.Distribution):
-                name = type(item).__name__.lower()
-                if name == "normal":
-                    normalized.append((name, (float(item.mean), float(item.scale))))
-                elif name == "uniform":
-                    normalized.append((name, (float(item.low), float(item.high))))
-                else:
-                    raise ValueError(f"Unsupported distribution type: {name}")
-            else:
-                raise TypeError(f"Unsupported prior entry type: {type(item)}")
-        return normalized
-
-    def _build_priors(self, priors_data: list[PriorSpec]) -> list:
-        """Build a list of torch.distributions objects
-        based on the normalized priors data."""
-        priors = []
-        for name, (a, b) in priors_data:
-            if name == "normal":
-                priors.append(Normal(loc=a, scale=b, validate_args=False))
-            elif name == "uniform":
-                priors.append(Uniform(low=a, high=b, validate_args=False))
-            else:
-                raise ValueError(f"Unsupported distribution type: {name}")
-        return priors
-
-    def _load_tau(
-        self, tau_src: Optional[Union[PathLike, list, float, int, np.ndarray]]
-    ) -> np.ndarray:
-        """Load the autocorrelation times from a file or convert the provided data"""
-        if isinstance(tau_src, (str, Path)):
-            tau = np.load(str(tau_src))
-        elif isinstance(tau_src, (list, float, int, np.ndarray)):
-            tau = np.asarray(tau_src, dtype=float)
-        elif self.chain is not None:
-            try:
-                tau = self.chain.get_autocorr_time(tol=0)
-            except AttributeError:
-                tau = np.ones(self.chain.get_chain().shape[1], dtype=float)
-        else:
-            tau = np.array([1.0], dtype=float)
-        return np.atleast_1d(tau)
-
-    def get_chain(
-        self,
-        discard: Optional[int] = None,
-        thin: Optional[int] = None
-    ) -> np.ndarray:
-        if self.chain is None:
-            raise ValueError("No chain backend available.")
-        discard = discard if discard is not None else int(2 * np.max(self.tau))
-        thin = thin if thin is not None else max(1, int(0.5 * np.min(self.tau)))
-        samples = self.chain.get_chain(discard=discard, flat=True, thin=thin)
-        self._chain_samples = samples
-        return samples
-
-    def write_priors(self, fn_out: PathLike) -> None:
-        save_yaml(self.priors_data, fn_out)
-
-    def write_tau(self, fn_out: PathLike) -> None:
-        np.save(fn_out, self.tau)
-
-
 @dataclass
 class InferenceResults:
-    """Container for inference results,
-    including MCMC results, specifications, and QoI names.
+    posterior: np.ndarray
+    priors: Optional[Priors] = None
+    parameter_names: Optional[List[str]] = None
+    sample_transform: Optional[Callable[[np.ndarray], np.ndarray]] = None
 
-    Parameters
-    ----------
-    mcmc : MCMCResults
-        An instance of MCMCResults containing the MCMC sampling results.
-    specs : Specs
-        An instance of Specs containing the parameter specifications and constraints.
-    qoi_names : list of str, optional
-        A list of QoI names corresponding to the
-        nuisance parameters in the MCMC samples.
-        Defaults to an empty list.
-
-    Attributes
-    ----------
-    mcmc : MCMCResults
-        The MCMC results containing the chain, priors, and autocorrelation times.
-    specs : Specs
-        The specifications for parameter bounds and constraints.
-    qoi_names : list of str
-        The names of the QoI corresponding to the nuisance parameters.
-    _posterior_samples_explicit : np.ndarray or None
-        A private attribute to store the explicit posterior samples after preparation.
-        Initialized to None and populated by the prepare_samples() method.
-
-    Methods
-    -------
-    from_sources(chain, priors, tau, specs, qoi) -> InferenceResults
-        A class method to create an InferenceResults instance from various sources.
-    prepare_samples(discard, thin, remove_out_of_bounds, remove_sigma_outliers) -> None
-        Prepare the posterior samples by applying burn-in, thinning, and optional
-        filtering of out-of-bounds and high-sigma samples.
-    sample_posterior(n_samples, distribution, confidence, fn_out) -> np.ndarray
-        Sample from the posterior distribution using
-        either a normal or uniform distribution
-        based on the confidence interval of the parameter samples.
-
-    Properties
-    ----------
-    posterior_samples_explicit -> np.ndarray
-        Accesses the explicit posterior samples after preparation.
-    posterior_samples -> np.ndarray
-        Accesses the full posterior samples, including implicit charge.
-    labels -> list of str
-        Generates the labels for the parameters and nuisance parameters.
-    map_estimates -> dict of str to float
-        Computes the MAP estimates for each parameter and nuisance parameter.
-    quantiles(confidence) -> np.ndarray
-    """
-    mcmc: MCMCResults
-    specs: Specs
-    qoi_names: List[str] = field(default_factory=list)
-
-    _posterior_samples_explicit: Optional[np.ndarray] = field(
-        default=None, init=False, repr=False
-    )
+    _posterior_samples: Optional[np.ndarray] = field(
+        default=None, init=False, repr=False)
+    _tau: Optional[np.ndarray] = field(default=None, init=False, repr=False)
 
     @classmethod
-    def from_sources(
+    def load(
         cls,
-        chain: Optional[Union[PathLike, EnsembleSampler]] = None,
-        priors: Optional[Union[PathLike, list]] = None,
-        tau: Optional[Union[PathLike, list, float, int, np.ndarray]] = None,
-        specs: Optional[Union[PathLike, dict]] = None,
-        qoi: Optional[List[str]] = None,
+        posterior: PathLike | Sampler | np.ndarray | torch.Tensor,
+        priors: Optional[Union[Priors, PathLike, list]] = None,
+        parameter_names: Optional[List[str]] = None,
+        sample_transform: Optional[Callable[[np.ndarray], np.ndarray]] = None,
     ) -> "InferenceResults":
-        if specs is None:
-            raise ValueError("specs source is required.")
         return cls(
-            mcmc=MCMCResults(chain_src=chain, priors_src=priors, tau_src=tau),
-            specs=Specs(specs),
-            qoi_names=qoi or [],
+            posterior=posterior,
+            priors=priors,
+            parameter_names=parameter_names,
+            sample_transform=sample_transform,
         )
 
-    @property
-    def posterior_samples_explicit(self) -> np.ndarray:
-        if self._posterior_samples_explicit is None:
-            raise ValueError("Call prepare_samples() first.")
-        return self._posterior_samples_explicit
+    def __post_init__(self) -> None:
+        self.posterior = self._coerce_posterior(self.posterior)
+        if self.priors is not None:
+            self.priors = self._coerce_priors(self.priors)
+        if self.parameter_names is None and self.priors is not None:
+            self.parameter_names = self._default_labels()
+        if self.sample_transform is None and self._nuisance_indices:
+            self.sample_transform = self._default_transform
 
     @property
-    def posterior_samples(self) -> np.ndarray:
-        return self._insert_implicit_charge(self.posterior_samples_explicit)
+    def _nuisance_indices(self) -> list[int]:
+        if self.priors is None:
+            return []
+        return [
+            i for i, name in enumerate(self.priors.names)
+            if name.startswith("log_sigma_")
+        ]
+
+    def _default_labels(self) -> list[str]:
+        if self.priors is None:
+            return [f"theta_{i}" for i in range(self.n_dim)]
+        labels = []
+        for i, name in enumerate(self.priors.names):
+            if name.startswith("log_sigma_"):
+                qoi = name.removeprefix("log_sigma_")
+                labels.append(f"$\\sigma_{{\\mathrm{{{qoi}}}}}$")
+            else:
+                labels.append(name or f"theta_{i}")
+        return labels
+
+    def _default_transform(self, samples: np.ndarray) -> np.ndarray:
+        transformed = np.asarray(samples, dtype=float).copy()
+        if self._nuisance_indices:
+            transformed[:, self._nuisance_indices] = np.exp(
+                transformed[:, self._nuisance_indices]
+            )
+        return transformed
+
+    @staticmethod
+    def _to_numpy(x: np.ndarray | torch.Tensor) -> np.ndarray:
+        if isinstance(x, torch.Tensor):
+            return x.detach().cpu().numpy()
+        return np.asarray(x, dtype=float)
+
+    @staticmethod
+    def _coerce_priors(priors: Priors | PathLike | list) -> Priors:
+        if isinstance(priors, Priors):
+            return priors
+        return Priors.from_any(priors)
+
+    @staticmethod
+    def _load_checkpoint(fn_in: PathLike) -> dict[str, Any]:
+        fn_in = Path(fn_in)
+        if fn_in.suffix != ".pt":
+            raise ValueError(
+                f"Unsupported posterior file '{fn_in}'. "
+                "InferenceResults accepts only .pt files."
+            )
+        return torch.load(fn_in, weights_only=False)
+
+    @classmethod
+    def _coerce_posterior(
+        cls,
+        posterior: PathLike | Sampler | np.ndarray | torch.Tensor,
+    ) -> np.ndarray:
+        if isinstance(posterior, (np.ndarray, torch.Tensor)):
+            posterior_array = cls._to_numpy(posterior)
+        elif isinstance(posterior, Sampler):
+            posterior_array = cls._to_numpy(posterior.chain)
+        elif isinstance(posterior, (str, Path)):
+            payload = cls._load_checkpoint(posterior)
+            if "posterior" in payload:
+                posterior_array = cls._to_numpy(payload["posterior"])
+            else:
+                raise KeyError(
+                    f"Posterior file '{posterior}' does not contain posterior samples."
+                )
+        else:
+            raise TypeError(f"Unsupported posterior source: {type(posterior)}")
+
+        if posterior_array.ndim != 3:
+            raise ValueError(
+                "Expected raw posterior with shape "
+                f"(n_saved, n_walkers, n_dim), got {posterior_array.shape}."
+            )
+        return posterior_array
+
+    @property
+    def n_dim(self) -> int:
+        return self.posterior.shape[-1]
+
+    @property
+    def autocorr_time(self) -> np.ndarray:
+        if self._tau is not None:
+            return self._tau
+
+        raw_posterior = torch.as_tensor(self.posterior, dtype=torch.float32)
+        tau = integrated_autocorr_time(
+            raw_posterior
+        ).mean(dim=0).detach().cpu().numpy()
+
+        self._tau = np.atleast_1d(tau.astype(float))
+        return self._tau
+
+    @property
+    def samples(self) -> np.ndarray:
+        if self._posterior_samples is None:
+            raise ValueError(
+                "No prepared samples available. "
+                "Call prepare_samples() first."
+            )
+        return self._posterior_samples
 
     @property
     def labels(self) -> List[str]:
-        nuisance = [f"$\\sigma_{{\\mathrm{{{qoi}}}}}$" for qoi in self.qoi_names]
-        return self.specs.bounds.names.tolist() + nuisance
+        if self.parameter_names is not None:
+            if len(self.parameter_names) != self.n_dim:
+                raise ValueError(
+                    "parameter_names length does not match the posterior dimension."
+                )
+            return self.parameter_names
+        return [f"theta_{i}" for i in range(self.n_dim)]
 
     def prepare_samples(
         self,
         discard: Optional[int] = None,
         thin: Optional[int] = None,
-        remove_out_of_bounds: bool = True,
-        remove_sigma_outliers: bool = True,
+        sample_transform: Optional[Callable[[np.ndarray], np.ndarray]] = None,
     ) -> None:
-        samples = self.mcmc.get_chain(discard=discard, thin=thin).copy()
-        n_explicit = self.specs.bounds.without(self.specs.implicit_param).n_params
-
-        samples[:, n_explicit:] = np.exp(samples[:, n_explicit:])
-
-        if remove_out_of_bounds:
-            explicit = samples[:, :n_explicit]
-            b = self.specs.bounds.without(self.specs.implicit_param)
-            mask = np.all((explicit >= b.lower) & (explicit <= b.upper), axis=1)
-            samples = samples[mask]
-
-        if remove_sigma_outliers and samples.shape[1] > n_explicit:
-            nuisance = samples[:, n_explicit:]
-            threshold = np.quantile(nuisance, 0.99, axis=0)
-            mask = np.all(nuisance <= threshold, axis=1)
-            samples = samples[mask]
-
-        self._posterior_samples_explicit = samples
+        """Prepare flattened posterior samples for downstream analysis."""
+        tau = self.autocorr_time
+        discard = discard if discard is not None else int(2 * np.max(tau))
+        thin = thin if thin is not None else max(1, int(0.5 * np.min(tau)))
+        samples = self.posterior[discard::thin]
+        if samples.size == 0:
+            raise ValueError(
+                "No posterior samples remain after applying discard/thin. "
+                "Try smaller values."
+            )
+        samples = samples.reshape(-1, samples.shape[-1]).copy()
+        transform_fn = sample_transform or self.sample_transform
+        if transform_fn is not None:
+            samples = np.asarray(transform_fn(samples), dtype=float)
+        self._posterior_samples = samples
 
     @property
     def map_estimates(self) -> dict[str, float]:
         modes: List[float] = []
-        for col in self.posterior_samples.T:
+        for col in self.samples.T:
             grid = np.linspace(col.min(), col.max(), 1000)
             density = gaussian_kde(col)
             modes.append(float(np.round(grid[np.argmax(density(grid))], 3)))
         return dict(zip(self.labels, modes))
 
-    @property
     def quantiles(self, confidence: float = 0.95) -> np.ndarray:
         q_low = (1 - confidence) / 2
         q_high = 1 - q_low
-        return np.quantile(self.posterior_samples, [q_low, 0.5, q_high], axis=0)
+        return np.quantile(self.samples, [q_low, 0.5, q_high], axis=0)
 
     def sample_posterior(
         self,
@@ -686,7 +598,7 @@ class InferenceResults:
         fn_out: Optional[str] = None,
         overwrite: bool = False,
     ) -> np.ndarray:
-        param_samples = self.posterior_samples[:, :self.specs.bounds.n_params]
+        param_samples = self.samples
         q_low = (1 - confidence) / 2
         q_high = 1 - q_low
         confint = np.quantile(param_samples, [q_low, q_high], axis=0)
@@ -694,11 +606,10 @@ class InferenceResults:
         if distribution == "normal":
             mean = np.mean(param_samples, axis=0)
             cov = np.cov(param_samples, rowvar=False)
-            draws = (
-                np.random.normal(mean, cov, size=n_samples)
-                if np.ndim(cov) == 0
-                else np.random.multivariate_normal(mean, cov, size=n_samples)
-            )
+            if np.ndim(cov) == 0:
+                draws = np.random.normal(mean, np.sqrt(cov), size=n_samples)[:, None]
+            else:
+                draws = np.random.multivariate_normal(mean, cov, size=n_samples)
         elif distribution == "uniform":
             widths = np.diff(confint, axis=0).ravel()
             draws = np.random.rand(n_samples, widths.size) * widths + confint[0]
@@ -712,24 +623,11 @@ class InferenceResults:
             if fn_out.name.endswith(".npy"):
                 np.save(fn_out, draws)
             elif fn_out.name.endswith(".yaml"):
-                param_names = self.specs.bounds.names.tolist()
-                save_yaml(dict(zip(param_names, draws.T)), fn_out)
+                save_yaml(dict(zip(self.labels, draws.T)), fn_out)
             else:
                 raise ValueError("fn_out must end with .npy or .yaml")
 
         return draws
-
-    def _insert_implicit_charge(self, samples: np.ndarray) -> np.ndarray:
-        explicit_bounds = self.specs.bounds.without(self.specs.implicit_param)
-        n_implicit_atoms = len(self.specs.implicit_atoms)
-        constraint_charge = self.specs.constraint_charge
-        insert_at = self.specs.implicit_param_index
-
-        n_explicit_params = explicit_bounds.n_params
-        explicit_charge = samples[:, :n_explicit_params] @ self.specs.constraint_matrix
-        implicit_charge = (constraint_charge - explicit_charge) / n_implicit_atoms
-
-        return np.insert(samples, insert_at, implicit_charge, axis=1)
 
 
 class RandomParamsGenerator:

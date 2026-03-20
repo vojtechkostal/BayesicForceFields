@@ -1,6 +1,5 @@
 from pathlib import Path
 from typing import (
-    Any,
     Callable,
     Dict,
     Optional,
@@ -10,9 +9,7 @@ from typing import (
 
 from .bayes.inference import lgp_hyperopt, initialize_mcmc_sampler
 from .bayes.gaussian_process import LGPCommittee
-from .structures import (
-    Specs, MCMCResults, QoIDataset
-)
+from .structures import InferenceResults, QoIDataset
 from .io.logs import Logger, print_progress_mcmc
 from .tools import rdf_sigmoid_mean
 
@@ -22,7 +19,6 @@ import torch
 
 # ---- Type aliases (keep signatures readable) ----
 PathLike = Union[str, Path]
-SpecsLike = Union[str, Path, Dict[str, Any], Specs]
 ArrayLike = Union[np.ndarray, torch.Tensor]
 
 
@@ -103,16 +99,16 @@ class BFFLearner:
         priors_disttype: str = "normal",
         max_iter: int = 1000,
         n_walkers: Optional[int] = None,
-        fn_chain: PathLike = "./mcmc.h5",
-        fn_priors: Optional[PathLike] = "./priors.yaml",
-        fn_tau: Optional[PathLike] = "./tau.yaml",
+        fn_posterior: PathLike = "./posterior.pt",
+        fn_checkpoint: Optional[PathLike] = "./mcmc-checkpoint.pt",
+        fn_priors: Optional[PathLike] = "./priors.pt",
         restart: bool = True,
         device: str = "cuda",
         **kwargs,
-    ) -> MCMCResults:
+    ) -> InferenceResults:
 
-        qoi = set(qoi) if qoi else set(self.models.keys())
-        missing = qoi - self.models.keys()
+        qoi_selected = list(qoi) if qoi else list(self.models.keys())
+        missing = set(qoi_selected) - self.models.keys()
         if missing:
             raise ValueError(
                 f"Requested QoI(s) not found in trained models: "
@@ -125,11 +121,12 @@ class BFFLearner:
         y_ref = {
             dataset.name: dataset.outputs_ref
             for dataset in self.datasets
-            if dataset.name in qoi
+            if dataset.name in qoi_selected
         }
+        models = {name: self.models[name] for name in qoi_selected}
 
         p0, priors, sampler = initialize_mcmc_sampler(
-            surrogate=self.models,
+            surrogate=models,
             y_true=y_ref,
             constraint=constraint,
             n_walkers=n_walkers,
@@ -137,20 +134,30 @@ class BFFLearner:
             device=device,
         )
 
+        if fn_priors:
+            priors.write(fn_priors)
+
+        fn_posterior = Path(fn_posterior)
+        if fn_checkpoint is None:
+            suffix = "".join(fn_posterior.suffixes) or ".pt"
+            stem = fn_posterior.name[:-len(suffix)] if suffix else fn_posterior.name
+            fn_checkpoint = fn_posterior.with_name(f"{stem}.ckpt{suffix}")
+
         print_progress_mcmc(
             sampler,
             p0,
             max_iter=max_iter,
             logger=self.logger,
             restart=restart,
-            fn_chain=fn_chain,
+            fn_checkpoint=fn_checkpoint,
             **kwargs
         )
 
-        # tau = sampler.get_autocorr_time(tol=0)
-        # mcmc = MCMCResults(chain_src=sampler, priors_src=priors, tau_src=tau)
+        sampler.write_posterior(fn_posterior)
 
-        # if fn_priors:
-        #     mcmc.write_priors(fn_priors)
-        # if fn_tau:
-        #     mcmc.write_tau(fn_tau)
+        results = InferenceResults.load(
+            posterior=fn_posterior,
+            priors=priors,
+        )
+
+        return results

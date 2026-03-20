@@ -1,308 +1,341 @@
-import torch
-import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.colors import ListedColormap
-
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Mapping, Optional, Sequence, Union
 
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+from matplotlib.colors import ListedColormap
+from matplotlib.ticker import MaxNLocator
 from scipy.stats import gaussian_kde
 
-from .structures import InferenceResults
+from .structures import InferenceResults, Specs
 
 
 PathLike = Union[str, Path]
 ArrayLike = Union[np.ndarray, torch.Tensor]
 
 
-def _wrap_label(s: str, max_per_line: int) -> str:
-    atoms = s.split()
+def _wrap_label(text: str, max_per_line: int = 4) -> str:
+    words = text.split()
     return "\n".join(
-        " ".join(atoms[i:i + max_per_line])
-        for i in range(0, len(atoms), max_per_line)
+        " ".join(words[i:i + max_per_line])
+        for i in range(0, len(words), max_per_line)
     )
+
+
+def _coerce_specs(specs: Specs | PathLike) -> Specs:
+    return specs if isinstance(specs, Specs) else Specs(specs)
+
+
+def _coerce_samples(
+    samples: InferenceResults | ArrayLike,
+) -> np.ndarray:
+    if isinstance(samples, InferenceResults):
+        return np.asarray(samples.samples, dtype=float)
+    if isinstance(samples, torch.Tensor):
+        return samples.detach().cpu().numpy()
+    return np.asarray(samples, dtype=float)
+
+
+def _parameter_labels(
+    names: Sequence[str],
+    labels: Optional[Sequence[str] | Mapping[str, str]] = None,
+) -> list[str]:
+    if labels is None:
+        return [name.split(maxsplit=1)[-1] for name in names]
+    if isinstance(labels, Mapping):
+        return [labels.get(name, name) for name in names]
+    if len(labels) != len(names):
+        raise ValueError(
+            "parameter_labels must match the number of plotted parameters.")
+    return list(labels)
+
+
+def _axis_labels(kind: str) -> tuple[str, str]:
+    if kind == "charge":
+        return "Atom", "Charge [e]"
+    if kind == "sigma":
+        return "Atom type", "$\\sigma$ [nm]"
+    return kind.capitalize(), kind.capitalize()
+
+
+def _posterior_with_implicit_charge(
+    results: InferenceResults,
+    specs: Specs,
+) -> np.ndarray:
+    samples = np.asarray(results.samples, dtype=float)
+    n_explicit = specs.bounds.without(specs.implicit_param).n_params
+    explicit_charge = samples[:, :n_explicit] @ specs.constraint_matrix
+    implicit_charge = (
+        specs.constraint_charge - explicit_charge
+    ) / len(specs.implicit_atoms)
+    return np.insert(samples, specs.implicit_param_index, implicit_charge, axis=1)
 
 
 def plot_marginals(
     results: InferenceResults,
-    color_prior: str = 'gray', color_posterior: str = 'tab:red',
-    fn_out: Optional[PathLike] = None
+    specs: Specs | PathLike,
+    *,
+    parameter_labels: Optional[Sequence[str] | Mapping[str, str]] = None,
+    color_prior: str = "gray",
+    color_posterior: str = "tab:red",
+    fn_out: Optional[PathLike] = None,
 ) -> None:
+    specs = _coerce_specs(specs)
+    posterior = _posterior_with_implicit_charge(results, specs)
+    param_names = specs.bounds.names.tolist()
+    tick_labels = _parameter_labels(param_names, parameter_labels)
 
-    param_kinds: List[str] = list(
-        set([p.split()[0] for p in results.specs.bounds.names])
+    param_groups: dict[str, list[int]] = {}
+    for idx, name in enumerate(param_names):
+        kind = name.split()[0]
+        param_groups.setdefault(kind, []).append(idx)
+
+    fig, axes = plt.subplots(
+        1,
+        len(param_groups),
+        figsize=(4 * len(param_groups), 3.2),
+        gridspec_kw={"wspace": 0.3},
     )
-    n_param_kinds = len(param_kinds)
+    axes = np.atleast_1d(axes)
 
-    gridspecs: Dict[str, float] = {'wspace': 0.25}
-    fig, axs = plt.subplots(
-        ncols=n_param_kinds,
-        nrows=1,
-        figsize=(4 * n_param_kinds, 3),
-        gridspec_kw=gridspecs
-    )
+    explicit_names = specs.bounds.without(specs.implicit_param).names.tolist()
+    prior_index = {name: i for i, name in enumerate(explicit_names)}
+    show_prior = results.priors is not None
+    legend_used = {"prior": False, "posterior": False, "bounds": False}
 
-    axs = np.atleast_1d(axs)
+    for ax, (kind, indices) in zip(axes, param_groups.items()):
+        bounds_block = np.asarray(
+            [specs.bounds.by_name[param_names[i]] for i in indices],
+            dtype=float,
+        )
+        y_min = bounds_block[:, 0].min()
+        y_max = bounds_block[:, 1].max()
+        y_pad = max(0.05, 0.18 * (y_max - y_min))
+        label_y = y_min - 0.80 * y_pad
+        posterior_peaks: list[float] = []
+        prior_peaks: list[float] = []
+        curves: dict[
+            int, tuple[np.ndarray, np.ndarray, Optional[np.ndarray], float]
+        ] = {}
 
-    labels_used: Dict[str, bool] = {"prior": False, "posterior": False, "bound": False}
-    y_offset: Dict[str, float] = {'charge': 0.2, 'sigma': 0.05}
-    scale: Dict[str, float] = {'charge': 0.1, 'sigma': 0.015}
-    ylabels: Dict[str, str] = {'charge': 'Charge [e]', 'sigma': '$\\sigma$ [nm]'}
-    xlabels: Dict[str, str] = {'charge': 'Atom', 'sigma': 'Atomtype'}
+        for idx in indices:
+            name = param_names[idx]
+            lower, upper = specs.bounds.by_name[name]
+            y = np.linspace(lower - y_pad, upper + y_pad, 400)
 
-    for i, (p_kind, ax) in enumerate(zip(param_kinds, axs)):
-        x_offset = 0
-        x_lim_low = -0.5
-        x_lim_high = sum(1 for name in results.specs.bounds.names if p_kind in name)
-        bounds_raw = [
-            bound
-            for name, bound in results.specs.bounds.by_name.items()
-            if p_kind in name
-        ]
-        y_scale = np.abs(np.max(bounds_raw) - np.min(bounds_raw))
-        for param in results.labels:
-            if p_kind not in param:
-                continue
-            if len(param.split()) == 1:
-                continue
-            idx = results.labels.index(param)
-            bound = results.specs.bounds.by_name[param]
+            prior_density = None
+            if show_prior and name in prior_index:
+                prior = results.priors.distributions[prior_index[name]]
+                prior_density = (
+                    prior.log_prob(torch.as_tensor(y, dtype=torch.float32))
+                    .exp()
+                    .detach()
+                    .cpu()
+                    .numpy()
+                )
+                prior_peaks.append(float(np.max(prior_density)))
 
-            x_min = bound[0] - y_offset.get(p_kind, 0.1)
-            x_max = bound[1] + y_offset.get(p_kind, 0.1)
-            x = torch.linspace(x_min, x_max, 1000)
+            posterior_density = gaussian_kde(posterior[:, idx])(y)
+            posterior_peaks.append(float(np.max(posterior_density)))
+            mode = float(y[np.argmax(posterior_density)])
+            curves[idx] = (y, posterior_density, prior_density, mode)
 
-            # Plot prior
-            if param == results.specs.implicit_param:
-                pass
-            else:
-                bounds = results.specs.bounds.without(results.specs.implicit_param)
-                idx_prior = bounds.names.tolist().index(param)
-                prior = results.mcmc.priors[idx_prior]
-                y = prior.log_prob(x).exp()
-                ax.fill_between(
-                    - y * scale.get(p_kind, 0.1) + x_offset,
-                    x,
+        max_posterior_peak = max(posterior_peaks, default=1.0)
+        max_prior_peak = max(prior_peaks, default=max_posterior_peak)
+        posterior_width = 1.2
+        prior_width = 0.7
+        posterior_scale = posterior_width / max(max_posterior_peak, 1e-12)
+        prior_scale = prior_width / max(max_prior_peak, 1e-12)
+
+        for xpos, idx in enumerate(indices):
+            name = param_names[idx]
+            lower, upper = specs.bounds.by_name[name]
+            y, posterior_density, prior_density, mode = curves[idx]
+
+            if prior_density is not None:
+                ax.fill_betweenx(
+                    y,
+                    xpos - prior_scale * prior_density,
+                    xpos,
                     color=color_prior,
                     lw=0,
-                    label='prior' if not labels_used["prior"] else None,
+                    label="prior" if not legend_used["prior"] else None,
                 )
-                labels_used["prior"] = True
-                x_lim_low = min(- (max(y) * scale.get(p_kind, 0.1) * 1.1), -0.6)
+                legend_used["prior"] = True
 
-            # Posterior
-            posterior = results.posterior_samples[:, idx]
-            kde = gaussian_kde(posterior)
-            posterior_kde = kde.evaluate(x)
-            ax.fill_between(
-                posterior_kde * scale.get(p_kind, 0.1) + x_offset,
-                x,
+            ax.fill_betweenx(
+                y,
+                xpos,
+                xpos + posterior_scale * posterior_density,
                 color=color_posterior,
                 lw=0,
-                label='posterior' if not labels_used["posterior"] else None,
+                label="posterior" if not legend_used["posterior"] else None,
             )
+            legend_used["posterior"] = True
 
-            labels_used["posterior"] = True
-            x_lim_high = max(
-                (max(posterior_kde) * scale.get(p_kind, 0.1) + x_offset) * 1.1,
-                0.5
-            )
-
-            # Bound as errorbar
-            bound_center = np.mean(bound)
-            yerr = np.array([[bound_center - bound[0]], [bound[1] - bound_center]])
+            center = 0.5 * (lower + upper)
+            yerr = np.array([[center - lower], [upper - center]])
             ax.errorbar(
-                [x_offset],
-                [bound_center],
+                [xpos],
+                [center],
                 yerr=yerr,
                 lw=2,
-                ls='',
-                capsize=5,
+                ls="",
+                capsize=4,
+                capthick=2,
                 markeredgewidth=2,
-                color='k',
-                label='bound' if not labels_used["bound"] else None,
+                color="k",
+                label="bounds" if not legend_used["bounds"] else None,
             )
-            labels_used["bound"] = True
+            legend_used["bounds"] = True
 
-            # Add value label
             ax.text(
-                x_offset,
-                bound[0] - 0.1 * y_scale,
-                f'{x[posterior_kde.argmax()]:.3f}',
-                ha='center',
-                va='top',
-                fontsize=10,
-                color='tab:red',
-                fontweight='bold',
+                xpos,
+                label_y,
+                f"{mode:.3f}",
+                color=color_posterior,
+                fontweight="bold",
+                ha="center",
+                va="top",
             )
 
-            x_offset += 1
+        ax.set_xlim(-prior_width - 0.25, len(indices) - 1 + posterior_width + 0.25)
+        ax.set_ylim(label_y - 0.6 * y_pad, y_max + y_pad)
+        ax.set_xticks(range(len(indices)))
+        ax.set_xticklabels(
+            [_wrap_label(tick_labels[i]) for i in indices],
+            rotation=30,
+            ha="right",
+        )
+        xlabel, ylabel = _axis_labels(kind)
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        ax.tick_params(direction="in")
 
-            ax.set_ylabel(ylabels.get(p_kind, p_kind))
-            if i == 0:
-                ax.legend(
-                    ncol=3,
-                    loc='upper center',
-                    frameon=False,
-                    bbox_to_anchor=(0.5, 1.15)
-                )
-
-        ax.set_xlim(x_lim_low, x_lim_high)
-
-        y_low = np.min(bounds_raw) - 0.25 * y_scale
-        y_high = np.max(bounds_raw) + 0.25 * y_scale
-        ax.set_ylim(y_low, y_high)
-        ax.tick_params(axis='both', direction='in')
-
-        n_labels = len([name for name in results.specs.bounds.names if p_kind in name])
-        ax.set_xticks(np.arange(0, n_labels, 1))
-
-        xtick_labels = [
-            _wrap_label(p.split(maxsplit=1)[-1], 4)
-            for p in results.specs.bounds.names
-            if p_kind in p
-        ]
-        ax.set_xticklabels(xtick_labels, rotation=30)
-        ax.set_xlabel(xlabels.get(p_kind, 'Parameter'))
-
-        fig.align_xlabels()
+    if len(axes):
+        axes[0].legend(
+            loc="upper center",
+            bbox_to_anchor=(0.5, 1.18),
+            ncol=3,
+            frameon=False,
+        )
 
     if fn_out is not None:
-        plt.savefig(fn_out, bbox_inches='tight')
-        plt.close(fig)  # Prevents display in Jupyter Notebook
+        plt.savefig(fn_out, bbox_inches="tight")
+        plt.close(fig)
     else:
         plt.show()
 
 
 def plot_corner(
-    samples: ArrayLike,
+    samples: InferenceResults | ArrayLike,
     labels: Optional[Sequence[str]] = None,
+    *,
+    quantiles: Sequence[float] = (0.16, 0.5, 0.84),
+    figsize: float = 2.6,
+    cmap: Any = "Reds",
     levels: int = 5,
-    quantiles: Sequence[float] = [0.16, 0.5, 0.84],
-    figsize: float = 6,
-    cmap: Any = plt.cm.Reds,
-    scatter_alpha: float = 0.2,
+    scatter_alpha: float = 0.15,
     fn_out: Optional[PathLike] = None,
-    transparent: bool = True
 ) -> None:
-    """
-    Corner plot with 1D histograms and 2D KDE contourf + scatter background.
-    The lowest density level is transparent; contours are outlined in black.
-    """
-    samples = np.asarray(samples)
-    n_params = samples.shape[1]
-    gridspecs = {'wspace': 0.05, 'hspace': 0.05}
-    figsize = (figsize * n_params / 3, figsize * n_params / 3)
-    fig, axes = plt.subplots(n_params, n_params, figsize=figsize, gridspec_kw=gridspecs)
+    samples = _coerce_samples(samples)
+    if samples.ndim != 2:
+        raise ValueError("plot_corner expects samples with shape (n_samples, n_dim).")
 
-    # Create transparent colormap: first level transparent
-    colors = cmap(np.linspace(0, 1, levels))
-    colors[0, -1] = 0.0  # set alpha of lowest level to 0
-    transparent_cmap = ListedColormap(colors)
+    n_dim = samples.shape[1]
+    if labels is None:
+        labels = [f"theta_{i}" for i in range(n_dim)]
+    elif len(labels) != n_dim:
+        raise ValueError("labels must match the posterior sample dimension.")
 
-    # wrap labels
-    if labels is not None:
-        labels = [_wrap_label(label, 4) for label in labels]
+    labels = [_wrap_label(label) for label in labels]
+    base_cmap = plt.get_cmap(cmap)
+    colors = base_cmap(np.linspace(0, 1, max(levels, 2)))
+    colors[0] = np.array([1.0, 1.0, 1.0, 0.0])
+    contour_cmap = ListedColormap(colors)
+    fig, axes = plt.subplots(
+        n_dim,
+        n_dim,
+        figsize=(figsize * n_dim, figsize * n_dim),
+        gridspec_kw={"wspace": 0.05, "hspace": 0.05},
+    )
 
-    xlims = (samples.min(axis=0), samples.max(axis=0))
-    for i in range(n_params):
-        for j in range(n_params):
+    limits = [(samples[:, i].min(), samples[:, i].max()) for i in range(n_dim)]
+
+    for i in range(n_dim):
+        for j in range(n_dim):
             ax = axes[i, j]
+            if i < j:
+                ax.axis("off")
+                continue
+
             if i == j:
-                x_data = samples[:, i]
-                x_min, x_max = xlims[0][i], xlims[1][i]
-                x = np.linspace(x_min, x_max, 1000)
-                kde = gaussian_kde(x_data)
-
-                if '\\sigma' in labels[i]:
-                    color = 'k'
-                else:
-                    color = transparent_cmap.colors[-1]
-                ax.plot(x, kde(x), color=color, lw=3)
-                ax.fill_between(x, 0, kde(x), color=color, alpha=0.5)
-
+                x = np.linspace(*limits[i], 400)
+                kde = gaussian_kde(samples[:, i])
+                density = kde(x)
+                ax.plot(x, density, color="k", lw=2.5)
+                ax.fill_between(x, 0, density, color="0.75", alpha=0.7)
                 if quantiles:
-                    # Plot vertical lines
                     q_values = np.quantile(samples[:, i], quantiles)
                     for q in q_values:
-                        ax.axvline(q, color='black', linestyle='--', linewidth=1)
-
-                    # Add text labels above histogram
-                    lower = q_values[1] - q_values[0]
-                    upper = q_values[2] - q_values[1]
-                    quantiles_label = (
-                        f"{labels[i]}\n"
-                        f"${q_values[1]:.3f}^{{+{upper:.3f}}}_{{-{lower:.3f}}}$"
-                    )
-
-                    ax.text(
-                        0.5, 1, quantiles_label,
-                        transform=ax.transAxes,
-                        ha='center',
-                        va='bottom'
-                    )
-
-                ax.tick_params(axis='y', length=0)
-                ax.tick_params(axis='x', length=5, direction='in')
-                ax.set_xlim(x_min, x_max)
-            elif i > j:
-                x, y = samples[::10, j], samples[::10, i]
+                        ax.axvline(q, color="k", ls="--", lw=1.3)
+                    if len(q_values) == 3:
+                        median = q_values[1]
+                        lower = median - q_values[0]
+                        upper = q_values[2] - median
+                        ax.set_title(
+                            (
+                                f"{labels[i]}\n"
+                                f"{median:.3f}\n"
+                                f"(+{upper:.3f} / -{lower:.3f})"
+                            ),
+                            fontsize=12,
+                        )
+                ax.set_xlim(*limits[i])
+                ax.set_yticks([])
+                ax.tick_params(axis="y", left=False, labelleft=False)
+            else:
+                x = samples[::100, j]
+                y = samples[::100, i]
                 ax.scatter(
-                    x, y, s=3, lw=0, alpha=scatter_alpha, color="k", rasterized=True
+                    x, y, s=5, lw=0, alpha=scatter_alpha, color="k", rasterized=True
                 )
-
                 try:
                     kde = gaussian_kde(np.vstack([x, y]))
-                    xi, yi = np.mgrid[x.min():x.max():100j, y.min():y.max():100j]
+                    xi, yi = np.mgrid[
+                        limits[j][0]:limits[j][1]:100j,
+                        limits[i][0]:limits[i][1]:100j,
+                    ]
                     zi = kde(np.vstack([xi.ravel(), yi.ravel()])).reshape(xi.shape)
-
-                    # Define contour levels
-                    levels_lin = np.linspace(zi.min(), zi.max(), levels)
-
-                    # Filled contour
-                    ax.contourf(xi, yi, zi, levels=levels_lin, cmap=transparent_cmap)
-
-                    # Black contour lines
+                    contour_levels = np.linspace(zi.min(), zi.max(), levels)
+                    ax.contourf(
+                        xi, yi, zi, levels=contour_levels, cmap=contour_cmap
+                    )
                     ax.contour(
-                        xi, yi, zi, levels=levels_lin, colors='black', linewidths=0.5
+                        xi, yi, zi, levels=contour_levels, colors="k", linewidths=0.8
                     )
                 except np.linalg.LinAlgError:
                     pass
+                ax.set_xlim(*limits[j])
+                ax.set_ylim(*limits[i])
 
-                ax.tick_params(
-                    direction='in',
-                    top=True, right=True,
-                    which='both', length=5
-                )
-                ax.set_xlim(xlims[0][j], xlims[1][j])
-            else:
-                ax.axis('off')
+            ax.xaxis.set_major_locator(MaxNLocator(nbins=4))
+            ax.yaxis.set_major_locator(MaxNLocator(nbins=4))
+            ax.tick_params(direction="in", top=True, right=True, labelsize=11)
 
-            # Labels and ticks
-            # Ensure at least 3 major ticks
-            from matplotlib.ticker import MaxNLocator
-            locator_kws = {'nbins': 'auto', 'steps': np.arange(1, 11), 'min_n_ticks': 3}
-            ax.xaxis.set_major_locator(MaxNLocator(**locator_kws))
-            ax.yaxis.set_major_locator(MaxNLocator(**locator_kws))
-
-            if i == n_params - 1 and j < n_params:
-                ax.set_xlabel(labels[j] if labels else f"$\\theta_{{{j}}}$")
+            if i == n_dim - 1:
+                ax.set_xlabel(labels[j], fontsize=12)
             else:
                 ax.set_xticklabels([])
+
             if j == 0 and i > 0:
-                ax.set_ylabel(labels[i] if labels else f"$\\theta_{{{i}}}$")
-            else:
+                ax.set_ylabel(labels[i], fontsize=12)
+            elif i != j:
                 ax.set_yticklabels([])
 
-            for label in ax.get_xticklabels():
-                label.set_rotation(45)
-                label.set_horizontalalignment('center')
-
-    fig.align_ylabels()
-    fig.align_xlabels()
-
     if fn_out is not None:
-        plt.savefig(fn_out, bbox_inches='tight', dpi=200, transparent=transparent)
-        plt.close(fig)  # Prevents display in Jupyter Notebook
+        plt.savefig(fn_out, bbox_inches="tight")
+        plt.close(fig)
     else:
-        plt.show()  # Display only if not saving
+        plt.show()

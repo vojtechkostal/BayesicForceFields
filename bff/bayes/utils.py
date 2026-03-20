@@ -1,4 +1,3 @@
-import emcee
 import torch
 
 from pathlib import Path
@@ -25,14 +24,8 @@ def smape(y_true: torch.tensor, y_pred: torch.tensor) -> float:
 
     return torch.mean(abs_diff / norm)
 
-
-def initialize_backend(fn_backend: PathLike) -> emcee.backends.HDFBackend:
-    """Initialize the backend for the MCMC sampler."""
-    return emcee.backends.HDFBackend(fn_backend)
-
-
 def initialize_walkers(
-    priors: Dict[str, torch.distributions.Distribution],
+    priors,
     n_walkers: int,
     constraint: Callable = None
 ) -> torch.Tensor:
@@ -58,8 +51,8 @@ def initialize_walkers(
     """
 
     if not constraint:
-        means = torch.tensor([p.mean for p in priors])
-        stds = torch.tensor([p.scale for p in priors])
+        means = torch.tensor([p.mean for p in priors], dtype=torch.float32)
+        stds = torch.tensor([p.scale for p in priors], dtype=torch.float32)
         p0 = torch.normal(means.expand(n_walkers, -1), stds.expand(n_walkers, -1))
     else:
         # n_params = specs.n_params_implicit
