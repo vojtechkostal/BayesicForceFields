@@ -12,7 +12,6 @@ The LGP hyperparameters are optimized and their uncertainty can be propagated to
 
 * [SciPy](https://scipy.org/)
 * [MDAnalysis](https://www.mdanalysis.org) (analyzing MD trajectories)
-* [emcee](https://emcee.readthedocs.io/en/stable/#) (MCMC sampling within the Bayesian inference)
 * [PyTorch](https://pytorch.org/get-started/locally/) (Efficient surrogate modeling using GPU and CUDA)
 * [PyYAML](https://pypi.org/project/PyYAML/) (handling .yaml files)
 * [Matplotlib](https://matplotlib.org/) (Plotting)
@@ -42,10 +41,10 @@ For each stage, there is a config file provided, however, they should be altered
 Partial charges on acetete are optimized.
 The parameterization uses data from a triplet of simulations: 1. aqueous species, 2. aqueous species with calcium cation placed at contant distance with carboxyl group, 3. aqueous species with calcium cation placed at solvent-shared position with respect to the carboxyl.
 
-1. Create the systems
+1. Prepare the systems
 ```sh
 cd ./examples/acetate/01-prepare
-bff initialize config.yaml
+bff prepare config.yaml
 ```
 Generates the necessary files and directories for both reference (CP2K) and training (GROMACS) trajectories.
 This step also includes initial NpT equilibration for all systems.

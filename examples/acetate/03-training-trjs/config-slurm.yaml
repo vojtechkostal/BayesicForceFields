@@ -2,25 +2,29 @@ mol_resname: ACE
 data_dir: ./trainset
 gromacs:
   fn_mdp_em:
-    - ../01-prepare/train/em.mdp
-    - ../01-prepare/train/em.mdp
-    - ../01-prepare/train/em.mdp
+    - ../01-prepare/training/em.mdp
+    - ../01-prepare/training/em.mdp
+    - ../01-prepare/training/em.mdp
   fn_mdp_prod:
-    - ../01-prepare/train/nvt-000.mdp
-    - ../01-prepare/train/nvt-001.mdp
-    - ../01-prepare/train/nvt-002.mdp
+    - ../01-prepare/training/window-000.mdp
+    - ../01-prepare/training/window-001.mdp
+    - ../01-prepare/training/window-002.mdp
   fn_coordinates:
-    - ../01-prepare/train/system-000.gro
-    - ../01-prepare/train/system-001.gro
-    - ../01-prepare/train/system-002.gro
+    - ../01-prepare/training/window-000.gro
+    - ../01-prepare/training/window-001.gro
+    - ../01-prepare/training/window-002.gro
   fn_topol:
-    - ../01-prepare/train/topol-000.top
-    - ../01-prepare/train/topol-001.top
-    - ../01-prepare/train/topol-002.top
+    - ../01-prepare/training/window-000.top
+    - ../01-prepare/training/window-001.top
+    - ../01-prepare/training/window-002.top
   fn_ndx:
-    - ../01-prepare/train/index-000.ndx
-    - ../01-prepare/train/index-001.ndx
-    - ../01-prepare/train/index-002.ndx
+    - ../01-prepare/training/window-000.ndx
+    - ../01-prepare/training/window-001.ndx
+    - ../01-prepare/training/window-002.ndx
+  fn_bias:
+    - null
+    - ../01-prepare/training/window-001.bias.plumed.dat
+    - ../01-prepare/training/window-002.bias.plumed.dat
   n_steps:
     - 550000
     - 550000

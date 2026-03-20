@@ -1,131 +1,99 @@
 from collections import OrderedDict
-from typing import List, Dict, Union, Tuple
 from pathlib import Path
+from typing import Mapping, Union
 
 
 PathLike = Union[str, Path]
 
 
-class MDP:
-    """
-    Class to read, modify, and write GROMACS .mdp files.
+def read_mdp(fn_mdp: PathLike) -> OrderedDict[str, str]:
+    """Read a GROMACS MDP file while preserving comments and blank lines.
 
-    The `.mdp` file format consists of key-value pairs for simulation
-    settings, interspersed with comments (`;`) and blank lines.
-    This class preserves the order of the file content,
-    allowing for editing and writing the file back while maintaining
-    the original structure.
-
-    Attributes
+    Parameters
     ----------
-    content : OrderedDict
-        Stores the .mdp file content with comments and
-        blank lines labeled for preservation.
+    fn_mdp
+        Path to the input MDP file.
 
-    Methods
+    Returns
     -------
-    write(fn_out):
-        Writes the current content to a new .mdp file, maintaining formatting.
+    collections.OrderedDict
+        Ordered mapping of MDP keys to values. Comment and blank lines are
+        stored under synthetic keys starting with ``C`` and ``B``.
     """
-
-    def __init__(self, fn_mdp: PathLike) -> None:
-        """
-        Initialize the MDP object and load the content from a file.
-
-        Parameters
-        ----------
-        fn_mdp : str
-            Path to the .mdp file to read.
-        """
-        self.content = self._read(fn_mdp)
-
-    def _read(self, fn: PathLike) -> OrderedDict:
-        """
-        Read an .mdp file and parse its content.
-
-        This method separates comments, blank lines, and key-value pairs.
-        Comments and blank lines are assigned unique keys for later reference.
-
-        Parameters
-        ----------
-        fn : str
-            Path to the .mdp file to read.
-
-        Returns
-        -------
-        OrderedDict
-            An ordered dictionary representing the .mdp file content.
-        """
-        content = OrderedDict()
-        i_comment = 0
-        i_blank = 0
-        with open(fn, 'r') as f:
-            for line in f:
-                if line.startswith(';'):  # Comments
-                    content[f'C{i_comment:03d}'] = line
-                    i_comment += 1
-                elif line.strip() == '':  # Blank lines
-                    content[f'B{i_blank:03d}'] = line
-                    i_blank += 1
-                else:  # Key-value pairs
-                    key, value = line.split('=', 1)
-                    content[key.strip()] = value.strip()
-        return content
-
-    def write(self, fn_out: PathLike) -> None:
-        """
-        Write the current content to an .mdp file.
-
-        This method preserves comments, blank lines, and formatting
-        from the original file.
-
-        Parameters
-        ----------
-        fn_out : str
-            Path to the output .mdp file.
-        """
-        with open(fn_out, 'w') as f:
-            for key, value in self.content.items():
-                if key.startswith('C') or key.startswith('B'):
-                    f.write(value)
-                else:  # Key-value pairs
-                    f.write(f'{key:<25} = {value}\n')
+    content: OrderedDict[str, str] = OrderedDict()
+    i_comment = 0
+    i_blank = 0
+    with open(fn_mdp, "r") as handle:
+        for line in handle:
+            if line.startswith(";"):
+                content[f"C{i_comment:03d}"] = line
+                i_comment += 1
+            elif line.strip() == "":
+                content[f"B{i_blank:03d}"] = line
+                i_blank += 1
+            else:
+                key, value = line.split("=", 1)
+                content[key.strip()] = value.strip()
+    return content
 
 
-def get_n_frames_target(fn_mdp: PathLike) -> Tuple[int | None, int | None]:
-    """Extracts the expected number of frames in the resulting trajectory."""
-    mdp_data = MDP(fn_mdp).content
-    n_steps = int(mdp_data.get('nsteps'))
-    if n_steps:
-        stride = int(mdp_data['nstxout-compressed'])
-        return int(n_steps / stride), stride
-    else:
+def write_mdp(content: Mapping[str, str], fn_out: PathLike) -> None:
+    """Write an MDP mapping back to disk.
+
+    Parameters
+    ----------
+    content
+        Ordered MDP mapping produced by :func:`read_mdp`.
+    fn_out
+        Output MDP path.
+    """
+    with open(fn_out, "w") as handle:
+        for key, value in content.items():
+            if key.startswith("C") or key.startswith("B"):
+                handle.write(value)
+            else:
+                handle.write(f"{key:<25} = {value}\n")
+
+
+def patch_mdp(
+    fn_mdp: PathLike,
+    updates: Mapping[str, str],
+    fn_out: PathLike,
+) -> None:
+    """Write a modified MDP file with a small set of updated parameters.
+
+    Parameters
+    ----------
+    fn_mdp
+        Input MDP file.
+    updates
+        Mapping of MDP keys to replacement values.
+    fn_out
+        Output MDP file.
+    """
+    content = read_mdp(fn_mdp)
+    for key, value in updates.items():
+        content[str(key)] = str(value)
+    write_mdp(content, fn_out)
+
+
+def get_n_frames_target(fn_mdp: PathLike) -> tuple[int | None, int | None]:
+    """Extract the expected number of saved trajectory frames.
+
+    Parameters
+    ----------
+    fn_mdp
+        Input MDP file.
+
+    Returns
+    -------
+    tuple
+        Number of saved frames and trajectory stride. If ``nsteps`` is zero or
+        missing, both entries are returned as ``None``.
+    """
+    mdp_data = read_mdp(fn_mdp)
+    n_steps = int(mdp_data.get("nsteps", 0))
+    if n_steps <= 0:
         return None, None
-
-
-def get_restraints(fn_mdp: PathLike) -> List[Dict[str, float]]:
-    """Reads the restraints from the MDP file."""
-
-    mdp = MDP(fn_mdp)
-    mdp_data = mdp.content
-
-    # Check if the pull code is present
-    if "pull-ncoords" not in mdp_data or "pull-ngroups" not in mdp_data:
-        restraints = []
-
-    else:
-        restraints = [
-            {
-                "atoms": " ".join(
-                    mdp_data[f"pull-group{group_idx}-name"]
-                    for group_idx in mdp_data[
-                        f"pull-coord{coord_idx}-groups"
-                    ].split()
-                ),
-                "x0": float(mdp_data[f"pull-coord{coord_idx}-init"]),
-                "k": float(mdp_data[f"pull-coord{coord_idx}-k"]),
-            }
-            for coord_idx in range(1, int(mdp_data["pull-ncoords"]) + 1)
-        ]
-
-    return restraints
+    stride = int(mdp_data["nstxout-compressed"])
+    return int(n_steps / stride), stride

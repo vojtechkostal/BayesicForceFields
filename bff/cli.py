@@ -26,6 +26,9 @@ def run_workflow(
         raise typer.BadParameter(str(exc), param_hint="fn_config") from exc
     except ValueError as exc:
         raise typer.BadParameter(str(exc), param_hint=workflow_name) from exc
+    except RuntimeError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
 
 
 def config_argument() -> Path:
@@ -55,13 +58,13 @@ def version() -> None:
 
 
 @app.command()
-def initialize(fn_config: Path = config_argument()) -> None:
+def prepare(fn_config: Path = config_argument()) -> None:
     """
-    Initialize the project from a configuration file.
+    Prepare equilibration, training, and reference assets.
     """
-    from bff.workflows.initialize import main as initialize_main
+    from bff.workflows.prepare import main as prepare_main
 
-    run_workflow(fn_config, initialize_main, "initialize")
+    run_workflow(fn_config, prepare_main, "prepare")
 
 
 @app.command()
