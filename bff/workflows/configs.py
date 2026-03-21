@@ -116,63 +116,125 @@ def _normalize_implicit_atoms(value: Any) -> list[str]:
 
 
 @dataclass(frozen=True)
-class RunsimsGromacsConfig:
-    fn_topol: list[Path]
-    fn_coordinates: list[Path]
-    fn_mdp_em: list[Path | None]
-    fn_mdp_prod: list[Path]
-    fn_ndx: list[Path]
-    fn_bias: list[Path | None]
-    n_steps: list[int]
-
-    @property
-    def n_systems(self) -> int:
-        return len(self.fn_topol)
+class SimulationSystemConfig:
+    system_id: str
+    fn_topol: Path
+    fn_coordinates: Path
+    fn_mdp_em: Path | None
+    fn_mdp_prod: Path
+    fn_ndx: Path
+    bias: BiasSpec
+    n_steps: int
 
     def to_dict(self) -> dict[str, Any]:
+        bias_file = self.bias.input_file
         return {
-            "fn_topol": [str(path) for path in self.fn_topol],
-            "fn_coordinates": [str(path) for path in self.fn_coordinates],
-            "fn_mdp_em": [None if path is None else str(path) for path in self.fn_mdp_em],
-            "fn_mdp_prod": [str(path) for path in self.fn_mdp_prod],
-            "fn_ndx": [str(path) for path in self.fn_ndx],
-            "fn_bias": [
-                None if path is None else str(path) for path in self.fn_bias
-            ],
-            "n_steps": list(self.n_steps),
+            "system_id": self.system_id,
+            "topology": str(self.fn_topol),
+            "coordinates": str(self.fn_coordinates),
+            "mdp": {
+                "em": None if self.fn_mdp_em is None else str(self.fn_mdp_em),
+                "prod": str(self.fn_mdp_prod),
+            },
+            "index": str(self.fn_ndx),
+            "bias": None if bias_file is None else str(bias_file),
+            "n_steps": int(self.n_steps),
         }
 
 
 @dataclass(frozen=True)
-class RunsimsConfig:
+class SlurmConfig:
+    max_parallel_jobs: int = 1
+    sbatch: dict[str, Any] | None = None
+    setup: tuple[str, ...] = ()
+    teardown: tuple[str, ...] = ()
+
+
+def _load_simulation_systems(
+    base_dir: Path,
+    systems_raw: Any,
+    *,
+    key: str,
+) -> list[SimulationSystemConfig]:
+    if not isinstance(systems_raw, list) or not systems_raw:
+        raise ValueError(f"'{key}' must be a non-empty list.")
+
+    systems: list[SimulationSystemConfig] = []
+    for i, system in enumerate(systems_raw):
+        if not isinstance(system, dict):
+            raise ValueError(f"{key}[{i}] must be a mapping.")
+        for required_key in ("topology", "coordinates", "mdp", "index", "n_steps"):
+            if required_key not in system:
+                raise ValueError(f"{key}[{i}] is missing required key {required_key!r}.")
+
+        mdp = system["mdp"]
+        if not isinstance(mdp, dict):
+            raise ValueError(f"{key}[{i}].mdp must be a mapping.")
+        if "prod" not in mdp:
+            raise ValueError(f"{key}[{i}].mdp is missing required key 'prod'.")
+
+        n_steps = int(system["n_steps"])
+        if n_steps <= 0:
+            raise ValueError(f"{key}[{i}].n_steps must be a positive integer.")
+
+        systems.append(
+            SimulationSystemConfig(
+                system_id=f"{i:03d}",
+                fn_topol=_resolve_path(
+                    base_dir,
+                    system["topology"],
+                    kind=f"{key}[{i}] topology file",
+                ),
+                fn_coordinates=_resolve_path(
+                    base_dir,
+                    system["coordinates"],
+                    kind=f"{key}[{i}] coordinate file",
+                ),
+                fn_mdp_em=_resolve_optional_path(
+                    base_dir,
+                    mdp.get("em"),
+                    kind=f"{key}[{i}] EM MDP file",
+                ),
+                fn_mdp_prod=_resolve_path(
+                    base_dir,
+                    mdp["prod"],
+                    kind=f"{key}[{i}] production MDP file",
+                ),
+                fn_ndx=_resolve_path(
+                    base_dir,
+                    system["index"],
+                    kind=f"{key}[{i}] index file",
+                ),
+                bias=BiasSpec.from_any(system.get("bias"), base_dir=base_dir),
+                n_steps=n_steps,
+            )
+        )
+    return systems
+
+
+@dataclass(frozen=True, kw_only=True)
+class SimulationCampaignConfig:
     fn_config: Path
-    data_dir: Path
+    trainset_dir: Path
     gmx_cmd: str
     job_scheduler: SchedulerName
-    gromacs: RunsimsGromacsConfig
-    fn_specs: Optional[Path] = None
-    inputs: Optional[Path] = None
-    mol_resname: Optional[str] = None
-    bounds: Optional[dict[str, tuple[float, float]]] = None
-    total_charge: Optional[float] = None
-    implicit_atoms: Optional[list[str]] = None
-    n_samples: Optional[int] = None
+    systems: list[SimulationSystemConfig]
+    dispatch: bool = True
     compress: bool = False
     cleanup: bool = False
     store: tuple[str, ...] = ()
-    slurm: Optional[dict[str, Any]] = None
-
-    @property
-    def validate(self) -> bool:
-        return self.inputs is not None
+    slurm: Optional[SlurmConfig] = None
 
     @classmethod
-    def load(cls, fn_config: PathLike) -> "RunsimsConfig":
+    def _load_common(
+        cls,
+        fn_config: PathLike,
+    ) -> tuple[Path, Path, dict[str, Any], dict[str, Any]]:
         fn_config = Path(fn_config).resolve()
         base_dir = fn_config.parent
         config = load_yaml(fn_config)
 
-        required = ["data_dir", "gromacs", "job_scheduler", "gmx_cmd"]
+        required = ["trainset_dir", "systems", "job_scheduler", "gmx_cmd"]
         missing = [key for key in required if key not in config]
         if missing:
             raise ValueError(
@@ -187,156 +249,134 @@ class RunsimsConfig:
                 "'local' and 'slurm'."
             )
 
-        gromacs = config["gromacs"]
-        gmx_required = [
-            "fn_topol",
-            "fn_coordinates",
-            "fn_mdp_em",
-            "fn_mdp_prod",
-            "fn_ndx",
-            "fn_bias",
-            "n_steps",
-        ]
-        missing = [key for key in gmx_required if key not in gromacs]
-        if missing:
-            raise ValueError(
-                "Missing required GROMACS option(s): "
-                + ", ".join(repr(key) for key in missing)
-            )
-
-        n_systems = _sequence_length(gromacs["fn_topol"])
-        gromacs["fn_topol"] = _normalize_sequence(
-            gromacs["fn_topol"],
-            n_systems,
-            key="gromacs.fn_topol",
-        )
-        for key in (
-            "fn_coordinates",
-            "fn_mdp_em",
-            "fn_mdp_prod",
-            "fn_ndx",
-            "n_steps",
-        ):
-            gromacs[key] = _normalize_sequence(
-                gromacs[key],
-                n_systems,
-                key=f"gromacs.{key}",
-            )
-        for key in ("fn_bias",):
-            gromacs[key] = _normalize_sequence(
-                gromacs.get(key),
-                n_systems,
-                key=f"gromacs.{key}",
-            )
-
-        gmx_config = RunsimsGromacsConfig(
-            fn_topol=_resolve_paths(base_dir, gromacs["fn_topol"], key="gromacs.fn_topol"),
-            fn_coordinates=_resolve_paths(
-                base_dir,
-                gromacs["fn_coordinates"],
-                key="gromacs.fn_coordinates",
-            ),
-            fn_mdp_em=[
-                _resolve_optional_path(base_dir, value, kind="gromacs.fn_mdp_em file")
-                for value in gromacs["fn_mdp_em"]
-            ],
-            fn_mdp_prod=_resolve_paths(
-                base_dir,
-                gromacs["fn_mdp_prod"],
-                key="gromacs.fn_mdp_prod",
-            ),
-            fn_ndx=_resolve_paths(base_dir, gromacs["fn_ndx"], key="gromacs.fn_ndx"),
-            fn_bias=[
-                _resolve_optional_path(base_dir, value, kind="gromacs.fn_bias file")
-                for value in gromacs["fn_bias"]
-            ],
-            n_steps=[int(value) for value in gromacs["n_steps"]],
-        )
-
-        if any(step <= 0 for step in gmx_config.n_steps):
-            raise ValueError("All entries in gromacs.n_steps must be positive.")
-
-        inputs = config.get("inputs")
-        if inputs is not None:
-            fn_specs = config.get("fn_specs")
-            if fn_specs is None:
-                raise ValueError("Validation mode requires 'fn_specs'.")
-            resolved_specs = _resolve_path(base_dir, fn_specs, kind="specs file")
-            resolved_inputs = _resolve_path(base_dir, inputs, kind="inputs file")
-
-            bounds = None
-            total_charge = None
-            implicit_atoms = None
-            mol_resname = None
-            n_samples = None
-        else:
-            required = [
-                "mol_resname",
-                "bounds",
-                "total_charge",
-                "implicit_atoms",
-                "n_samples",
-            ]
-            missing = [key for key in required if key not in config]
-            if missing:
-                raise ValueError(
-                    "Training mode requires configuration key(s): "
-                    + ", ".join(repr(key) for key in missing)
-                )
-
-            bounds = _validate_bounds(config["bounds"])
-            implicit_atoms = _normalize_implicit_atoms(config["implicit_atoms"])
-            bound_charge_groups = {
-                name.split(maxsplit=1)[1]
-                for name in bounds
-                if name.startswith("charge ")
-            }
-            implicit_group = " ".join(implicit_atoms)
-            if bound_charge_groups and implicit_group not in bound_charge_groups:
-                raise ValueError(
-                    f"'implicit_atoms' ({implicit_group}) must match one of the "
-                    "charge parameters defined in 'bounds'."
-                )
-
-            n_samples = int(config["n_samples"])
-            if n_samples <= 0:
-                raise ValueError("'n_samples' must be a positive integer.")
-
-            resolved_specs = None
-            resolved_inputs = None
-            total_charge = float(config["total_charge"])
-            mol_resname = str(config["mol_resname"])
+        systems = _load_simulation_systems(base_dir, config["systems"], key="systems")
 
         slurm = None
         if scheduler == "slurm":
-            slurm = config.get("slurm")
-            if not isinstance(slurm, dict):
+            slurm_raw = config.get("slurm")
+            if not isinstance(slurm_raw, dict):
                 raise ValueError("Missing 'slurm' configuration for slurm scheduler.")
-            for key in ("preamble", "commands"):
-                if key not in slurm:
-                    raise ValueError(f"Scheduler 'slurm' must define {key!r}.")
-            if not isinstance(slurm["commands"], list) or not all(
-                isinstance(cmd, str) for cmd in slurm["commands"]
-            ):
-                raise ValueError("slurm.commands must be a list of shell commands.")
+            if "sbatch" not in slurm_raw:
+                raise ValueError("Scheduler 'slurm' must define 'sbatch'.")
+            if not isinstance(slurm_raw["sbatch"], dict):
+                raise ValueError("slurm.sbatch must be a mapping.")
 
-        return cls(
+            setup = slurm_raw.get("setup", [])
+            teardown = slurm_raw.get("teardown", [])
+            if not isinstance(setup, list) or not all(
+                isinstance(cmd, str) for cmd in setup
+            ):
+                raise ValueError("slurm.setup must be a list of shell commands.")
+            if not isinstance(teardown, list) or not all(
+                isinstance(cmd, str) for cmd in teardown
+            ):
+                raise ValueError("slurm.teardown must be a list of shell commands.")
+
+            max_parallel_jobs = int(slurm_raw.get("max_parallel_jobs", 1))
+            if max_parallel_jobs == 0 or max_parallel_jobs < -1:
+                raise ValueError(
+                    "'slurm.max_parallel_jobs' must be positive or -1."
+                )
+
+            slurm = SlurmConfig(
+                max_parallel_jobs=max_parallel_jobs,
+                sbatch=dict(slurm_raw["sbatch"]),
+                setup=tuple(setup),
+                teardown=tuple(teardown),
+            )
+
+        common = dict(
             fn_config=fn_config,
-            data_dir=_resolve_path(base_dir, config["data_dir"], must_exist=False, kind="data directory"),
+            trainset_dir=_resolve_path(
+                base_dir,
+                config["trainset_dir"],
+                must_exist=False,
+                kind="trainset directory",
+            ),
             gmx_cmd=str(config["gmx_cmd"]),
             job_scheduler=scheduler,
-            gromacs=gmx_config,
-            fn_specs=resolved_specs,
-            inputs=resolved_inputs,
-            mol_resname=mol_resname,
-            bounds=bounds,
-            total_charge=total_charge,
-            implicit_atoms=implicit_atoms,
-            n_samples=n_samples,
+            systems=systems,
+            dispatch=bool(config.get("dispatch", True)),
             compress=bool(config.get("compress", False)),
             cleanup=bool(config.get("cleanup", False)),
             store=tuple(_normalize_store(config.get("store"))),
             slurm=slurm,
+        )
+        return fn_config, base_dir, config, common
+
+
+@dataclass(frozen=True, kw_only=True)
+class SimulateConfig(SimulationCampaignConfig):
+    mol_resname: str
+    bounds: dict[str, tuple[float, float]]
+    total_charge: float
+    implicit_atoms: list[str]
+    n_samples: int
+
+    @classmethod
+    def load(cls, fn_config: PathLike) -> "SimulateConfig":
+        _, _, config, common = cls._load_common(fn_config)
+
+        required = [
+            "mol_resname",
+            "bounds",
+            "total_charge",
+            "implicit_atoms",
+            "n_samples",
+        ]
+        missing = [key for key in required if key not in config]
+        if missing:
+            raise ValueError(
+                "Simulation mode requires configuration key(s): "
+                + ", ".join(repr(key) for key in missing)
+            )
+
+        bounds = _validate_bounds(config["bounds"])
+        implicit_atoms = _normalize_implicit_atoms(config["implicit_atoms"])
+        bound_charge_groups = {
+            name.split(maxsplit=1)[1]
+            for name in bounds
+            if name.startswith("charge ")
+        }
+        implicit_group = " ".join(implicit_atoms)
+        if bound_charge_groups and implicit_group not in bound_charge_groups:
+            raise ValueError(
+                f"'implicit_atoms' ({implicit_group}) must match one of the "
+                "charge parameters defined in 'bounds'."
+            )
+
+        n_samples = int(config["n_samples"])
+        if n_samples <= 0:
+            raise ValueError("'n_samples' must be a positive integer.")
+
+        return cls(
+            **common,
+            mol_resname=str(config["mol_resname"]),
+            bounds=bounds,
+            total_charge=float(config["total_charge"]),
+            implicit_atoms=implicit_atoms,
+            n_samples=n_samples,
+        )
+
+
+@dataclass(frozen=True, kw_only=True)
+class ValidateConfig(SimulationCampaignConfig):
+    fn_specs: Path
+    inputs: Path
+
+    @classmethod
+    def load(cls, fn_config: PathLike) -> "ValidateConfig":
+        _, base_dir, config, common = cls._load_common(fn_config)
+
+        if "fn_specs" not in config:
+            raise ValueError("Validation mode requires 'fn_specs'.")
+        if "inputs" not in config:
+            raise ValueError("Validation mode requires 'inputs'.")
+
+        return cls(
+            **common,
+            fn_specs=_resolve_path(base_dir, config["fn_specs"], kind="specs file"),
+            inputs=_resolve_path(base_dir, config["inputs"], kind="inputs file"),
         )
 
 
@@ -656,15 +696,15 @@ class AnalyzeConfig:
 @dataclass(frozen=True)
 class MDJobConfig:
     fn_config: Path
-    hash: str
+    sample_id: str
     params: list[float]
-    data_dir: Path
+    trainset_dir: Path
     fn_specs: Optional[Path]
     gmx_cmd: str
     job_scheduler: SchedulerName
     store: tuple[str, ...]
     run: bool
-    gromacs: RunsimsGromacsConfig
+    systems: list[SimulationSystemConfig]
 
     @classmethod
     def load(cls, fn_config: PathLike) -> "MDJobConfig":
@@ -672,7 +712,14 @@ class MDJobConfig:
         base_dir = fn_config.parent
         config = load_yaml(fn_config)
 
-        required = ["hash", "params", "data_dir", "gmx_cmd", "job_scheduler", "gromacs"]
+        required = [
+            "sample_id",
+            "params",
+            "trainset_dir",
+            "gmx_cmd",
+            "job_scheduler",
+            "systems",
+        ]
         missing = [key for key in required if key not in config]
         if missing:
             raise ValueError(
@@ -680,87 +727,21 @@ class MDJobConfig:
                 + ", ".join(repr(key) for key in missing)
             )
 
-        gromacs = config["gromacs"]
-        gmx_required = [
-            "fn_topol",
-            "fn_coordinates",
-            "fn_mdp_em",
-            "fn_mdp_prod",
-            "fn_ndx",
-            "fn_bias",
-            "n_steps",
-        ]
-        missing = [key for key in gmx_required if key not in gromacs]
-        if missing:
-            raise ValueError(
-                "Missing required GROMACS option(s) in MD job config: "
-                + ", ".join(repr(key) for key in missing)
-            )
-
-        n_systems = _sequence_length(gromacs["fn_topol"])
-        gromacs["fn_topol"] = _normalize_sequence(
-            gromacs["fn_topol"],
-            n_systems,
-            key="gromacs.fn_topol",
-        )
-        for key in (
-            "fn_coordinates",
-            "fn_mdp_em",
-            "fn_mdp_prod",
-            "fn_ndx",
-            "n_steps",
-        ):
-            gromacs[key] = _normalize_sequence(
-                gromacs[key],
-                n_systems,
-                key=f"gromacs.{key}",
-            )
-        for key in ("fn_bias",):
-            gromacs[key] = _normalize_sequence(
-                gromacs.get(key),
-                n_systems,
-                key=f"gromacs.{key}",
-            )
-
         job = cls(
             fn_config=fn_config,
-            hash=str(config["hash"]),
+            sample_id=str(config["sample_id"]),
             params=[float(value) for value in config["params"]],
-            data_dir=_resolve_path(base_dir, config["data_dir"], kind="data directory"),
+            trainset_dir=_resolve_path(
+                base_dir,
+                config["trainset_dir"],
+                kind="trainset directory",
+            ),
             fn_specs=_resolve_optional_path(base_dir, config.get("fn_specs"), kind="specs file"),
             gmx_cmd=str(config["gmx_cmd"]),
             job_scheduler=config["job_scheduler"],
             store=tuple(_normalize_store(config.get("store"))),
             run=bool(config.get("run", True)),
-            gromacs=RunsimsGromacsConfig(
-                fn_topol=_resolve_paths(base_dir, gromacs["fn_topol"], key="gromacs.fn_topol"),
-                fn_coordinates=_resolve_paths(
-                    base_dir,
-                    gromacs["fn_coordinates"],
-                    key="gromacs.fn_coordinates",
-                ),
-                fn_mdp_em=[
-                    _resolve_optional_path(base_dir, value, kind="gromacs.fn_mdp_em file")
-                    for value in gromacs["fn_mdp_em"]
-                ],
-                fn_mdp_prod=_resolve_paths(
-                    base_dir,
-                    gromacs["fn_mdp_prod"],
-                    key="gromacs.fn_mdp_prod",
-                ),
-                fn_ndx=_resolve_paths(base_dir, gromacs["fn_ndx"], key="gromacs.fn_ndx"),
-                fn_bias=[
-                    _resolve_optional_path(
-                        base_dir,
-                        value,
-                        kind="gromacs.fn_bias file",
-                    )
-                    for value in gromacs["fn_bias"]
-                ],
-                n_steps=[int(value) for value in gromacs["n_steps"]],
-            ),
+            systems=_load_simulation_systems(base_dir, config["systems"], key="systems"),
         )
-        if any(step <= 0 for step in job.gromacs.n_steps):
-            raise ValueError("All entries in gromacs.n_steps must be positive.")
         return job
     

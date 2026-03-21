@@ -1,34 +1,30 @@
 mol_resname: ACE
-data_dir: ./trainset
-gromacs:
-  fn_mdp_em:
-    - ../01-prepare/training/em.mdp
-    - ../01-prepare/training/em.mdp
-    - ../01-prepare/training/em.mdp
-  fn_mdp_prod:
-    - ../01-prepare/training/window-000.mdp
-    - ../01-prepare/training/window-001.mdp
-    - ../01-prepare/training/window-002.mdp
-  fn_coordinates:
-    - ../01-prepare/training/window-000.gro
-    - ../01-prepare/training/window-001.gro
-    - ../01-prepare/training/window-002.gro
-  fn_topol:
-    - ../01-prepare/training/window-000.top
-    - ../01-prepare/training/window-001.top
-    - ../01-prepare/training/window-002.top
-  fn_ndx:
-    - ../01-prepare/training/window-000.ndx
-    - ../01-prepare/training/window-001.ndx
-    - ../01-prepare/training/window-002.ndx
-  fn_bias:
-    - null
-    - ../01-prepare/training/window-001.bias.plumed.dat
-    - ../01-prepare/training/window-002.bias.plumed.dat
-  n_steps:
-    - 100000
-    - 100000
-    - 100000
+trainset_dir: ./trainset
+systems:
+  - topology: ../01-prepare/ace/training/window-000.top
+    coordinates: ../01-prepare/ace/training/window-000.gro
+    mdp:
+      em: ../01-prepare/ace/training/em.mdp
+      prod: ../01-prepare/ace/training/window-000.mdp
+    index: ../01-prepare/ace/training/window-000.ndx
+    bias: null
+    n_steps: 1000
+  - topology: ../01-prepare/ace/training/window-001.top
+    coordinates: ../01-prepare/ace/training/window-001.gro
+    mdp:
+      em: ../01-prepare/ace/training/em.mdp
+      prod: ../01-prepare/ace/training/window-001.mdp
+    index: ../01-prepare/ace/training/window-001.ndx
+    bias: ../01-prepare/ace/training/window-001.bias.plumed.dat
+    n_steps: 1000
+  - topology: ../01-prepare/ace/training/window-002.top
+    coordinates: ../01-prepare/ace/training/window-002.gro
+    mdp:
+      em: ../01-prepare/ace/training/em.mdp
+      prod: ../01-prepare/ace/training/window-002.mdp
+    index: ../01-prepare/ace/training/window-002.ndx
+    bias: ../01-prepare/ace/training/window-002.bias.plumed.dat
+    n_steps: 1000
 bounds:
   charge C2: [0.0, 1.0]
   charge O1 O2: [-0.8, -0.3]
@@ -39,7 +35,6 @@ total_charge: -0.80
 n_samples: 10
 compress: false
 cleanup: true
-store: false
-python: python3.13
+store: ["xtc"]
 gmx_cmd: gmx
 job_scheduler: local

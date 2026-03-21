@@ -67,14 +67,24 @@ def prepare(fn_config: Path = config_argument()) -> None:
     run_workflow(fn_config, prepare_main, "prepare")
 
 
-@app.command()
-def runsims(fn_config: Path = config_argument()) -> None:
+@app.command(name="simulate")
+def simulate(fn_config: Path = config_argument()) -> None:
     """
-    Run training or validation molecular simulations.
+    Run a sampled molecular-dynamics campaign for training-set generation.
     """
-    from bff.workflows.runsims import main as runsims_main
+    from bff.workflows.simulate import main as simulate_main
 
-    run_workflow(fn_config, runsims_main, "runsims")
+    run_workflow(fn_config, simulate_main, "simulate")
+
+
+@app.command()
+def validate(fn_config: Path = config_argument()) -> None:
+    """
+    Run a validation campaign for provided parameter samples.
+    """
+    from bff.workflows.validate import main as validate_main
+
+    run_workflow(fn_config, validate_main, "validate")
 
 
 @app.command()

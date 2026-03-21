@@ -1,4 +1,5 @@
 import subprocess
+from pathlib import Path
 
 
 class Slurm:
@@ -42,7 +43,7 @@ class Slurm:
         """
 
         self.sbatch = [
-            f'#SBATCH --{key}={value}'
+            f"#SBATCH --{key.replace('_', '-')}={value}"
             for key, value in sbatch.items()
         ]
         self.commands = []
@@ -59,7 +60,7 @@ class Slurm:
         """
         self.commands.append(command)
 
-    def generate(self):
+    def generate(self) -> str:
         """
         Generate the SLURM script content as a string.
 
@@ -68,12 +69,14 @@ class Slurm:
         str
             The complete SLURM script.
         """
-        script = "#!/bin/bash" + '\n'
-        script += '\n'.join(self.sbatch) + "\n"
-        script += "\n".join(self.commands)
+        script = "#!/bin/bash\nset -euo pipefail\n"
+        if self.sbatch:
+            script += "\n".join(self.sbatch) + "\n"
+        if self.commands:
+            script += "\n" + "\n".join(self.commands) + "\n"
         return script
 
-    def save(self, filename: str) -> None:
+    def save(self, filename: str | Path) -> None:
         """
         Save the SLURM script to a file.
 
@@ -82,19 +85,34 @@ class Slurm:
         filename : str
             Path to save the SLURM script.
         """
-        self.fname = filename
-        with open(filename, 'w') as file:
+        self.fname = Path(filename)
+        with open(self.fname, "w") as file:
             file.write(self.generate())
 
-    def submit(self, filename: str) -> str:
+    def submit(self, filename: str | Path) -> int:
         """
         Submit the SLURM script to the queue.
         """
-        if not self.fname:
-            self.save(filename)
+        self.save(filename)
         out = subprocess.run(
-            ['sbatch', self.fname], capture_output=True, text=True
+            ["sbatch", str(self.fname)],
+            capture_output=True,
+            text=True,
+            check=False,
         )
-        job_id = out.stdout.split()[-1]
+        if out.returncode != 0:
+            message = out.stderr.strip() or out.stdout.strip() or "unknown sbatch error"
+            raise RuntimeError(f"SLURM submission failed: {message}")
 
-        return job_id
+        tokens = out.stdout.strip().split()
+        if not tokens:
+            raise RuntimeError(
+                "SLURM submission failed: could not parse job ID from sbatch output."
+            )
+        try:
+            return int(tokens[-1])
+        except ValueError as exc:
+            raise RuntimeError(
+                "SLURM submission failed: could not parse job ID from "
+                f"sbatch output {out.stdout!r}."
+            ) from exc

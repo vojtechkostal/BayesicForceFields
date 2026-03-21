@@ -318,9 +318,9 @@ class TopologyModifier(Topology):
         raise ValueError(f"Atom type {atomtype} not found in topology.")
 
     def _update_epsilon(self, atomtype: str, value: float) -> None:
-        for atomtype in self.atomtypes:
-            if atomtype.name == atomtype:
-                atomtype.update(epsilon=value)
+        for at in self.atomtypes:
+            if at.name == atomtype:
+                at.update(epsilon=value)
                 return
         raise ValueError(f"Atom type {atomtype} not found in topology.")
 
@@ -370,7 +370,7 @@ class TopologyModifier(Topology):
             if atom.name in atomnames
         ])
 
-    def resolve_params(
+    def resolve_parameter_names(
         self,
         params: dict[str, float | list[float]]
     ) -> dict[str, float | list[float]]:
@@ -409,8 +409,12 @@ class TopologyModifier(Topology):
 
         return resolved
 
-    def update_params(self, params: dict, constraint_charge: float | None) -> None:
-        params_resolved = self.resolve_params(params)
+    def apply_parameters(
+        self,
+        params: dict[str, float | list[float]],
+        constraint_charge: float | None = None,
+    ) -> None:
+        params_resolved = self.resolve_parameter_names(params)
 
         for p, value in params_resolved.items():
             if "dihedraltype9" in p:
@@ -443,11 +447,26 @@ class TopologyModifier(Topology):
                     raise ValueError(f"Unsupported parameter name '{p_name}'.")
 
         if constraint_charge is not None:
-            # check if none of the implict atoms were updated manually
+            # Ensure the implicit charge group stays implicit.
             for atom in self.implicit_atoms:
-                if atom.name in params_resolved:
+                updated = any(
+                    key.startswith("charge ")
+                    and atom.name in key.split()[1:]
+                    for key in params_resolved
+                )
+                if updated:
                     raise ValueError(
-                        f"Implicit atom '{atom}' charge was set manually, "
+                        f"Implicit atom '{atom.name}' charge was set manually, "
                         "cannot apply constraint charge."
                     )
             self._constraint_charge(constraint_charge)
+
+    # Backward-compatible aliases kept local to this execution helper.
+    def resolve_params(
+        self,
+        params: dict[str, float | list[float]]
+    ) -> dict[str, float | list[float]]:
+        return self.resolve_parameter_names(params)
+
+    def update_params(self, params: dict, constraint_charge: float | None) -> None:
+        self.apply_parameters(params, constraint_charge=constraint_charge)
