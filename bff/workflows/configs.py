@@ -1,10 +1,10 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Optional, Sequence, Union
+from typing import Any, Literal, Mapping, Optional, Sequence, Union
 
 from ..domain.bias import BiasSpec
 from ..io.utils import load_yaml
-from ..qoi.routines import AnalysisRoutineConfig, normalize_analysis_config
+from ..qoi.routines import AnalysisRoutinesConfig, normalize_analysis_config
 
 
 PathLike = Union[str, Path]
@@ -32,11 +32,12 @@ def _resolve_optional_path(
     base_dir: Path,
     path: PathLike | None,
     *,
+    must_exist: bool = True,
     kind: str = "file",
 ) -> Path | None:
     if path is None:
         return None
-    return _resolve_path(base_dir, path, kind=kind)
+    return _resolve_path(base_dir, path, must_exist=must_exist, kind=kind)
 
 
 def _normalize_sequence(
@@ -110,7 +111,9 @@ def _validate_bounds(bounds: Any) -> dict[str, tuple[float, float]]:
 def _normalize_implicit_atoms(value: Any) -> list[str]:
     if isinstance(value, str):
         return value.split()
-    if isinstance(value, (list, tuple)) and all(isinstance(item, str) for item in value):
+    if isinstance(value, (list, tuple)) and all(
+        isinstance(item, str) for item in value
+    ):
         return list(value)
     raise ValueError("'implicit_atoms' must be a string or a list of strings.")
 
@@ -165,7 +168,9 @@ def _load_simulation_systems(
             raise ValueError(f"{key}[{i}] must be a mapping.")
         for required_key in ("topology", "coordinates", "mdp", "index", "n_steps"):
             if required_key not in system:
-                raise ValueError(f"{key}[{i}] is missing required key {required_key!r}.")
+                raise ValueError(
+                    f"{key}[{i}] is missing required key {required_key!r}."
+                )
 
         mdp = system["mdp"]
         if not isinstance(mdp, dict):
@@ -605,21 +610,27 @@ class PrepareConfig:
 
 
 @dataclass(frozen=True)
+class AnalyzeSystemConfig:
+    fn_coord: Path
+    fn_topol: Path
+    fn_trj: Path
+    routines: tuple[Mapping[str, Any], ...]
+
+
+@dataclass(frozen=True)
 class AnalyzeConfig:
     fn_config: Path
-    aimd_fn_coord: list[Path]
-    aimd_fn_topol: list[Path]
-    aimd_fn_trj: list[Path]
-    aimd_start: int = 0
-    aimd_stop: int = -1
-    aimd_step: int = 1
-    trainset_dir: Path = Path(".")
-    ffmd_start: int = 1
-    ffmd_stop: Optional[int] = None
-    ffmd_step: int = 1
-    ffmd_workers: int = -1
-    ffmd_progress_stride: int = 10
-    analysis: AnalysisRoutineConfig | None = None
+    trainset_dir: Path
+    systems: list[AnalyzeSystemConfig]
+    training_start: int = 1
+    training_stop: Optional[int] = None
+    training_step: int = 1
+    training_workers: int = -1
+    training_progress_stride: int = 10
+    reference_start: int = 0
+    reference_stop: int = -1
+    reference_step: int = 1
+    analysis: AnalysisRoutinesConfig | None = None
     base_name: Path = Path("./qoi")
     fn_log: Path = Path("./out.log")
     write_raw_qoi: bool = False
@@ -630,52 +641,86 @@ class AnalyzeConfig:
         base_dir = fn_config.parent
         config = load_yaml(fn_config)
 
-        for key in ("aimd", "ffmd"):
+        for key in ("systems", "training"):
             if key not in config:
                 raise ValueError(f"Missing required configuration section: {key!r}.")
 
-        aimd = config["aimd"]
-        aimd_keys = ("fn_coord", "fn_topol", "fn_trj")
-        missing = [key for key in aimd_keys if key not in aimd]
-        if missing:
-            raise ValueError(
-                "Missing required AIMD option(s): "
-                + ", ".join(repr(key) for key in missing)
-            )
-
-        n_systems = _sequence_length(aimd["fn_coord"])
-        aimd["fn_coord"] = _normalize_sequence(
-            aimd["fn_coord"],
-            n_systems,
-            key="aimd.fn_coord",
-        )
-        for key in aimd_keys[1:]:
-            aimd[key] = _normalize_sequence(aimd[key], n_systems, key=f"aimd.{key}")
-
-        ffmd = config["ffmd"]
-        trainset_dir = ffmd.get("trainset_dir")
+        training = config["training"]
+        if not isinstance(training, Mapping):
+            raise ValueError("'training' must be a mapping.")
+        trainset_dir = training.get("trainset_dir")
         if trainset_dir is None:
-            raise ValueError("Missing 'trainset_dir' in FFMD configuration.")
+            raise ValueError("Missing 'trainset_dir' in training configuration.")
 
-        if "analysis" not in config:
-            raise ValueError("Missing required configuration section: 'analysis'.")
+        systems_raw = config["systems"]
+        if not isinstance(systems_raw, list) or not systems_raw:
+            raise ValueError("'systems' must be a non-empty list.")
 
-        analysis = normalize_analysis_config(config["analysis"])
+        routine_systems: list[dict[str, Any]] = []
+        systems: list[AnalyzeSystemConfig] = []
+        for i, system in enumerate(systems_raw):
+            if not isinstance(system, Mapping):
+                raise ValueError(f"systems[{i}] must be a mapping.")
+            reference = system.get("reference")
+            if not isinstance(reference, Mapping):
+                raise ValueError(f"systems[{i}].reference must be a mapping.")
+            for key in ("coordinates", "topology", "trajectory"):
+                if key not in reference:
+                    raise ValueError(
+                        f"systems[{i}].reference is missing required key {key!r}."
+                    )
+            routines = system.get("routines")
+            if not isinstance(routines, list) or not routines:
+                raise ValueError(f"systems[{i}].routines must be a non-empty list.")
+
+            systems.append(
+                AnalyzeSystemConfig(
+                    fn_coord=_resolve_path(
+                        base_dir,
+                        reference["coordinates"],
+                        kind=f"systems[{i}] reference coordinates file",
+                    ),
+                    fn_topol=_resolve_path(
+                        base_dir,
+                        reference["topology"],
+                        kind=f"systems[{i}] reference topology file",
+                    ),
+                    fn_trj=_resolve_path(
+                        base_dir,
+                        reference["trajectory"],
+                        kind=f"systems[{i}] reference trajectory file",
+                    ),
+                    routines=tuple(routines),
+                )
+            )
+            routine_systems.append({"routines": routines})
+
+        analysis = normalize_analysis_config(
+            {"systems": routine_systems, **dict(config.get("analysis", {}))},
+            n_systems=len(systems),
+            base_dir=base_dir,
+        )
+
+        reference = config.get("reference", {})
+        if not isinstance(reference, Mapping):
+            raise ValueError("'reference' must be a mapping.")
 
         return cls(
             fn_config=fn_config,
-            aimd_fn_coord=_resolve_paths(base_dir, aimd["fn_coord"], key="aimd.fn_coord"),
-            aimd_fn_topol=_resolve_paths(base_dir, aimd["fn_topol"], key="aimd.fn_topol"),
-            aimd_fn_trj=_resolve_paths(base_dir, aimd["fn_trj"], key="aimd.fn_trj"),
-            aimd_start=int(aimd.get("start", 0)),
-            aimd_stop=aimd.get("stop", -1),
-            aimd_step=int(aimd.get("step", 1)),
-            trainset_dir=_resolve_path(base_dir, trainset_dir, kind="trainset directory"),
-            ffmd_start=int(ffmd.get("start", 1)),
-            ffmd_stop=ffmd.get("stop"),
-            ffmd_step=int(ffmd.get("step", 1)),
-            ffmd_workers=int(ffmd.get("workers", -1)),
-            ffmd_progress_stride=int(ffmd.get("progress_stride", 10)),
+            trainset_dir=_resolve_path(
+                base_dir,
+                trainset_dir,
+                kind="trainset directory",
+            ),
+            systems=systems,
+            training_start=int(training.get("start", 1)),
+            training_stop=training.get("stop"),
+            training_step=int(training.get("step", 1)),
+            training_workers=int(training.get("workers", -1)),
+            training_progress_stride=int(training.get("progress_stride", 10)),
+            reference_start=int(reference.get("start", 0)),
+            reference_stop=reference.get("stop", -1),
+            reference_step=int(reference.get("step", 1)),
             analysis=analysis,
             base_name=_resolve_path(
                 base_dir,
@@ -690,6 +735,224 @@ class AnalyzeConfig:
                 kind="log file",
             ),
             write_raw_qoi=bool(config.get("write_raw_qoi", False)),
+        )
+
+
+@dataclass(frozen=True)
+class LearnDatasetConfig:
+    name: str
+    fn_data: Path
+    mean: Any = 0
+    nuisance: float | None = None
+    fn_model: Path | None = None
+
+
+@dataclass(frozen=True)
+class LearnTrainingConfig:
+    model_dir: Path
+    reuse_models: bool = True
+    n_hyper_max: int = 200
+    committee_size: int = 1
+    test_fraction: float = 0.2
+    device: str = "cuda:0"
+    opt_kwargs: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class LearnMCMCConfig:
+    priors_disttype: str = "normal"
+    total_steps: int = 1500
+    warmup: int = 500
+    thin: int = 1
+    progress_stride: int = 100
+    n_walkers: int | None = None
+    fn_checkpoint: Path | None = None
+    fn_posterior: Path = Path("./posterior.pt")
+    fn_priors: Path | None = Path("./priors.pt")
+    restart: bool = True
+    device: str = "cuda:0"
+    rhat_tol: float = 1.01
+    ess_min: int = 100
+
+
+@dataclass(frozen=True)
+class LearnConfig:
+    fn_config: Path
+    fn_specs: Path
+    datasets: tuple[LearnDatasetConfig, ...]
+    qoi: tuple[str, ...] | None
+    training: LearnTrainingConfig
+    mcmc: LearnMCMCConfig
+    fn_log: Path
+
+    @classmethod
+    def load(cls, fn_config: PathLike) -> "LearnConfig":
+        fn_config = Path(fn_config).resolve()
+        base_dir = fn_config.parent
+        config = load_yaml(fn_config)
+
+        for key in ("fn_specs", "datasets", "training"):
+            if key not in config:
+                raise ValueError(f"Missing required configuration section: {key!r}.")
+
+        datasets_raw = config["datasets"]
+        if not isinstance(datasets_raw, Mapping) or not datasets_raw:
+            raise ValueError("'datasets' must be a non-empty mapping.")
+
+        training = config["training"]
+        if not isinstance(training, Mapping):
+            raise ValueError("'training' must be a mapping.")
+
+        model_dir = _resolve_path(
+            base_dir,
+            training.get("model_dir", "./models"),
+            must_exist=False,
+            kind="model directory",
+        )
+
+        training_known_keys = {
+            "model_dir",
+            "reuse_models",
+            "n_hyper_max",
+            "committee_size",
+            "test_fraction",
+            "device",
+        }
+        opt_kwargs = {
+            key: value
+            for key, value in training.items()
+            if key not in training_known_keys
+        }
+        training_config = LearnTrainingConfig(
+            model_dir=model_dir,
+            reuse_models=bool(training.get("reuse_models", True)),
+            n_hyper_max=int(training.get("n_hyper_max", 200)),
+            committee_size=int(training.get("committee_size", 1)),
+            test_fraction=float(training.get("test_fraction", 0.2)),
+            device=str(training.get("device", "cuda:0")),
+            opt_kwargs=opt_kwargs,
+        )
+
+        if not (0 < training_config.test_fraction < 1):
+            raise ValueError("'training.test_fraction' must be between 0 and 1.")
+        if training_config.n_hyper_max < 1:
+            raise ValueError("'training.n_hyper_max' must be positive.")
+        if training_config.committee_size < 1:
+            raise ValueError("'training.committee_size' must be positive.")
+
+        datasets: list[LearnDatasetConfig] = []
+        for name, dataset in datasets_raw.items():
+            if not isinstance(dataset, Mapping):
+                raise ValueError(f"Dataset {name!r} must be a mapping.")
+            if "data" not in dataset:
+                raise ValueError(f"Dataset {name!r} is missing required key 'data'.")
+            nuisance = dataset.get("nuisance")
+            if nuisance is not None:
+                nuisance = float(nuisance)
+                if nuisance <= 0:
+                    raise ValueError(
+                        "Dataset "
+                        f"{name!r} nuisance must be a positive standard deviation."
+                    )
+            fn_model = dataset.get("model")
+            if fn_model is None:
+                fn_model_resolved = model_dir / f"{name}.lgp"
+            else:
+                fn_model_resolved = _resolve_path(
+                    base_dir,
+                    fn_model,
+                    must_exist=False,
+                    kind=f"dataset {name!r} model file",
+                )
+            datasets.append(
+                LearnDatasetConfig(
+                    name=str(name),
+                    fn_data=_resolve_path(
+                        base_dir,
+                        dataset["data"],
+                        kind=f"dataset {name!r} data file",
+                    ),
+                    mean=dataset.get("mean", 0),
+                    nuisance=nuisance,
+                    fn_model=fn_model_resolved,
+                )
+            )
+
+        qoi_raw = config.get("qoi")
+        qoi = None if qoi_raw is None else tuple(qoi_raw)
+        if qoi is not None:
+            missing = set(qoi) - {dataset.name for dataset in datasets}
+            if missing:
+                raise ValueError(
+                    "Selected QoI(s) are missing from datasets: "
+                    + ", ".join(sorted(missing))
+                )
+
+        mcmc = config.get("mcmc", {})
+        if not isinstance(mcmc, Mapping):
+            raise ValueError("'mcmc' must be a mapping.")
+
+        total_steps = int(mcmc.get("total_steps", 1500))
+        warmup = int(mcmc.get("warmup", 500))
+        thin = int(mcmc.get("thin", 1))
+        progress_stride = int(mcmc.get("progress_stride", 100))
+        if total_steps < 1:
+            raise ValueError("'mcmc.total_steps' must be positive.")
+        if warmup < 0 or warmup >= total_steps:
+            raise ValueError("'mcmc.warmup' must satisfy 0 <= warmup < total_steps.")
+        if thin < 1:
+            raise ValueError("'mcmc.thin' must be positive.")
+        if progress_stride < 1:
+            raise ValueError("'mcmc.progress_stride' must be positive.")
+
+        mcmc_config = LearnMCMCConfig(
+            priors_disttype=str(mcmc.get("priors_disttype", "normal")),
+            total_steps=total_steps,
+            warmup=warmup,
+            thin=thin,
+            progress_stride=progress_stride,
+            n_walkers=None
+            if mcmc.get("n_walkers") is None
+            else int(mcmc["n_walkers"]),
+            fn_checkpoint=_resolve_optional_path(
+                base_dir,
+                mcmc.get("fn_checkpoint", "./mcmc-checkpoint.pt"),
+                must_exist=False,
+                kind="MCMC checkpoint file",
+            ),
+            fn_posterior=_resolve_path(
+                base_dir,
+                mcmc.get("fn_posterior", "./posterior.pt"),
+                must_exist=False,
+                kind="posterior output file",
+            ),
+            fn_priors=_resolve_optional_path(
+                base_dir,
+                mcmc.get("fn_priors", "./priors.pt"),
+                must_exist=False,
+                kind="priors output file",
+            ),
+            restart=bool(mcmc.get("restart", True)),
+            device=str(mcmc.get("device", "cuda:0")),
+            rhat_tol=float(mcmc.get("rhat_tol", 1.01)),
+            ess_min=int(mcmc.get("ess_min", 100)),
+        )
+
+        fn_log = _resolve_path(
+            base_dir,
+            config.get("fn_log", "./out.log"),
+            must_exist=False,
+            kind="log file",
+        )
+
+        return cls(
+            fn_config=fn_config,
+            fn_specs=_resolve_path(base_dir, config["fn_specs"], kind="specs file"),
+            datasets=tuple(datasets),
+            qoi=qoi,
+            training=training_config,
+            mcmc=mcmc_config,
+            fn_log=fn_log,
         )
 
 
@@ -736,12 +999,19 @@ class MDJobConfig:
                 config["trainset_dir"],
                 kind="trainset directory",
             ),
-            fn_specs=_resolve_optional_path(base_dir, config.get("fn_specs"), kind="specs file"),
+            fn_specs=_resolve_optional_path(
+                base_dir,
+                config.get("fn_specs"),
+                kind="specs file",
+            ),
             gmx_cmd=str(config["gmx_cmd"]),
             job_scheduler=config["job_scheduler"],
             store=tuple(_normalize_store(config.get("store"))),
             run=bool(config.get("run", True)),
-            systems=_load_simulation_systems(base_dir, config["systems"], key="systems"),
+            systems=_load_simulation_systems(
+                base_dir,
+                config["systems"],
+                key="systems",
+            ),
         )
         return job
-    
