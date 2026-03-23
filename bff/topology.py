@@ -252,11 +252,10 @@ class TopologyModifier(Topology):
     -------
     group_charge(atomnames: list[str]) -> float
         Calculate the total charge of a group of atoms specified by their names.
-    resolve_params
-        Resolve parameter keys that may contain atom types into specific atom names.
-    update_params
-        Update the topology parameters based on the provided dictionary
-        and apply charge constraints if specified.
+    resolve_parameter_names(params)
+        Resolve charge-parameter keys that may contain atom types into names.
+    apply_parameters(params, constraint_charge=None)
+        Update topology parameters and apply an optional charge constraint.
     """
 
     def __init__(
@@ -460,13 +459,3 @@ class TopologyModifier(Topology):
                         "cannot apply constraint charge."
                     )
             self._constraint_charge(constraint_charge)
-
-    # Backward-compatible aliases kept local to this execution helper.
-    def resolve_params(
-        self,
-        params: dict[str, float | list[float]]
-    ) -> dict[str, float | list[float]]:
-        return self.resolve_parameter_names(params)
-
-    def update_params(self, params: dict, constraint_charge: float | None) -> None:
-        self.apply_parameters(params, constraint_charge=constraint_charge)

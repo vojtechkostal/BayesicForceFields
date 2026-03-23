@@ -592,9 +592,12 @@ def main(fn_config: PathLike) -> None:
     logger.info("", level=0)
     logger.info(f"=== Preparing project: {config.project_dir.name} ===\n", level=0)
 
-    equilibration_dir, training_dir, reference_md_dir, reference_sp_dir = setup_directories(
-        config.project_dir
-    )
+    (
+        equilibration_dir,
+        training_dir,
+        reference_md_dir,
+        reference_sp_dir,
+    ) = setup_directories(config.project_dir)
     shutil.copy2(config.systems[0].fn_mdp_em, training_dir / "em.mdp")
 
     equilibrated_topologies: Dict[str, EquilibratedTopology] = {}

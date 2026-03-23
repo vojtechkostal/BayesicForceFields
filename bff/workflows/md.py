@@ -201,13 +201,26 @@ def main(fn_config: PathLike) -> None:
                 )
 
                 subprocess.run(
-                    [gmx_cmd, 'mdrun', '-deffnm', deffnm,
-                     '-nsteps', str(steps), '-dlb', 'yes', '-ntmpi', '1', *mdrun_extra_args],
+                    [
+                        gmx_cmd,
+                        'mdrun',
+                        '-deffnm',
+                        deffnm,
+                        '-nsteps',
+                        str(steps),
+                        '-dlb',
+                        'yes',
+                        '-ntmpi',
+                        '1',
+                        *mdrun_extra_args,
+                    ],
                     cwd=run_dir, stdout=log, stderr=log, check=True, env=run_env
                 )
 
                 # Check if the simulation finished aka has the expected number of frames
-                success.append(check_success(f'{deffnm}.xtc', fn_prod_mdp, steps, gmx_cmd))
+                success.append(
+                    check_success(f'{deffnm}.xtc', fn_prod_mdp, steps, gmx_cmd)
+                )
                 generated_files = _sample_output_paths(run_dir, sample_id, i)
                 if job_scheduler == "local":
                     _prune_unstored_outputs(generated_files, config.store)

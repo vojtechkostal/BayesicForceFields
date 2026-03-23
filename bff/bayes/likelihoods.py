@@ -1,7 +1,13 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import torch
+
 from .kernels import gaussian_kernel
 
-from typing import Callable, Dict
+if TYPE_CHECKING:
+    from .learning import InferenceProblem
 
 
 def loo_log_likelihood(
@@ -55,10 +61,7 @@ def loo_log_likelihood(
 
     # Compute the terms for the log likelihood
     norm = torch.sqrt(Kdd_inv_diagonal + 1e-9).unsqueeze(1)
-    try:
-        term_1 = (Kdd_inv @ y).transpose(1, 2) / norm
-    except RuntimeError:
-        print(Kdd_inv.dtype, y.dtype, norm.dtype)
+    term_1 = (Kdd_inv @ y).transpose(1, 2) / norm
     term_1 = 1 / (2 * n_samples) * torch.sum(term_1**2, dim=(1, 2))
 
     term_2 = n_y / (2 * n_samples) * torch.sum(log_Kdd_inv_ii, dim=1)
@@ -71,9 +74,7 @@ def loo_log_likelihood(
 
 def gaussian_log_likelihood(
     theta: torch.Tensor,
-    y_true: Dict[str, torch.Tensor],
-    surrogate: Dict[str, object],
-    constraint: Callable = None,
+    problem: InferenceProblem,
 ) -> torch.Tensor:
 
     """Compute the gaussian log likelihood.
@@ -82,12 +83,9 @@ def gaussian_log_likelihood(
     ----------
     theta : torch.Tensor
         Parameters of the surrogate model, shape (n_samples, n_params + n_sigma).
-    y_true : dict
-        True values for the observations, keys are the QoI.
-    surrogate : dict
-        Dictionary of surrogate models for given QoIs.
-    specs : Specs
-        Specifications object containing the bounds for the parameters.
+    problem : InferenceProblem
+        Complete inference problem including surrogates, observations,
+        and the optional parameter constraint.
 
     Returns
     -------
@@ -99,35 +97,45 @@ def gaussian_log_likelihood(
     device = theta.device
 
     # Split the theta into parameters and nuisances
-    n_free_nuisance = sum(model.nuisance is None for model in surrogate.values())
-    n_params = theta.shape[1] - n_free_nuisance
-    params, nuisances = theta[:, :n_params], theta[:, n_params:]
+    n_params = problem.n_params
+    params = theta[:, :n_params]
+    nuisance_free = theta[:, n_params:]
 
-    # Build full sigma: insert fixed nuisances
+    sigma_columns = []
     j = 0
-    nuisances_full = torch.empty((len(theta), len(surrogate)), device=device)
-    for i, model in enumerate(surrogate.values()):
-        nuisances_full[:, i] = model.nuisance or nuisances[:, j]
-        j += model.nuisance is None  # increment j only for free parameters
+    for model in problem.models.values():
+        if model.nuisance is None:
+            sigma_columns.append(nuisance_free[:, j].exp())
+            j += 1
+        else:
+            sigma_columns.append(
+                torch.full(
+                    (len(theta),),
+                    float(model.nuisance),
+                    device=device,
+                    dtype=theta.dtype,
+                )
+            )
+    sigmas = torch.stack(sigma_columns, dim=1)
 
     # Check if the parameters are within the valid bounds
-    if constraint is not None:
-        mask = constraint(params)
+    if problem.constraint is not None:
+        mask = problem.constraint(params)
     else:
         mask = torch.ones(len(theta), dtype=bool, device=device)
     params = params[mask]
-    nuisances = nuisances_full[mask]
+    sigmas = sigmas[mask]
 
     # Compute the log-likelihod
     log_likelihood = torch.full((len(theta), ), -torch.inf, device=device)
     if mask.any():
         log_like_valid = torch.zeros(mask.sum(), device=device)
-        for (qoi, model), sigma_exp in zip(surrogate.items(), nuisances.exp().T):
+        for (qoi, model), sigma in zip(problem.models.items(), sigmas.T):
             y_trial = model.predict(params)
             N = model.observations
-            diff = y_true[qoi] - y_trial
+            diff = problem.observations[qoi] - y_trial
             ssq = torch.sum(diff**2, dim=1)
-            log_like_valid += -0.5 * ssq / sigma_exp**2 - N * torch.log(sigma_exp)
+            log_like_valid += -0.5 * ssq / sigma**2 - N * torch.log(sigma)
 
         log_likelihood[mask] = log_like_valid
 

@@ -31,7 +31,11 @@ def _relative_path(path: Path | None, base_dir: Path) -> str | None:
     return str(path.relative_to(base_dir))
 
 
-def _system_record(system: SimulationSystemConfig, trainset_dir: Path) -> dict[str, Any]:
+def _system_record(
+    system: SimulationSystemConfig,
+    trainset_dir: Path,
+) -> dict[str, Any]:
+    """Serialize one staged system into the campaign metadata file."""
     return {
         "system_id": system.system_id,
         "topology": _relative_path(system.fn_topol, trainset_dir),
@@ -523,8 +527,16 @@ def run_campaign(
             samples=samples,
             systems=systems,
             trainset_dir=trainset_dir,
-            compress=config.compress if config.dispatch and campaign_finished else False,
-            remove=config.cleanup if config.dispatch and campaign_finished else False,
+            compress=(
+                config.compress
+                if config.dispatch and campaign_finished
+                else False
+            ),
+            remove=(
+                config.cleanup
+                if config.dispatch and campaign_finished
+                else False
+            ),
         )
 
 

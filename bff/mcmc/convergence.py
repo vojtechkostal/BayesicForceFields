@@ -8,8 +8,6 @@ class ConvergenceInfo:
     rhat: Optional[torch.Tensor] = None
     tau: Optional[torch.Tensor] = None   # shape (n_walkers, n_dim)
     ess: Optional[torch.Tensor] = None   # shape (n_dim,)
-    mean_rel_change: Optional[torch.Tensor] = None
-    std_rel_change: Optional[torch.Tensor] = None
 
     @property
     def max_rhat(self) -> Optional[float]:
@@ -18,21 +16,6 @@ class ConvergenceInfo:
     @property
     def min_ess(self) -> Optional[float]:
         return torch.min(self.ess).item() if self.ess is not None else None
-
-    @property
-    def tau_cv(self) -> Optional[torch.Tensor]:
-        if self.tau is None:
-            return None
-        if self.tau.shape[0] < 2:
-            return torch.zeros(
-                self.tau.shape[1],
-                device=self.tau.device,
-                dtype=self.tau.dtype
-            )
-        tau_mean = self.tau.mean(dim=0)
-        tau_std = self.tau.std(dim=0, unbiased=True)
-        eps = torch.tensor(1e-12, device=self.tau.device, dtype=self.tau.dtype)
-        return tau_std / torch.maximum(tau_mean, eps)
 
 
 def split_rhat(chain: torch.Tensor) -> torch.Tensor:
@@ -66,6 +49,45 @@ def split_rhat(chain: torch.Tensor) -> torch.Tensor:
     var_hat = ((n - 1) / n) * W + B / n
 
     return torch.sqrt(var_hat / W)
+
+
+def rank_normalize(values: torch.Tensor) -> torch.Tensor:
+    """Rank-normalize pooled samples along the first dimension."""
+    flat = values.reshape(values.shape[0], -1)
+    normalized = torch.empty_like(flat)
+    n = flat.shape[0]
+    denom = float(n) + 0.25
+    sqrt_two = torch.sqrt(torch.tensor(2.0, device=values.device))
+
+    for i in range(flat.shape[1]):
+        order = torch.argsort(flat[:, i], stable=True)
+        ranks = torch.empty(n, device=values.device, dtype=values.dtype)
+        ranks[order] = torch.arange(
+            1,
+            n + 1,
+            device=values.device,
+            dtype=values.dtype,
+        )
+        u = (ranks - 0.375) / denom
+        u = torch.clamp(u, 1e-12, 1 - 1e-12)
+        normalized[:, i] = sqrt_two * torch.erfinv(2 * u - 1)
+
+    return normalized.reshape(values.shape)
+
+
+def rank_normalized_split_rhat(chain: torch.Tensor) -> torch.Tensor:
+    """Compute rank-normalized split R-hat with folded refinement."""
+    pooled = chain.reshape(-1, chain.shape[-1])
+    ranked = rank_normalize(pooled).reshape(chain.shape)
+    rhat_rank = split_rhat(ranked)
+
+    pooled_median = pooled.median(dim=0).values
+    folded = torch.abs(chain - pooled_median.view(1, 1, -1))
+    ranked_folded = rank_normalize(
+        folded.reshape(-1, folded.shape[-1])
+    ).reshape(chain.shape)
+    rhat_folded = split_rhat(ranked_folded)
+    return torch.maximum(rhat_rank, rhat_folded)
 
 
 def autocorrelation(x: torch.Tensor) -> torch.Tensor:
@@ -143,42 +165,3 @@ def integrated_autocorr_time(
             break
 
     return torch.clamp(tau, min=1.0)
-
-
-def stability_metrics(
-    chain: torch.Tensor,
-    window_frac: float = 0.25
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """
-    Compare posterior mean and std between the last two windows.
-
-    Parameters
-    ----------
-    chain : torch.Tensor
-        Shape (n_samples, n_walkers, n_dim).
-    window_frac : float
-        Fraction of samples in each window (default 0.25).
-
-    Returns
-    -------
-    mean_rel_change : torch.Tensor
-    std_rel_change : torch.Tensor
-    """
-    n_samples, _, n_dim = chain.shape
-    win = int(window_frac * n_samples)
-    if win < 10 or 2 * win > n_samples:
-        raise ValueError("Chain too short for stability check.")
-
-    a = chain[-2 * win:-win].reshape(-1, n_dim)
-    b = chain[-win:].reshape(-1, n_dim)
-
-    mean_a = a.mean(dim=0)
-    mean_b = b.mean(dim=0)
-    std_a = a.std(dim=0, unbiased=True)
-    std_b = b.std(dim=0, unbiased=True)
-
-    eps = torch.tensor(1e-12, device=chain.device, dtype=chain.dtype)
-    mean_rel_change = torch.abs(mean_b - mean_a) / torch.maximum(torch.abs(mean_a), eps)
-    std_rel_change = torch.abs(std_b - std_a) / torch.maximum(std_a, eps)
-
-    return mean_rel_change, std_rel_change

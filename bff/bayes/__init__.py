@@ -1,15 +1,17 @@
 from . import gaussian_process
-from . import inference
 from . import kernels
-from . import utils
-from . import priors
+from . import learning
 from . import likelihoods
+from . import priors
+from . import results
+from . import utils
 
 __all__ = [
     'gaussian_process',
-    'inference',
     'kernels',
-    'utils',
+    'learning',
     'likelihoods',
-    'priors'
+    'priors',
+    'results',
+    'utils',
 ]

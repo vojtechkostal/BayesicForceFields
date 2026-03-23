@@ -1,7 +1,4 @@
 import logging
-
-import time
-import numpy as np
 from typing import Optional
 
 from ..mcmc.sampler import Sampler
@@ -18,7 +15,8 @@ class Logger:
         name: str,
         fn_log: Optional[str] = None,
         width: Optional[int] = 100,
-        verbose: bool = True
+        verbose: bool = True,
+        mode: str = "a",
     ) -> None:
 
         """
@@ -32,6 +30,8 @@ class Logger:
             Width for message formatting.
         verbose : bool, default=True
             If False, suppresses logging output.
+        mode : str, default="a"
+            File open mode used when ``fn_log`` is provided.
         """
 
         self.fn_log = fn_log
@@ -48,7 +48,7 @@ class Logger:
         formatter = logging.Formatter("%(message)s")
 
         if fn_log:
-            handler = logging.FileHandler(fn_log)
+            handler = logging.FileHandler(fn_log, mode=mode)
         else:
             handler = logging.StreamHandler()
             handler.terminator = ""
@@ -88,65 +88,11 @@ class Logger:
                 self.logger.info(message + terminator)  # Log to logger (console)
 
 
-def print_progress(
-    iterable, total: int, stride: int = 1, logger: Optional[Logger] = None
-):
-    """
-    Prints and logs progress of an iterable process,
-    including elapsed time and estimated time remaining.
-
-    Parameters
-    ----------
-    iterable : iterable
-        The iterable to process.
-    total : int
-        The total number of items in the iterable.
-    stride : int, default=1
-        How frequently progress should be logged.
-    logger : Logger, optional
-        Logger instance for logging progress messages.
-    """
-
-    start_time = time.time()
-    pad = len(str(total))
-    logger = logger or Logger('progress')
-
-    progress_template = (
-        "Training QoI: {i:>{pad}}/{total} "
-        "({percent:3.0f}%) | {elapsed} < {eta}"
-    )
-
-    progress_str = progress_template.format(
-        i=0, pad=pad, total=total, percent=0, elapsed='0s', eta='NaN'
-    )
-
-    logger.info(progress_str, level=1, overwrite=True)
-
-    for i, item in enumerate(iterable, 1):
-        yield item
-
-        if i % stride == 0:
-            elapsed_time = time.time() - start_time
-            time_per_step = elapsed_time / i
-            eta = time_per_step * (total - i)
-
-            progress_str = progress_template.format(
-                i=i, pad=pad, total=total,
-                percent=100 * i / total,
-                elapsed=format_time(elapsed_time),
-                eta=format_time(eta)
-            )
-
-            logger.info(progress_str, level=1, overwrite=True)
-
-        i += 1
-
-
 def print_progress_mcmc(
     sampler: Sampler,
     p0: np.ndarray,
     *,
-    max_iter: int,
+    total_steps: int,
     restart: bool = True,
     fn_checkpoint: Optional[str] = None,
     logger: Optional[Logger] = None,
@@ -162,8 +108,8 @@ def print_progress_mcmc(
         `sample`, `get_autocorr_time`, and attribute `iteration`.
     p0 : array-like
         Initial parameter vector for the MCMC posterior sampling.
-    max_iter : int
-        Maximum number of iterations.
+    total_steps : int
+        Total number of MCMC iterations including warmup.
     stride : int, default=100
         Frequency of autocorrelation time checks and printing.
     min_chain_length : int, default=100
@@ -182,7 +128,6 @@ def print_progress_mcmc(
 
     rhat_tol = kwargs.get("rhat_tol", 1.01)
     ess_target = kwargs.get("ess_min", 100)
-    tau_cv_tol = kwargs.get("tau_cv_tol", 0.2)
 
     logger.info("Posterior sampling: in progress...", level=1, overwrite=True)
 
@@ -192,7 +137,7 @@ def print_progress_mcmc(
     line = ""
     for state in sampler.run(
         p0,
-        n_steps=max_iter,
+        total_steps=total_steps,
         restart=restart,
         fn_checkpoint=fn_checkpoint,
         **kwargs,
@@ -210,9 +155,7 @@ def print_progress_mcmc(
                 f"Posterior sampling: it. {state.step}/{total_steps} | "
                 f"{phase_progress} | "
                 f"R-hat max: {state.convergence.max_rhat:.4f}/{rhat_tol:.4f} | "
-                f"ESS min: {state.convergence.min_ess:.0f}/{ess_target:.0f} | "
-                f"tau CV max: "
-                f"{state.convergence.tau_cv.max().item():.4f}/{tau_cv_tol:.4f}"
+                f"ESS min: {state.convergence.min_ess:.0f}/{ess_target:.0f}"
             )
             if state.acceptance_rate is not None:
                 line += f" | acc: {state.acceptance_rate:.3f}"
@@ -229,7 +172,7 @@ def print_progress_mcmc(
                 line += f" | {state.it_per_sec:.0f} it/s"
         logger.info(line, level=1, overwrite=True)
 
-    if line:
+    if line and logger.fn_log is None:
         logger.info(line, level=1)
     logger.info("", level=0)
     if sampler.converged:
@@ -239,18 +182,3 @@ def print_progress_mcmc(
             "Posterior sampling: Failed to converge within the maximum iterations.",
             level=1,
         )
-
-
-def format_time(seconds: float) -> str:
-    """Format seconds as hours, minutes, and seconds."""
-    hours, remainder = divmod(seconds, 3600)
-    minutes, seconds = divmod(remainder, 60)
-
-    if hours > 0:
-        time_str = f"{int(hours)}h {int(minutes)}m {int(seconds)}s"
-    elif (hours == 0) & (minutes > 0):
-        time_str = f"{int(minutes)}m {int(seconds)}s"
-    else:
-        time_str = f"{int(seconds)}s"
-
-    return time_str

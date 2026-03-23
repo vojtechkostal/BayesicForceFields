@@ -12,3 +12,4 @@ dependencies:
   - pyyaml
   - mdanalysis
   - typer
+  - gmxtop

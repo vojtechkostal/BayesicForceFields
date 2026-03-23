@@ -64,10 +64,16 @@ class Bounds:
         return int(np.argwhere(mask).ravel()[0])
 
     def without(self, name: str) -> "Bounds":
-        return Bounds({key: value for key, value in self.by_name.items() if key != name})
+        items = {
+            key: value for key, value in self.by_name.items() if key != name
+        }
+        return Bounds(items)
 
     def to_dict(self) -> dict[str, list[float]]:
-        return {name: [float(lower), float(upper)] for name, (lower, upper) in self._items}
+        return {
+            name: [float(lower), float(upper)]
+            for name, (lower, upper) in self._items
+        }
 
 
 @dataclass(frozen=True)
@@ -217,7 +223,10 @@ class ChargeConstraint:
         implicit_lower, implicit_upper = self.implicit_bounds
 
         in_explicit_bounds = ((x >= explicit_lower) & (x <= explicit_upper)).all(axis=1)
-        explicit_total_charge = np.sum(x * self.specs.explicit_charge_coefficients, axis=1)
+        explicit_total_charge = np.sum(
+            x * self.specs.explicit_charge_coefficients,
+            axis=1,
+        )
         implicit_charge = self.specs.constraint_charge - explicit_total_charge
         in_implicit_bounds = (
             (implicit_charge >= implicit_lower) & (implicit_charge <= implicit_upper)

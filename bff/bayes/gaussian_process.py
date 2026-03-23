@@ -1,10 +1,11 @@
-import torch
+from pathlib import Path
+from typing import Self, Union
+
 import numpy as np
+import torch
+
 from .kernels import gaussian_kernel
 from .utils import check_tensor, nearest_positive_definite, smape
-
-from pathlib import Path
-from typing import Union, Dict, List, Self
 
 PathLike = Union[str, Path]
 
@@ -84,7 +85,7 @@ class LocalGaussianProcess:
         return self.y_train.shape[1]
 
     @property
-    def hyperparameters(self) -> Dict[str, Union[np.ndarray, float]]:
+    def hyperparameters(self) -> dict[str, Union[np.ndarray, float]]:
         return {
             'lengths': self.lengths.cpu().numpy(),
             'width': self.width.cpu().numpy().item(),
@@ -109,11 +110,9 @@ class LocalGaussianProcess:
         Xi = check_tensor(Xi, device=self.device)
         Kid = gaussian_kernel(Xi, self.X_train, self.lengths, self.width)
         mean = self.y_mean + (Kid @ self.Kdd_inv) @ (self.y_train - self.y_mean)
+        return mean
 
-        return mean.clamp(0, None)
-    
-    @property
-    def state(self):
+    def state_dict(self) -> dict:
         return {
             "X_train": self.X_train,
             "y_train": self.y_train,
@@ -172,13 +171,13 @@ class LGPCommittee:
     """
     def __init__(
         self,
-        lgps: List[LocalGaussianProcess],
+        lgps: list[LocalGaussianProcess],
         n_observations: int,
-        nuisance: float = None,
+        nuisance: float | None = None,
         stochastic: bool = False
     ) -> None:
         self.lgps = lgps
-        self.error = None
+        self.error: float | None = None
         self.observations = n_observations
         self.nuisance = nuisance
         self.stochastic = stochastic
@@ -232,24 +231,22 @@ class LGPCommittee:
             Mean squared error of the predictions.
         """
 
-        y_pred = self.predict(X_test).cpu().numpy()
-        if isinstance(y_test, torch.Tensor):
-            y_test = y_test.cpu().numpy()
-        self.error = smape(y_test, y_pred) * 100
+        y_pred = self.predict(X_test)
+        self.error = 100.0 * smape(y_test, y_pred)
+        return self.error
 
     @classmethod
     def load(cls, fn: PathLike) -> Self:
-
-        state = torch.load(fn)
+        state = torch.load(fn, weights_only=False)
         lgps = [LocalGaussianProcess(**lgp_state) for lgp_state in state["lgps"]]
-        cls = cls(
+        committee = cls(
             lgps=lgps,
             n_observations=state["n_observations"],
             nuisance=state["nuisance"],
             stochastic=state["stochastic"],
         )
-        cls.error = state["error"]
-        return cls
+        committee.error = state["error"]
+        return committee
 
     def write(self, fn_out: PathLike) -> None:
 
@@ -258,11 +255,10 @@ class LGPCommittee:
             "nuisance": self.nuisance,
             "stochastic": self.stochastic,
             "error": self.error,
-            "lgps": [lgp.state for lgp in self.lgps],
+            "lgps": [lgp.state_dict() for lgp in self.lgps],
         }
 
         torch.save(state, fn_out)
-
 
     def __repr__(self) -> str:
         return (

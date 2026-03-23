@@ -1,13 +1,19 @@
-from . import logs
-from . import utils
-from . import schedulers
-from . import mdp
+from . import colvars
 from . import cp2k
+from . import logs
+from . import mdp
+from . import plumed
+from . import progress
+from . import schedulers
+from . import utils
 
 __all__ = [
-    "logs",
-    "utils",
-    "schedulers",
-    "mdp",
+    "colvars",
     "cp2k",
+    "logs",
+    "mdp",
+    "plumed",
+    "progress",
+    "schedulers",
+    "utils",
 ]

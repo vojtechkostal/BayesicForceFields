@@ -8,7 +8,8 @@ from matplotlib.colors import ListedColormap
 from matplotlib.ticker import MaxNLocator
 from scipy.stats import gaussian_kde
 
-from .structures import InferenceResults, Specs
+from .bayes.results import InferenceResults
+from .domain.specs import Specs
 
 
 PathLike = Union[str, Path]

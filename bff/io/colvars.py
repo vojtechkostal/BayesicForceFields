@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
 import re
-from typing import Sequence
 
 import MDAnalysis as mda
 

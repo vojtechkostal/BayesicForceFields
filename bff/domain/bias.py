@@ -43,7 +43,9 @@ class BiasSpec:
             raise ValueError("COLVARS bias requires 'colvars_file'.")
         if self.kind == "plumed" and plumed_file is None:
             raise ValueError("PLUMED bias requires 'plumed_file'.")
-        if self.kind == "none" and (colvars_file is not None or plumed_file is not None):
+        if self.kind == "none" and (
+            colvars_file is not None or plumed_file is not None
+        ):
             raise ValueError("Unbiased systems cannot define bias input files.")
         if colvars_file is not None and not colvars_file.exists():
             raise FileNotFoundError(f"COLVARS file not found: {colvars_file}")
@@ -79,6 +81,10 @@ class BiasSpec:
         if value is None:
             return cls()
         if isinstance(value, (str, Path)):
+            if base_dir is not None:
+                value = Path(value)
+                if not value.is_absolute():
+                    value = (base_dir / value).resolve()
             return cls.load(value)
         if not isinstance(value, Mapping):
             raise ValueError(f"Invalid bias specification: {value!r}")
