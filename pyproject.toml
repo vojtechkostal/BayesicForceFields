@@ -9,6 +9,7 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 dependencies = [
+  "gmxtop",
   "matplotlib",
   "MDAnalysis",
   "numpy",

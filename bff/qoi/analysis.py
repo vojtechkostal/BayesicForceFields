@@ -1,21 +1,22 @@
-import MDAnalysis as mda
+import gc
+from functools import partial
 import multiprocessing as mp
-import inspect
-import time
 import warnings
-from typing import Union, List, Dict, Callable
-
 from pathlib import Path
-from .hbonds import compute_all_hbonds, compute_hbonds
-from .rdf import compute_all_rdfs, compute_rdf
-from .restraints import compute_all_restraints, compute_probability_density
+from typing import Any, Mapping, Sequence
 
-from ..structures import TrainSetInfo, QoI
+import MDAnalysis as mda
+import numpy as np
+
+from ..domain.trainset import TrajectorySet
+from .data import QoI
+from ..io.logs import Logger
+from ..io.progress import iter_progress
 from ..topology import prepare_universe
-from ..io.logs import Logger, print_progress, format_time
+from .routines import RuntimeRoutine, run_analysis_routines
 
 
-PathLike = Union[str, Path]
+PathLike = str | Path
 
 
 warnings.filterwarnings(
@@ -26,203 +27,220 @@ warnings.filterwarnings(
 )
 
 
-def analyze_trajectory(
-    universe: mda.Universe,
-    mol_resname: str,
-    restraints: List[List[float]],
-    rdf_kwargs: Dict = None,
-    hbond_kwargs: Dict = None,
-    restraint_kwargs: Dict = None,
-) -> QoI:
-    """Analyze a single trajectory."""
+def _cleanup_universe(universe: mda.Universe | None, *, gc_collect: bool) -> None:
+    """Release trajectory resources after one analysis task."""
+    if universe is not None:
+        trajectory = getattr(universe, "trajectory", None)
+        if trajectory is not None:
+            close = getattr(trajectory, "close", None)
+            if callable(close):
+                close()
+        raw_trajectory = getattr(universe, "_trajectory", None)
+        if raw_trajectory is not None and raw_trajectory is not trajectory:
+            close = getattr(raw_trajectory, "close", None)
+            if callable(close):
+                close()
+    if gc_collect:
+        gc.collect()
 
-    rdf_kwargs = rdf_kwargs or {}
-    hbond_kwargs = hbond_kwargs or {}
-    restraint_kwargs = restraint_kwargs or {}
 
-    # Analyze RDFs, Hbonds and restraint coordinates
-    rdfs = compute_all_rdfs(universe, mol_resname, **rdf_kwargs)
-    hbonds = compute_all_hbonds(universe, mol_resname, **hbond_kwargs)
-    restraints = compute_all_restraints(
-        universe, restraints, **restraint_kwargs
+def _prepare_universe(
+    fn_topol: PathLike,
+    fn_coord: PathLike,
+    fn_trj: PathLike,
+    *,
+    start: int,
+    stop: int | None,
+    step: int,
+    in_memory: bool,
+) -> mda.Universe:
+    """Prepare one MDAnalysis universe for trajectory analysis."""
+    universe = prepare_universe(str(fn_topol), str(fn_coord), dt=1)
+    default_dimensions = (
+        None
+        if universe.dimensions is None
+        else np.asarray(universe.dimensions, dtype=float)
     )
-
-    return QoI(rdf=rdfs, hb=hbonds, restr=restraints)
-
-
-def analyze_all_trajectories(
-    fn_topol: List[str],
-    fn_coord: List[str],
-    fn_trj: List[str],
-    restraints: List[List[float]],
-    mol_resname: str,
-    start: int = 0,
-    stop: int = -1,
-    step: int = 1,
-    **kwargs
-) -> List[QoI]:
-    """Analyze all trajectories in the dataset."""
-    results = []
-    for t, c, trj, r in zip(fn_topol, fn_coord, fn_trj, restraints):
-        universe = prepare_universe(t, c, dt=1)
-
-        # Load trajectory into the universe and set the unitcell
-        unitcell = universe.dimensions
-        universe.load_new(trj)
+    universe.load_new(str(fn_trj))
+    universe._bff_default_dimensions = default_dimensions
+    if in_memory:
         universe.transfer_to_memory(start=start, stop=stop, step=step)
-        if universe.dimensions is None:
+        if default_dimensions is not None:
             for ts in universe.trajectory:
-                ts.dimensions = unitcell
+                if ts.dimensions is None:
+                    ts.dimensions = default_dimensions
+    return universe
 
-        trj_results = analyze_trajectory(
-            universe=universe,
-            mol_resname=mol_resname,
-            restraints=r,
-            **kwargs
+
+def analyze_trajectory_set(
+    trajectory_set: TrajectorySet,
+    *,
+    mol_resname: str,
+    routines_by_system: Sequence[tuple[RuntimeRoutine, ...]],
+    start: int = 0,
+    stop: int | None = None,
+    step: int = 1,
+    in_memory: bool = False,
+    gc_collect: bool = True,
+) -> list[dict[str, QoI]]:
+    """Analyze all trajectories that belong to one sample or reference set."""
+    if len(routines_by_system) != len(trajectory_set.fn_trj):
+        raise ValueError(
+            "Analysis routine count must match the number of trajectories in the set."
         )
-        results.append(trj_results)
+
+    results: list[dict[str, QoI]] = []
+    for fn_topol, fn_coord, fn_trj, routines in zip(
+        trajectory_set.fn_topol,
+        trajectory_set.fn_coord,
+        trajectory_set.fn_trj,
+        routines_by_system,
+    ):
+        universe = None
+        try:
+            universe = _prepare_universe(
+                fn_topol,
+                fn_coord,
+                fn_trj,
+                start=start,
+                stop=stop,
+                step=step,
+                in_memory=in_memory,
+            )
+            result = run_analysis_routines(
+                routines,
+                universe=universe,
+                mol_resname=mol_resname,
+                start=start,
+                stop=stop,
+                step=step,
+            )
+            if not result:
+                raise ValueError("Analysis routine returned no QoI outputs.")
+            results.append(result)
+        finally:
+            _cleanup_universe(universe, gc_collect=gc_collect)
 
     return results
 
 
-def _wrapper(args: Dict) -> QoI:
-    """Helper function for multiprocessing that unpacks arguments."""
-    return analyze_all_trajectories(**args)
-
-
-def analyze_trainset(
-    trainset_dir: PathLike,
-    start: int = 1,
-    stop: int = None,
+def analyze_trajectory_sets(
+    trajectory_sets: Sequence[TrajectorySet],
+    *,
+    mol_resname: str,
+    routines_by_system: Sequence[tuple[RuntimeRoutine, ...]],
+    start: int = 0,
+    stop: int | None = None,
     step: int = 1,
-    workers: int = -1,
+    workers: int = 1,
     progress_stride: int = 10,
-    logger: Logger = None,
-    **settings
-) -> tuple[List[QoI], TrainSetInfo]:
+    progress_label: str = "Trajectory QoI",
+    logger: Logger | None = None,
+    in_memory: bool = False,
+    gc_collect: bool = True,
+    chunksize: int = 1,
+    maxtasksperchild: int = 1,
+) -> list[list[dict[str, QoI]]]:
+    """Analyze multiple trajectory sets with one shared routine setup."""
+    logger = logger or Logger(progress_label)
+    n_sets = len(trajectory_sets)
+    if n_sets == 0:
+        return []
 
-    """Analyze the training set to compute quantities of interest (QoI).
-
-    Parameters
-    ----------
-    trainset_dir : str or Path
-        Directory containing the training set data.
-    start : int, optional
-        Starting frame for trajectory analysis (default is 1).
-    stop : int, optional
-        Ending frame for trajectory analysis (default is None, meaning the last frame).
-    step : int, optional
-        Step size for frame selection (default is 1).
-    workers : int, optional
-        Number of parallel workers to use (default is -1, meaning all available cores).
-    progress_stride : int, optional
-        Frequency of progress updates (default is every 10 samples).
-    logger : Logger, optional
-        Logger for reporting progress (default is a new Logger instance).
-    settings : dict, optional
-        Additional settings for analysis functions
-        (e.g., rdf_kwargs, hbond_kwargs, restraint_kwargs).
-
-    Returns
-    -------
-    tuple
-        A tuple containing:
-        - qoi : list
-            Computed quantities of interest.
-        - trainset_info : TrainSetInfo
-            Information about the training set.
-    """
-
-    logger = logger or Logger('training QoI')
-
-    trainset_info = TrainSetInfo.from_dir(trainset_dir)
-
-    t0 = time.time()
-
-    n_samples = trainset_info.n_samples
-
-    args = [
-        {
-            'fn_topol': trainset_info.fn_topol,
-            'fn_coord': trainset_info.fn_coord,
-            'fn_trj': trj_file,  # single trajectory as a list
-            'restraints': trainset_info.restraints,
-            'mol_resname': trainset_info.specs['mol_resname'],
-            'start': start,
-            'stop': stop,
-            'step': step,
-            **settings
-        }
-        for trj_file in trainset_info.fn_trj
-    ]
+    analyze_one = partial(
+        analyze_trajectory_set,
+        mol_resname=mol_resname,
+        routines_by_system=routines_by_system,
+        start=start,
+        stop=stop,
+        step=step,
+        in_memory=in_memory,
+        gc_collect=gc_collect,
+    )
 
     workers = mp.cpu_count() if workers == -1 else workers
     if workers > 1:
-        with mp.Pool(workers, maxtasksperchild=1) as pool:
-            iterator = pool.imap(_wrapper, args)
+        context = mp.get_context("spawn")
+        with context.Pool(workers, maxtasksperchild=maxtasksperchild) as pool:
+            iterator = pool.imap(analyze_one, trajectory_sets, chunksize=chunksize)
             qoi = list(
-                print_progress(
+                iter_progress(
                     iterator,
-                    n_samples,
-                    progress_stride,
-                    logger
+                    total=n_sets,
+                    stride=progress_stride,
+                    logger=logger,
+                    label=progress_label,
                 )
             )
     else:
-        iterator = print_progress(
-            args,
-            n_samples,
-            progress_stride,
-            logger
+        iterator = iter_progress(
+            trajectory_sets,
+            total=n_sets,
+            stride=progress_stride,
+            logger=logger,
+            label=progress_label,
         )
-        qoi = [_wrapper(arg) for arg in iterator]
-
-    t1 = time.time()
-    logger.info(
-        f"Training QoI: {n_samples}/{n_samples} "
-        f"(100%) | Done. ({format_time(t1 - t0)})",
-        level=1
-    )
-
-    return qoi, trainset_info
+        qoi = [analyze_one(trajectory_set) for trajectory_set in iterator]
+    return qoi
 
 
-def extract_defaults(fn: Callable) -> Dict:
-    """
-    Extracts default values from the function's signature.
+def resolve_reference_labels(blocks: Sequence[QoI]) -> tuple[str, ...] | None:
+    """Resolve a stable label ordering from reference QoI blocks."""
+    labeled_blocks = [block for block in blocks if block.labels is not None]
+    if not labeled_blocks:
+        return None
 
-    Parameters
-    ----------
-    fn : callable
-        Function from which to extract defaults.
+    labels: list[str] = []
+    seen: set[str] = set()
+    for block in labeled_blocks:
+        for label in block.labels or ():
+            if label not in seen:
+                labels.append(label)
+                seen.add(label)
+    return tuple(labels)
 
-    Returns
-    -------
-    dict
-        Dictionary of default parameter values.
-    """
-    sig = inspect.signature(fn)
-    return {
-        k: v.default
-        for k, v in sig.parameters.items()
-        if v.default is not inspect.Parameter.empty
+
+def stack_qoi_blocks(
+    blocks: Sequence[QoI],
+    *,
+    labels: tuple[str, ...] | None = None,
+) -> np.ndarray:
+    """Stack aligned QoI blocks into one flat numeric array."""
+    if not blocks:
+        return np.empty(0, dtype=float)
+
+    values_per_label = blocks[0].values_per_label
+    if any(block.values_per_label != values_per_label for block in blocks):
+        raise ValueError("All QoI blocks must have the same values_per_label.")
+
+    aligned = [block.aligned(labels) for block in blocks]
+    return np.concatenate(aligned) if aligned else np.empty(0, dtype=float)
+
+
+def collect_qoi_dataset(
+    ref_blocks: Sequence[QoI],
+    train_blocks: Sequence[Sequence[QoI]],
+    *,
+    qoi_metadata: Mapping[str, Any] | None = None,
+) -> tuple[np.ndarray, list[np.ndarray], dict[str, Any]]:
+    """Collect aligned reference and training arrays for one QoI."""
+    labels = resolve_reference_labels(ref_blocks)
+    outputs_ref = stack_qoi_blocks(ref_blocks, labels=labels)
+    outputs = [stack_qoi_blocks(blocks, labels=labels) for blocks in train_blocks]
+
+    metadata = dict(qoi_metadata or {})
+
+    settings_kwargs = {}
+    metadata_out = dict(metadata)
+    first = ref_blocks[0] if ref_blocks else None
+    if first is not None:
+        settings_kwargs = dict(first.settings_kwargs)
+        metadata_out = dict(first.metadata) | metadata_out
+        metadata_out["values_per_label"] = first.values_per_label
+        if labels is not None:
+            metadata_out["labels"] = list(labels)
+
+    return outputs_ref, outputs, {
+        "settings_kwargs": settings_kwargs,
+        "metadata": metadata_out,
     }
-
-
-def get_all_settings(kwargs: Dict) -> Dict:
-
-    """Get all settings for the analysis functions,
-    combining defaults and user-provided values."""
-
-    all_kwargs = {'rdf_kwargs': extract_defaults(compute_rdf),
-                  'hbond_kwargs': extract_defaults(compute_hbonds),
-                  'restraint_kwargs': extract_defaults(compute_probability_density)}
-
-    # Update with user-provided kwargs
-    for key, value in kwargs.items():
-        if key in all_kwargs:
-            all_kwargs[key].update(value)
-        else:
-            all_kwargs[key] = value
-
-    return all_kwargs

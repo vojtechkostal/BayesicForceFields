@@ -1,10 +1,10 @@
 import torch
-from .utils import check_tensor, auto_manual_switch
+from .utils import check_tensor, with_manual_sqdist_flag
 
 from typing import Union
 
 
-@auto_manual_switch
+@with_manual_sqdist_flag
 def gaussian_kernel(
     x1: torch.Tensor, x2: torch.Tensor,
     lengths: Union[float, torch.Tensor],

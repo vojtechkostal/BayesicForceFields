@@ -1,30 +1,60 @@
 fn_log: ./out.log
 base_name: ./qoi
-write_raw_qoi: True
-aimd:
-  fn_coord:
-    - ../01-prepare/cp2k/win-000/pos.gro
-    - ../01-prepare/cp2k/win-001/pos.gro
-    - ../01-prepare/cp2k/win-002/pos.gro
-  fn_topol:
-    - ../01-prepare/cp2k/win-000/topol.top
-    - ../01-prepare/cp2k/win-001/topol.top
-    - ../01-prepare/cp2k/win-002/topol.top
-  fn_trj:
-    - ../02-reference-trjs/pos-000.xtc
-    - ../02-reference-trjs/pos-001.xtc
-    - ../02-reference-trjs/pos-002.xtc
+write_raw_qoi: true
+systems:
+  - reference:
+      coordinates: ../01-prepare/ace/reference/md/window-000/system.gro
+      topology: ../01-prepare/ace/reference/md/window-000/system.top
+      trajectory: ../02-reference-trjs/pos-000.xtc
+    routines:
+      - routine: builtin:rdf
+        kwargs:
+          r_range: [1, 7]
+          smooth: false
+      - routine: builtin:hb
+        kwargs: {}
+  - reference:
+      coordinates: ../01-prepare/ace/reference/md/window-001/system.gro
+      topology: ../01-prepare/ace/reference/md/window-001/system.top
+      trajectory: ../02-reference-trjs/pos-001.xtc
+    routines:
+      - routine: builtin:rdf
+        kwargs:
+          r_range: [1, 7]
+          smooth: false
+      - routine: builtin:hb
+        kwargs: {}
+      - routine: ./custom_routine.py:distance_distribution
+        kwargs:
+          atom_pair: [C2, CAL]
+          r_range: [2.0, 5.0]
+  - reference:
+      coordinates: ../01-prepare/ace/reference/md/window-002/system.gro
+      topology: ../01-prepare/ace/reference/md/window-002/system.top
+      trajectory: ../02-reference-trjs/pos-002.xtc
+    routines:
+      - routine: builtin:rdf
+        kwargs:
+          r_range: [1, 7]
+          smooth: false
+      - routine: builtin:hb
+        kwargs: {}
+      - routine: ./custom_routine.py:distance_distribution
+        kwargs:
+          atom_pair: [C2, CAL]
+          r_range: [4.0, 6.0]
+reference:
   start: 1
   stop: -1
   step: 1
-settings:
-  rdf_kwargs:
-    r_range: [1, 7]
-    smooth: false
-  hbond_kwargs: {}
-  restraint_kwargs:
-    unbias: false
-ffmd:
-  trainset_dir: ../03-training-trjs/trainset
+analysis:
+  in_memory: false
+  gc_collect: true
+  chunksize: 1
+  maxtasksperchild: 1
+training:
+  trainset_dir: ../03-training-trjs/c36-ecc80-00
   start: 1
-  progress_stride: 1
+  stop: -1
+  step: 1
+  progress_stride: 10

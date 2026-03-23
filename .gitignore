@@ -4,3 +4,33 @@ __pycache__/
 .ipynb_checkpoints
 *.swp
 *.egg-info/
+
+# Common runtime artifacts
+*.log
+*.out
+*.pt
+*.lgp
+*.xtc
+*.trr
+*.tpr
+*.gro
+*.top
+*.ndx
+*.mdp
+*.edr
+*.cpt
+*.xvg
+*.xyz
+
+# Acetate example outputs: keep only notebooks, configs, and example code
+examples/acetate/**
+!examples/acetate/**/
+!examples/acetate/**/*.ipynb
+!examples/acetate/**/config.yaml
+!examples/acetate/**/config-*.yaml
+!examples/acetate/**/*.py
+!examples/acetate/**/ff/
+!examples/acetate/**/ff/**
+
+# Ignore nested trainset directories under the training-trajectories example
+examples/acetate/03-training-trjs/*/

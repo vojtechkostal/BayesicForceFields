@@ -2,33 +2,43 @@
 
 ## Description
 
-Bayesic Force Fields (BFF) is a Python package designed for optimizing parameters of fixed-charge force fields for molecular dynamics, specifically the `charges`, and van der Waals parameters `sigma` and `epsilon`.
-The optimization is based on structural data derived from reference trajectories, typically obtained through *ab initio* molecular dynamics simulations in order to effectively account for the `electronic polarization effects`.
+Bayesic Force Fields (BFF) is a Python package for optimizing
+fixed-charge force-field parameters for molecular dynamics,
+specifically `charges` and Lennard-Jones parameters `sigma` and
+`epsilon`. The optimization uses structural data derived from reference
+trajectories, typically obtained through *ab initio* molecular dynamics
+simulations, in order to account for `electronic polarization effects`.
 
-The optimization uses `Bayesian inference` driven by Markov Chain Monte Carlo (MCMC) sampling with a `Local Gaussian process (LGP)` as a surrogate model for the (usually) costly MD simulations.
-The LGP hyperparameters are optimized and their uncertainty can be propagated to the posterior.
+The optimization uses `Bayesian inference` driven by Markov Chain Monte
+Carlo (MCMC) sampling with a `Local Gaussian process (LGP)` surrogate
+for the usually costly MD simulations. The LGP hyperparameters are
+optimized and their uncertainty can be propagated to the posterior.
 
 ## Dependencies (non-standard)
 
 * [SciPy](https://scipy.org/)
-* [MDAnalysis](https://www.mdanalysis.org) (analyzing MD trajectories)
-* [emcee](https://emcee.readthedocs.io/en/stable/#) (MCMC sampling within the Bayesian inference)
-* [PyTorch](https://pytorch.org/get-started/locally/) (Efficient surrogate modeling using GPU and CUDA)
+* [MDAnalysis](https://www.mdanalysis.org) (trajectory analysis)
+* [PyTorch](https://pytorch.org/get-started/locally/)
+  (surrogate modeling with optional GPU/CUDA acceleration)
 * [PyYAML](https://pypi.org/project/PyYAML/) (handling .yaml files)
 * [Matplotlib](https://matplotlib.org/) (Plotting)
 * [gmxtop](https://github.com/vojtechkostal/gmxtop) (Topology handling)
 
 ## Installation
-1. Clone this repository and (preferably) create and activate a new environment using `mamba` or `conda` as:
+1. Clone this repository and create a fresh environment with `mamba`
+   or `conda`:
 ```sh
 cd BayesicForceFields
 mamba env create -f ./environment.yaml
 mamba activate bff
 ```
-> [!WARNING] 2. Install prerequisites:
-    - `PyTorch` (Local Gaussian Process evaluations): this cannot be automatized yet, install (preferably the GPU version) follwing instructions here: https://pytorch.org/get-started/locally/ \
-    - `Gromacs` (molecular dynamics engine): needed to be accessible from command line via `gmx` (or similar) commands in order to run MD simulations.\
-    - `gmxtop` (Gromacs topology handling): Follow installation instructions here: https://github.com/vojtechkostal/gmxtop
+2. Install prerequisites:
+   - `PyTorch`: install the CPU or GPU build following
+     <https://pytorch.org/get-started/locally/>.
+   - `GROMACS`: make sure it is available from the command line via
+     `gmx` (or a compatible alternative configured in BFF).
+   - `gmxtop`: follow the installation instructions at
+     <https://github.com/vojtechkostal/gmxtop>.
 
 3. Install BFF as:
 ```sh
@@ -36,48 +46,59 @@ pip install -e .
 ```
 
 ## Usage
-Here, we'll go through an example that can be found in the `examples` directory.
-For each stage, there is a config file provided, however, they should be altered for production level calculations.
+Here, we'll go through the acetate example from `examples/acetate`.
+Each stage includes a working example config, but production runs will
+typically require edits for local paths, compute resources, and target
+simulation lengths.
 
-Partial charges on acetete are optimized.
-The parameterization uses data from a triplet of simulations: 1. aqueous species, 2. aqueous species with calcium cation placed at contant distance with carboxyl group, 3. aqueous species with calcium cation placed at solvent-shared position with respect to the carboxyl.
+Partial charges on acetate are optimized. The parameterization uses data
+from three systems: 1. aqueous acetate, 2. acetate with calcium kept at
+contact distance from the carboxyl group, and 3. acetate with calcium
+kept in a solvent-shared position relative to the carboxyl group.
 
-1. Create the systems
+1. Prepare the systems
 ```sh
 cd ./examples/acetate/01-prepare
-bff initialize config.yaml
+bff prepare config.yaml
 ```
-Generates the necessary files and directories for both reference (CP2K) and training (GROMACS) trajectories.
-This step also includes initial NpT equilibration for all systems.
-Later, user can actually use an arbitrary set of reference simulations.
+This generates the files and directories needed for both reference
+(CP2K) and training (GROMACS) trajectories. The step also performs the
+initial equilibration needed to stage the systems. Reference trajectories
+may later be replaced by any user-provided set of simulations with the
+same system layout.
 
-2. Run the reference calculations using CP2k.
-This step will take a long time (weeks on a cluster) when using the default DFT level of theory.
-It can be speeded up by using semiempirical method at a cost of accuracy or by using some flavor of neural network potentials (NNPs).
-At this moment, the latter is not implemented and for example purpose, we provide trajectories in compressed .xtc format after discarding the first 5ps for equilibration and saved every 50 fs.
+2. Run the reference calculations using CP2K.
+This step can take a long time on a cluster with the default DFT setup.
+For the example, reference trajectories are already provided in
+compressed `.xtc` format after discarding the first 5 ps of
+equilibration and saving every 50 fs.
 
 3. Run training simulations.
-For each set of parameter distribution, a triplet of trajectories is calculated.
-This step can be run either locally using the `config-local.yaml` config or the simulations can be sent to a cluster in parallel using `config-slurm.yaml`.
+For each sampled force-field parameter vector, a triplet of trajectories
+is calculated. This step can be run either locally via
+`config-local.yaml` or on a cluster via `config-slurm.yaml`.
 ```sh
 cd ../03-training-trjs
-bff runsims config-local.yaml
+bff simulate config-local.yaml
 ```
 
 4. Analyze quantities of interest.
-Analyze the QoIs for the training and reference dataset.
+Analyze the QoIs for both the training and reference datasets.
 ```sh
 cd ../04-qoi
 bff analyze config.yaml
 ``` 
 
 5. Learn the posterior distribution.
-Infer the most likely set of force-field parameters that reproduce the reference data.
-This step can be executed either via command line as the steps above (usefull when working on a cluster) but it also can be done in a jupyter notebook which is convenient for the subsequent visualization and analysis (go to `05-learning-interactive`).
+Infer the posterior distribution of force-field parameters that best
+reproduces the reference data. This step can be executed from the
+command line, which is convenient for batch runs, or from the
+`05-learning/learn.ipynb` notebook.
 ```sh
 cd ../05-learning
 bff learn config.yaml
 ```
 
 6. Visualization
-Use the jupyter notebook in `06-visualize` to visualize results obtained in step 5
+Use the notebook in `06-visualize` to inspect the posterior samples and
+produce the standard plots from step 5.

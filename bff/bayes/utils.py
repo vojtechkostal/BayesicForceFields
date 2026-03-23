@@ -2,15 +2,13 @@ import torch
 
 from pathlib import Path
 from torch.autograd.functional import hessian
-from typing import List, Dict, Union, Tuple, Callable
+from typing import Callable, Sequence, Tuple, Union
 
 PathLike = Union[str, Path]
 
 
-def smape(y_true: torch.tensor, y_pred: torch.tensor) -> float:
-    """
-    Compute the Symmetric Mean Absolute Percentage Error (SMAPE).
-    """
+def smape(y_true: torch.Tensor, y_pred: torch.Tensor) -> float:
+    """Compute the symmetric mean absolute percentage error."""
 
     device = y_true.device if isinstance(y_true, torch.Tensor) else 'cpu'
 
@@ -22,12 +20,13 @@ def smape(y_true: torch.tensor, y_pred: torch.tensor) -> float:
     y_pred_abs = torch.sum(torch.abs(y_pred), dim=1)
     norm = y_true_abs + y_pred_abs
 
-    return torch.mean(abs_diff / norm)
+    return float(torch.mean(abs_diff / norm).item())
 
 def initialize_walkers(
     priors,
     n_walkers: int,
-    constraint: Callable = None
+    constraint: Callable = None,
+    max_attempts: int | None = None,
 ) -> torch.Tensor:
 
     """
@@ -50,24 +49,29 @@ def initialize_walkers(
         of the walkers, sampled from the prior distributions.
     """
 
-    if not constraint:
+    if constraint is None:
         means = torch.tensor([p.mean for p in priors], dtype=torch.float32)
         stds = torch.tensor([p.scale for p in priors], dtype=torch.float32)
         p0 = torch.normal(means.expand(n_walkers, -1), stds.expand(n_walkers, -1))
     else:
-        # n_params = specs.n_params_implicit
         n_params = constraint.n_params
         n_dim = len(priors)
+        max_attempts = max_attempts or (1000 * n_walkers)
 
         p0 = torch.empty((n_walkers, n_dim))
         count = 0
-        while count < n_walkers:
-            # p0_trial = torch.tensor([p.sample().item() for p in priors.values()])
+        attempts = 0
+        while count < n_walkers and attempts < max_attempts:
             p0_trial = torch.tensor([p.sample().item() for p in priors])
-            # if specs.is_valid(p0_trial[:n_params]):
             if constraint(p0_trial[:n_params]):
                 p0[count] = p0_trial
                 count += 1
+            attempts += 1
+        if count < n_walkers:
+            raise RuntimeError(
+                "Failed to initialize constrained walkers from the priors. "
+                f"Accepted {count}/{n_walkers} samples after {attempts} attempts."
+            )
     return p0
 
 
@@ -78,9 +82,8 @@ def check_tensor(
 ) -> torch.Tensor:
     """Convert input to a torch tensor on the specified device."""
     if not isinstance(x, torch.Tensor):
-        return torch.tensor(x, device=device, dtype=dtype)
-    else:
-        return x.to(device, dtype=dtype)
+        return torch.as_tensor(x, device=device, dtype=dtype)
+    return x.to(device, dtype=dtype)
 
 
 def check_device(device: str) -> None:
@@ -142,7 +145,7 @@ _MANUAL_MODE = False
 
 
 class enable_manual_dist:
-    """Context manager to enable manual pairwise distance computation (Hessian-safe)."""
+    """Enable Hessian-safe manual pairwise distances within a context."""
     def __enter__(self) -> None:
         global _MANUAL_MODE
         self._prev = _MANUAL_MODE
@@ -153,7 +156,8 @@ class enable_manual_dist:
         _MANUAL_MODE = self._prev
 
 
-def auto_manual_switch(fn: Callable) -> Callable:
+def with_manual_sqdist_flag(fn: Callable) -> Callable:
+    """Inject the global manual-distance flag into kernel call sites."""
     def wrapper(*args, manual_sqdist=False, **kwargs):
         return fn(*args, manual_sqdist=manual_sqdist or _MANUAL_MODE, **kwargs)
     return wrapper
@@ -162,7 +166,9 @@ def auto_manual_switch(fn: Callable) -> Callable:
 def find_max_stable_lr(
     fn: Callable,
     p0: torch.Tensor,
-    learning_rates: List[Union[float, torch.Tensor]] = None,
+    learning_rates: (
+        Sequence[Union[float, torch.Tensor]] | float | torch.Tensor | None
+    ) = None,
     max_iter: int = 100,
     param_bounds: Tuple[float, float] = (-7, 7),
 ) -> Union[float, None]:
@@ -188,6 +194,12 @@ def find_max_stable_lr(
     """
     if learning_rates is None:
         learning_rates = 10 ** torch.linspace(-1, -6, 6)
+    elif isinstance(learning_rates, torch.Tensor) and learning_rates.ndim == 0:
+        learning_rates = [float(learning_rates.item())]
+    elif isinstance(learning_rates, (int, float)):
+        learning_rates = [float(learning_rates)]
+    else:
+        learning_rates = list(learning_rates)
     lower, upper = param_bounds
     for lr in learning_rates:
         x = p0.clone().detach().requires_grad_(True)
@@ -241,11 +253,14 @@ def find_map(
         The MAP estimate found by optimization.
     """
 
-    logger.info("learning rate search: in progres...", level=2, overwrite=True)
+    if logger is not None:
+        logger.info("learning rate search: in progress...", level=2, overwrite=True)
 
-    lr_opt = 0.5 * find_max_stable_lr(fn, x0, learning_rates=lr)
+    lr_opt = find_max_stable_lr(fn, x0, learning_rates=lr)
     if lr_opt is not None:
-        logger.info(f"learning rate search: Done. | lr = {lr_opt:.1e}", level=2)
+        lr_opt = 0.5 * lr_opt
+        if logger is not None:
+            logger.info(f"learning rate search: Done. | lr = {lr_opt:.1e}", level=2)
     else:
         raise ValueError("No stable learning rate found.")
 
@@ -268,14 +283,16 @@ def find_map(
             )
         optimizer.step()
         if grad_norm < tol_grad:
-            logger.info("MAP search: Done.", level=2)
+            if logger is not None:
+                logger.info("MAP search: Done.", level=2)
             break
 
     else:
-        logger.info(
-            "MAP search: Fail. | Max iterations reached without convergence.",
-            level=2
-        )
+        if logger is not None:
+            logger.info(
+                "MAP search: Fail. | Max iterations reached without convergence.",
+                level=2,
+            )
 
     return x0.detach()
 
@@ -284,7 +301,7 @@ def laplace_approximation(
     fn: Callable,
     map_theta: torch.Tensor,
     device: str = 'cpu'
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> torch.Tensor:
     """
     Perform Laplace approximation around MAP estimate.
 
@@ -299,8 +316,6 @@ def laplace_approximation(
 
     Returns
     -------
-    mean : torch.Tensor
-        The MAP estimate (same as input).
     cov : torch.Tensor
         The approximate posterior covariance (inverse Hessian).
     """

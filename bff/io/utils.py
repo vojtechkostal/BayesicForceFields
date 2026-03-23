@@ -3,10 +3,7 @@ import tarfile
 import yaml
 import numpy as np
 from pathlib import Path
-from typing import Union, List
-
-from .mdp import get_restraints
-
+from typing import Union
 
 PathLike = Union[str, Path]
 
@@ -89,32 +86,6 @@ def load_json(fn: PathLike) -> dict:
     return file
 
 
-def load_qoi(fn_qoi: PathLike) -> np.ndarray:
-    """
-    Load quantities of interest from a .npz file.
-    """
-    return np.load(fn_qoi, allow_pickle=True)
-
-
-def save_qoi(qoi, fn_out: PathLike, settings: dict) -> None:
-    """Save quantities of interest to a compressed .npz file.
-
-    Parameters
-    ----------
-    qoi : list of list of objects
-        Quantities of interest to be saved.
-    fn_out : str or Path
-        Output filename for the .npz file.
-    """
-
-    qoi = np.atleast_2d(qoi)
-    data_dict = np.array([[trj.__dict__ for trj in sample] for sample in qoi])
-
-    data = {'settings': settings} | {'samples': data_dict}
-    fn_out = Path(fn_out).resolve()
-    np.savez_compressed(fn_out, **data)
-
-
 def compress_results(source_dir: PathLike) -> None:
     """Compress the results into a tarball."""
 
@@ -150,7 +121,7 @@ def prepare_path(fn: PathLike) -> Path:
 
 def extract_train_dir(
     train_dir: PathLike
-) -> tuple[dict, dict, List[PathLike], List[PathLike], List[dict]]:
+) -> tuple[dict | None, list[dict], dict | None]:
 
     """Extract training directory contents.
 
@@ -163,13 +134,9 @@ def extract_train_dir(
     -------
     tuple
         A tuple containing:
-        - specs (dict): Specifications loaded from specs.yaml, or None if not present.
-        - samples (dict): Samples loaded from samples.yaml, or None if not present.
-        - fn_topol (list of Path): List of topology file paths.
-        - fn_coord (list of Path): List of coordinate file paths.
-        - restraints (list of dict): List of restraint dictionaries
-        extracted from .mdp files.
-
+        - specs (dict | None): Specifications loaded from specs.yaml.
+        - systems (list[dict]): Staged system records from samples.yaml.
+        - samples (dict | None): Sample records loaded from samples.yaml.
     """
     if not train_dir.is_dir():
         raise ValueError(f"Provided train_dir '{train_dir}' is not a valid directory.")
@@ -178,14 +145,17 @@ def extract_train_dir(
     specs = load_yaml(fn_specs) if fn_specs.exists() else None
 
     fn_samples = train_dir / "samples.yaml"
-    samples = load_yaml(fn_samples) if fn_samples.exists() else None
+    campaign = load_yaml(fn_samples) if fn_samples.exists() else None
+    systems = None if campaign is None else campaign.get("systems")
+    samples = None if campaign is None else campaign.get("samples")
 
-    fn_mdp = sorted(train_dir.glob("*prod*.mdp"))
-    fn_topol = sorted(train_dir.glob("topol-*.top"))
-    fn_coord = sorted(train_dir.glob("coords-*.gro"))
-    restraints = [get_restraints(f) for f in fn_mdp]
+    if not systems:
+        raise ValueError(f"No staged simulation systems found in {train_dir}.")
 
-    if not (len(fn_mdp) == len(fn_topol) == len(fn_coord)):
-        raise ValueError(f"Missing .mdp, .top, or .gro files in {train_dir}.")
+    fn_topol = [train_dir / system["topology"] for system in systems]
+    fn_coord = [train_dir / system["coordinates"] for system in systems]
 
-    return specs, samples, list(fn_topol), list(fn_coord), restraints
+    if not all(path.exists() for path in fn_topol + fn_coord):
+        raise ValueError(f"Missing staged topology or coordinate files in {train_dir}.")
+
+    return specs, list(systems), samples

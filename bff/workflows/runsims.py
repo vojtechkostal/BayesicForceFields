@@ -1,462 +1,552 @@
-import argparse
-import time
-import subprocess
 import shutil
-import numpy as np
+import subprocess
+import sys
+import time
 from pathlib import Path
-from typing import Any, Union, Tuple, List, Dict
+from typing import Any
 
+import numpy as np
 from gmxtop import Topology
-from ..topology import TopologyModifier
-from ..structures import Specs, RandomParamsGenerator, ChargeConstraint
-from ..io.utils import load_yaml, save_yaml, compress_results
-from ..io.schedulers import Slurm
+
+from ..domain.specs import ChargeConstraint, RandomParamsGenerator, Specs
 from ..io.logs import Logger
+from ..io.schedulers import Slurm
+from ..io.utils import compress_results, load_yaml, save_yaml
+from ..topology import TopologyModifier
+from .md import modify_topology
+from .configs import SimulateConfig, SimulationCampaignConfig, SimulationSystemConfig
 
 
-PathLike = Union[str, Path]
+PathLike = str | Path
 
 
 SCHEDULER_CLASSES = {
-    'slurm': Slurm,
-    # TODO: 'pbs': PBS,
+    "slurm": Slurm,
 }
 
-MD_SCRIPT = 'BayesicForceFields.bff.workflows.md'
 
-
-def load_config(config: PathLike) -> Tuple[dict, bool]:
-    """
-    Check if the configuration is valid.
-    """
-
-    # load the configuration file
-    config = load_yaml(config)
-
-    # Check the mandatory keys
-    required_keys = ['data_dir', 'gromacs', 'job_scheduler', 'gmx_cmd']
-    validate = 'inputs' in config
-    if validate:
-        required_keys.extend(['inputs', 'fn_specs'])
-    else:
-        required_keys.extend(
-            ['mol_resname', 'bounds', 'total_charge', 'implicit_atoms', 'n_samples']
-        )
-
-    for key in required_keys:
-        if key not in config:
-            raise ValueError(f"Missing required configuration key: '{key}'")
-        if key in ['fn_specs', 'data_dir']:
-            config[key] = str(Path(config[key]).resolve())
-
-    # --- GROMACS section ---
-    gmx_required = [
-        'fn_topol', 'fn_coordinates', 'fn_mdp_em', 'fn_mdp_prod', 'fn_ndx', 'n_steps'
-    ]
-    gmx = config['gromacs']
-    for key in gmx_required:
-        if key not in gmx:
-            raise ValueError(f"Missing required gromacs key: '{key}'")
-
-    # All list keys except n_steps must be the same length
-    file_keys = [k for k in gmx_required if k != 'n_steps']
-    lengths = [len(gmx[k]) for k in file_keys]
-    if len(set(lengths)) != 1:
-        raise ValueError(
-            "GROMACS file lists must have same length, "
-            f"got lengths: {dict(zip(file_keys, lengths))}"
-        )
-
-    # Check if all the GROMACS files exist
-    for key in file_keys:
-        resolved_paths = []
-        for f in gmx[key]:
-            if not Path(f).is_file():
-                raise ValueError(f"File not found: {f} (for '{key}')")
-            resolved_paths.append(str(Path(f).resolve()))
-        config['gromacs'][key] = resolved_paths
-
-    # --- Bounds ---
-    if not isinstance(config['bounds'], dict):
-        raise ValueError("'bounds' must be a dict")
-    for name, b in config['bounds'].items():
-        if not (
-            isinstance(b, (list, tuple))
-            and len(b) == 2
-            and all(isinstance(x, (int, float)) for x in b)
-        ):
-            raise ValueError(f"Invalid bounds for '{name}': {b}")
-
-    # --- Check whether implicit atoms are part of bounds ---
-    bound_keys = set(
-        b.split(maxsplit=1)[1]
-        for b in config['bounds'].keys()
-        if 'charge' in b
-    )
-    if isinstance(config['implicit_atoms'], str):
-        implicit_atoms_str = config['implicit_atoms']
-    elif isinstance(config['implicit_atoms'], (list, tuple)):
-        implicit_atoms_str = ' '.join(config['implicit_atoms'])
-    else:
-        raise ValueError("'implicit_atoms' must be a string or list of strings")
-
-    if bound_keys and implicit_atoms_str not in bound_keys:
-        raise ValueError(
-            f"'implicit_atoms' ({implicit_atoms_str}) "
-            "must be one of the defined bounds."
-        )
-
-    # --- Numeric fields ---
-    if not isinstance(config['total_charge'], (int, float)):
-        raise ValueError("'total_charge' must be float")
-    if (
-        'n_samples' in config
-        and (
-            not isinstance(config['n_samples'], int)
-            or config['n_samples'] <= 0
-        )
-    ):
-        raise ValueError("'n_samples' must be a positive integer")
-
-    # --- Scheduler ---
-    scheduler = config.get('job_scheduler', 'local')
-    if scheduler != 'local':
-        if scheduler not in SCHEDULER_CLASSES:
-            raise ValueError(
-                f"Unsupported scheduler '{scheduler}'. "
-                f"Supported: {list(SCHEDULER_CLASSES)}"
-            )
-        if scheduler not in config:
-            raise ValueError(f"Missing scheduler settings for '{scheduler}'")
-        sched_conf = config[scheduler]
-        required_sched_keys = ['preamble', 'commands']
-        for key in required_sched_keys:
-            if key not in sched_conf:
-                raise ValueError(f"Scheduler '{scheduler}' must define '{key}'")
-
-    # --- misc ---
-    config['compress'] = config.get('compress', False)
-    config['cleanup'] = config.get('cleanup', False)
-    config['store'] = config.get('store', ['xtc'])
-
-    return config, validate
-
-
-def dispatch_md_job(
-    hash: str,
-    sample: List[float],
-    config: Dict[str, Any],
-    job_scheduler: object
-) -> Union[None, int]:
-    """
-    Submit an MD simulation either locally or via a job scheduler.
-    """
-
-    # Prepare job-specific configurations
-    config_md = config | {'params': sample, 'hash': hash}
-    data_dir = Path(config_md['data_dir']).resolve()
-    fn_config_md = data_dir / f'config-{hash}.yaml'
-    save_yaml(config_md, fn_config_md)
-
-    cmd_run = ["bff", "md", str(fn_config_md)]
-
-    if job_scheduler == 'local':
-        subprocess.run(cmd_run, cwd=str(data_dir))
+def _relative_path(path: Path | None, base_dir: Path) -> str | None:
+    if path is None:
         return None
-
-    fn_submit = data_dir / f'run-{hash}.sh'
-    fn_stdout = data_dir / f'run-{hash}.out'
-
-    submit_cls = SCHEDULER_CLASSES[job_scheduler]
-    submit_specs = config[job_scheduler]['preamble'] | {'output': fn_stdout}
-    submit_script = submit_cls(**submit_specs)
-
-    if config.get(job_scheduler) is None:
-        raise ValueError(
-            f"Configuration for job scheduler '{job_scheduler}' is missing."
-        )
-
-    for cmd in config[job_scheduler]['commands']:
-        resolved = " ".join(cmd_run) if 'RUN MD' in cmd else cmd
-        submit_script.add_command(resolved)
-
-    return submit_script.submit(fn_submit)
+    return str(path.relative_to(base_dir))
 
 
-# ---- Initialization ----
-def initialize_environment(config: Dict[str, Any], validate: bool) -> Path:
-    """
-    Set up the directory structure and save settings and initial data.
-    """
+def _system_record(
+    system: SimulationSystemConfig,
+    trainset_dir: Path,
+) -> dict[str, Any]:
+    """Serialize one staged system into the campaign metadata file."""
+    return {
+        "system_id": system.system_id,
+        "topology": _relative_path(system.fn_topol, trainset_dir),
+        "coordinates": _relative_path(system.fn_coordinates, trainset_dir),
+        "mdp": {
+            "em": _relative_path(system.fn_mdp_em, trainset_dir),
+            "prod": _relative_path(system.fn_mdp_prod, trainset_dir),
+        },
+        "index": _relative_path(system.fn_ndx, trainset_dir),
+        "bias": _relative_path(system.bias.input_file, trainset_dir),
+        "n_steps": int(system.n_steps),
+    }
 
-    # Create the data directory
-    data_dir = Path(config['data_dir']).resolve()
-    data_dir.mkdir(parents=True, exist_ok=True)
 
-    # Check if Specs file is provided or needs to be generated
-    if validate:
-        fn_specs = Path(config['fn_specs']).resolve()
-    else:
-        top_modifier = TopologyModifier(
-            config['gromacs']['fn_topol'][0],
-            config['mol_resname'],
-            config['implicit_atoms'])
-        bounds_resolved = top_modifier.resolve_params(config['bounds'])
+def build_specs(config: SimulateConfig) -> Path:
+    """Create the force-field specification file for one sampled campaign."""
+    config.trainset_dir.resolve().mkdir(parents=True, exist_ok=True)
+    top_modifier = TopologyModifier(
+        config.systems[0].fn_topol,
+        config.mol_resname,
+        config.implicit_atoms,
+    )
+    bounds_resolved = top_modifier.resolve_parameter_names(config.bounds)
 
-        # determine charge of the modified group of atoms
-        group = []
-        for param in bounds_resolved.keys():
-            param_name, *atoms = param.split()
-            if param_name == 'charge':
-                group.extend(atoms)
-        target_charge = config['total_charge']
-        group_charge = top_modifier.group_charge(group)
-        constraint_charge = target_charge - top_modifier.total_charge + group_charge
+    group: list[str] = []
+    for name in bounds_resolved:
+        param_name, *atoms = name.split()
+        if param_name == "charge":
+            group.extend(atoms)
+    group_charge = top_modifier.group_charge(group)
+    constraint_charge = (
+        config.total_charge - top_modifier.total_charge + group_charge
+    )
 
-        implicit_atoms = [atom.name for atom in top_modifier.implicit_atoms]
-
-        specs_data = {
-            'mol_resname': config['mol_resname'],
-            'implicit_atoms': implicit_atoms,
-            'bounds': bounds_resolved,
-            'total_charge': config['total_charge'],
-            'constraint_charge': constraint_charge,
+    specs = Specs(
+        {
+            "mol_resname": config.mol_resname,
+            "implicit_atoms": [atom.name for atom in top_modifier.implicit_atoms],
+            "bounds": bounds_resolved,
+            "total_charge": config.total_charge,
+            "constraint_charge": constraint_charge,
         }
-
-        config['bounds'] = bounds_resolved
-        config['constraint_charge'] = constraint_charge
-        config['implicit_atoms'] = implicit_atoms
-
-        # Save the Specs data into a file
-        fn_specs = data_dir / 'specs.yaml'
-        Specs(specs_data).write(fn_specs)
-
-    gmx_keys = ['fn_topol', 'fn_coordinates', 'fn_mdp_em', 'fn_mdp_prod', 'fn_ndx']
-    files = zip(*(config['gromacs'][key] for key in gmx_keys))
-    for i, (fn_top, fn_coords, fn_mdp_em, fn_mdp_prod, fn_ndx) in enumerate(files):
-
-        # Write topology file
-        Topology(fn_top).write(data_dir / f'topol-{i:03d}.top')
-
-        # File mapping: (source, destination filename template)
-        file_map = {
-            fn_coords: f'coords-{i:03d}.gro',
-            fn_mdp_em: f'md-em-{i:03d}.mdp',
-            fn_mdp_prod: f'md-prod-{i:03d}.mdp',
-            fn_ndx: f'index-{i:03d}.ndx',
-        }
-
-        # Copy files to the data directory
-        for src, dst_name in file_map.items():
-            dst_path = data_dir / dst_name
-            dst_path.write_text(Path(src).read_text())
-
+    )
+    fn_specs = config.trainset_dir / "specs.yaml"
+    specs.write(fn_specs)
     return fn_specs
 
 
-# ---- Job Control ----
-def get_active_jobs(ids: List[int], scheduler: str, chunk_size: int = 1000) -> int:
-    if scheduler != 'slurm':
+def stage_systems(
+    systems: list[SimulationSystemConfig],
+    trainset_dir: Path,
+) -> list[SimulationSystemConfig]:
+    """Copy static simulation-system inputs into the campaign directory."""
+    staged_systems: list[SimulationSystemConfig] = []
+    for index, system in enumerate(systems):
+        fn_topol = trainset_dir / f"window-{index:03d}.top"
+        Topology(system.fn_topol).write(fn_topol)
+
+        fn_coordinates = trainset_dir / f"window-{index:03d}.gro"
+        shutil.copy2(system.fn_coordinates, fn_coordinates)
+
+        fn_mdp_em = None
+        if system.fn_mdp_em is not None:
+            fn_mdp_em = trainset_dir / f"window-{index:03d}.em.mdp"
+            shutil.copy2(system.fn_mdp_em, fn_mdp_em)
+
+        fn_mdp_prod = trainset_dir / f"window-{index:03d}.mdp"
+        shutil.copy2(system.fn_mdp_prod, fn_mdp_prod)
+
+        fn_ndx = trainset_dir / f"window-{index:03d}.ndx"
+        shutil.copy2(system.fn_ndx, fn_ndx)
+
+        bias = system.bias
+        if bias.input_file is not None and bias.input_filename is not None:
+            fn_bias = trainset_dir / f"window-{index:03d}.{bias.input_filename}"
+            shutil.copy2(bias.input_file, fn_bias)
+            bias = type(bias).load(fn_bias)
+
+        staged_systems.append(
+            SimulationSystemConfig(
+                system_id=system.system_id,
+                fn_topol=fn_topol,
+                fn_coordinates=fn_coordinates,
+                fn_mdp_em=fn_mdp_em,
+                fn_mdp_prod=fn_mdp_prod,
+                fn_ndx=fn_ndx,
+                bias=bias,
+                n_steps=system.n_steps,
+            )
+        )
+    return staged_systems
+
+
+def stage_campaign(
+    config: SimulationCampaignConfig,
+    *,
+    fn_specs: Path | None = None,
+) -> tuple[Path | None, list[SimulationSystemConfig]]:
+    """Prepare the trainset directory and write static campaign inputs."""
+    trainset_dir = config.trainset_dir.resolve()
+    trainset_dir.mkdir(parents=True, exist_ok=True)
+
+    systems = stage_systems(config.systems, trainset_dir)
+    if fn_specs is not None:
+        resolved_specs = fn_specs.resolve()
+    else:
+        resolved_specs = None
+
+    save_yaml(
+        {
+            "systems": [_system_record(system, trainset_dir) for system in systems],
+            "samples": {},
+        },
+        trainset_dir / "samples.yaml",
+    )
+    return resolved_specs, systems
+
+
+def write_sample_job_config(
+    *,
+    sample_id: str,
+    sample: np.ndarray,
+    trainset_dir: Path,
+    fn_specs: Path,
+    gmx_cmd: str,
+    job_scheduler: str,
+    store: tuple[str, ...],
+    systems: list[SimulationSystemConfig],
+) -> Path:
+    """Write one MD job configuration for a sampled force-field vector."""
+    config_md = {
+        "sample_id": sample_id,
+        "params": np.asarray(sample, dtype=float).tolist(),
+        "trainset_dir": str(trainset_dir),
+        "fn_specs": str(fn_specs.resolve()),
+        "gmx_cmd": gmx_cmd,
+        "job_scheduler": job_scheduler,
+        "store": list(store),
+        "systems": [system.to_dict() for system in systems],
+    }
+    fn_config_md = trainset_dir / f"config-{sample_id}.yaml"
+    save_yaml(config_md, fn_config_md)
+    return fn_config_md
+
+
+def stage_sample_topologies(
+    *,
+    sample_id: str,
+    sample: np.ndarray,
+    trainset_dir: Path,
+    fn_specs: Path,
+    systems: list[SimulationSystemConfig],
+) -> None:
+    """Write modified per-sample topology files into the campaign directory."""
+    for i, system in enumerate(systems):
+        fn_topol = trainset_dir / f"md-{sample_id}-{i:03d}.top"
+        modify_topology(system.fn_topol, fn_specs, sample, True, fn_topol)
+
+
+def build_submission_script(
+    *,
+    sample_id: str,
+    fn_config_md: Path,
+    config: SimulationCampaignConfig,
+) -> Slurm | None:
+    """Build the Slurm submission script for one staged sample."""
+    if config.job_scheduler != "slurm":
+        return None
+
+    trainset_dir = config.trainset_dir.resolve()
+    cmd_run = [sys.executable, "-m", "bff.cli", "md", str(fn_config_md)]
+
+    submit_cls = SCHEDULER_CLASSES[config.job_scheduler]
+    assert config.slurm is not None
+    fn_stdout = trainset_dir / f"run-{sample_id}.out"
+    submit_specs = dict(config.slurm.sbatch or {}) | {"output": fn_stdout}
+    submit_script = submit_cls(**submit_specs)
+
+    for cmd in config.slurm.setup:
+        submit_script.add_command(cmd)
+    submit_script.add_command(" ".join(cmd_run))
+    for cmd in config.slurm.teardown:
+        submit_script.add_command(cmd)
+
+    return submit_script
+
+
+def write_submission_script(
+    *,
+    sample_id: str,
+    fn_config_md: Path,
+    config: SimulationCampaignConfig,
+) -> Path | None:
+    """Write the Slurm submission script for one staged sample."""
+    submit_script = build_submission_script(
+        sample_id=sample_id,
+        fn_config_md=fn_config_md,
+        config=config,
+    )
+    if submit_script is None:
+        return None
+
+    fn_submit = config.trainset_dir.resolve() / f"run-{sample_id}.sh"
+    submit_script.save(fn_submit)
+    return fn_submit
+
+
+def dispatch_simulation_job(
+    *,
+    sample_id: str,
+    config: SimulationCampaignConfig,
+) -> int | None:
+    """Run or submit one MD job for a force-field parameter vector."""
+    trainset_dir = config.trainset_dir.resolve()
+    fn_config_md = trainset_dir / f"config-{sample_id}.yaml"
+    cmd_run = [sys.executable, "-m", "bff.cli", "md", str(fn_config_md)]
+    if config.job_scheduler == "local":
+        subprocess.run(cmd_run, cwd=str(trainset_dir), check=True)
+        return None
+
+    submit_script = build_submission_script(
+        sample_id=sample_id,
+        fn_config_md=fn_config_md,
+        config=config,
+    )
+    assert submit_script is not None
+    fn_submit = trainset_dir / f"run-{sample_id}.sh"
+    return submit_script.submit(fn_submit)
+
+
+def get_active_jobs(ids: list[int], scheduler: str, chunk_size: int = 1000) -> int:
+    """Count active jobs for the supported scheduler."""
+    if scheduler != "slurm":
         raise NotImplementedError
 
-    def chunks(lst, n):
-        for i in range(0, len(lst), n):
-            yield lst[i:i+n]
+    def chunks(values: list[int], n: int):
+        for i in range(0, len(values), n):
+            yield values[i:i+n]
 
     n_active = 0
     for chunk in chunks(ids, chunk_size):
-        ids_str = ','.join(map(str, chunk))
+        ids_str = ",".join(map(str, chunk))
         res = subprocess.run(
-            ['squeue', '-j', ids_str, '--noheader', '--format', '%i,%t'],
+            ["squeue", "-j", ids_str, "--noheader", "--format", "%i,%t"],
             capture_output=True,
-            text=True
+            text=True,
+            check=False,
         )
-        # each line = one active job
-        n_active += res.stdout.strip().count('\n')
-        # handle case with single line no newline
-        if res.stdout.strip() and not res.stdout.endswith('\n'):
+        n_active += res.stdout.strip().count("\n")
+        if res.stdout.strip() and not res.stdout.endswith("\n"):
             n_active += 1
 
     return n_active
 
 
-def control_jobs(job_ids: List[int], scheduler: str) -> None:
-    """Monitor active jobs until completion."""
+def wait_for_scheduler_slot(
+    *,
+    job_ids: list[int],
+    scheduler: str,
+    max_parallel_jobs: float,
+) -> None:
+    """Wait until the scheduler has capacity for one more submitted job."""
+    while get_active_jobs(job_ids, scheduler) >= max_parallel_jobs:
+        time.sleep(5)
+
+
+def control_jobs(job_ids: list[int], scheduler: str) -> None:
+    """Block until all submitted jobs finish."""
     while True:
         if get_active_jobs(job_ids, scheduler) == 0:
             break
         time.sleep(5)
 
 
-# ---- Cleanup ----
-def clean_up_train_dir(
-    samples: Dict[str, List[float]],
-    data_dir: PathLike,
+def _result_record(sample_id: str, trainset_dir: Path) -> dict[str, Any]:
+    fn_result = trainset_dir / f"result-{sample_id}.yaml"
+    if fn_result.exists():
+        return load_yaml(fn_result)
+    return {}
+
+
+def collect_campaign_metadata(
+    *,
+    samples: dict[str, dict[str, Any]],
+    systems: list[SimulationSystemConfig],
+    trainset_dir: Path,
     compress: bool = False,
-    remove: bool = False
+    remove: bool = False,
 ) -> None:
-    """
-    Remove failed simulations and optionally compress results.
-    """
+    """Merge per-sample result files into the final campaign metadata file."""
+    sample_records: dict[str, Any] = {}
+    for sample_id, sample_data in samples.items():
+        result = _result_record(sample_id, trainset_dir)
+        sample_records[sample_id] = {
+            "params": sample_data["params"],
+            "job_id": sample_data.get("job_id"),
+            "status": result.get("status", sample_data.get("status", "failed")),
+            "outputs": result.get("outputs", sample_data.get("outputs", [])),
+        }
 
-    data_dir = Path(data_dir)
-    samples_to_store = {}
-    for hash, params in samples.items():
-        fn_trial = sorted(data_dir.glob(f'*-{hash}-*.xtc'))  # sort by filename
-        if fn_trial and all(f.exists() for f in fn_trial):
-            samples_to_store[str(hash)] = {
-                'params': params,
-                'fn_trj': [f.name for f in fn_trial]
-            }
+    save_yaml(
+        {
+            "systems": [_system_record(system, trainset_dir) for system in systems],
+            "samples": sample_records,
+        },
+        trainset_dir / "samples.yaml",
+    )
 
-    save_yaml(samples_to_store, data_dir / 'samples.yaml')
+    for fn_result in trainset_dir.glob("result-*.yaml"):
+        fn_result.unlink(missing_ok=True)
 
     if compress:
-        compress_results(data_dir)
+        compress_results(trainset_dir)
         if remove:
-            shutil.rmtree(data_dir)
-    elif remove:
-        patterns = ['run-*.sh', 'run-*.out', 'config-*.yaml']
+            shutil.rmtree(trainset_dir)
+        return
+
+    if remove:
+        patterns = ["run-*.sh", "run-*.out", "config-*.yaml"]
         for pattern in patterns:
-            for f in Path(data_dir).glob(pattern):
-                try:
-                    f.unlink()
-                except Exception as e:
-                    print(f"Warning: Failed to remove {f}: {e}")
+            for file in trainset_dir.glob(pattern):
+                file.unlink(missing_ok=True)
 
 
-def print_train_summary(fn_specs: PathLike, logger: Logger) -> None:
-    """
-    Print a summary of the configuration settings.
-    """
-
+def print_simulate_summary(
+    config: SimulateConfig,
+    fn_specs: PathLike,
+    logger: Logger,
+) -> None:
+    """Print a concise summary of the sampled simulation campaign."""
     specs = Specs(fn_specs)
-
     logger.info("", level=0)
-    logger.info("=== Generating training set ===\n", level=0)
+    logger.info("=== Running simulation campaign ===\n", level=0)
     logger.info(f"molecule name: {specs.mol_resname}", level=1)
+    logger.info(f"trainset dir: {config.trainset_dir.resolve()}", level=1)
+    logger.info(
+        f"systems: {len(config.systems)} | samples: {config.n_samples} "
+        f"| scheduler: {config.job_scheduler}",
+        level=1,
+    )
+    logger.info(
+        f"dispatch: {'yes' if config.dispatch else 'no (stage only)'}",
+        level=1,
+    )
+    logger.info(
+        f"stored outputs: {', '.join(config.store) if config.store else 'none'}",
+        level=1,
+    )
     logger.info("parameters:", level=1)
-    for name, b in specs.bounds.by_name.items():
+    for name, bounds in specs.bounds.by_name.items():
+        label = f"{name}: {bounds}"
         if name == specs.implicit_param:
-            logger.info(f"{name}: {b} (implicit)", level=2)
-        else:
-            logger.info(f"{name}: {b}", level=2)
+            label += " (implicit)"
+        logger.info(label, level=2)
     logger.info(f"total charge: {specs.total_charge}\n", level=1)
 
 
-def print_validate_summary(fn_specs: PathLike, logger: Logger) -> None:
-    """
-    Print a summary of the configuration settings.
-    """
+def print_validate_summary(
+    config: SimulationCampaignConfig,
+    fn_specs: PathLike,
+    n_samples: int,
+    logger: Logger,
+) -> None:
+    """Print a concise summary of the validation campaign."""
     specs = Specs(fn_specs)
     logger.info("", level=0)
-    logger.info("=== Generating validation set ===\n", level=0)
-    logger.info(f"molecule name: {specs.mol_resname}\n", level=1)
+    logger.info("=== Running validation campaign ===\n", level=0)
+    logger.info(f"molecule name: {specs.mol_resname}", level=1)
+    logger.info(f"trainset dir: {config.trainset_dir.resolve()}", level=1)
+    logger.info(
+        f"systems: {len(config.systems)} | samples: {n_samples} "
+        f"| scheduler: {config.job_scheduler}",
+        level=1,
+    )
+    logger.info(
+        f"dispatch: {'yes' if config.dispatch else 'no (stage only)'}",
+        level=1,
+    )
+    logger.info(
+        f"stored outputs: {', '.join(config.store) if config.store else 'none'}\n",
+        level=1,
+    )
 
 
-# ---- Main Workflow ----
-def main(fn_config: PathLike) -> None:
-    """
-    Main function to execute the training set generation.
-    """
+def run_campaign(
+    *,
+    config: SimulationCampaignConfig,
+    fn_specs: Path,
+    systems: list[SimulationSystemConfig],
+    parameter_samples: np.ndarray,
+    logger: Logger,
+) -> None:
+    """Run a local or Slurm-backed simulation campaign."""
+    n_total = len(parameter_samples)
+    samples: dict[str, dict[str, Any]] = {}
+    job_ids: list[int] = []
+    pad = len(str(max(n_total, 1)))
+    trainset_dir = config.trainset_dir.resolve()
+    job_scheduler = config.job_scheduler
+    max_parallel_jobs = None
+    action = "Running MD" if config.dispatch else "Staging jobs"
+    campaign_finished = False
 
-    # Initialization
-    config, validate = load_config(fn_config)
-    fn_specs = initialize_environment(config, validate)
-
-    logger = Logger(None)
-
-    if validate:
-        print_validate_summary(fn_specs, logger)
-        inputs = np.load(config['inputs'])
-        iterator = inputs
-        n_total = len(inputs)
-    else:
-        print_train_summary(fn_specs, logger)
-        iterator = range(config['n_samples'])
-        n_total = config['n_samples']
-
-        # prepare the parameter sampler
-        constraint = ChargeConstraint(fn_specs)
-        sampler = RandomParamsGenerator(constraint.explicit_bounds, constraint)
-
-    # Main loop to generate samples
-    samples = {}
-    job_ids = []
-    pad = len(str(n_total))
-    for idx, sample in enumerate(iterator):
-
-        logger.info(
-            f"Running MD: {idx+1}/{n_total} "
-            f"({((idx + 1) / n_total * 100):.0f}%)",
-            level=1,
-            overwrite=True
+    if config.dispatch and job_scheduler not in {"local", *SCHEDULER_CLASSES}:
+        raise NotImplementedError(
+            f"Unsupported scheduler '{job_scheduler}'. "
+            f"Supported: {['local', *SCHEDULER_CLASSES]}"
         )
 
-        # Generate sample or use provided input
-        if not validate:
-            hash = f"{idx:0{pad}d}"
-            max_attempts = 1000
-            for _ in range(max_attempts):
-                sample = sampler(1)
-                if sample.size > 0:
-                    sample = sample.squeeze(0)
-                    break
-            else:
-                raise RuntimeError(
-                    f"Failed to generate valid sample after {max_attempts} attempts.")
-
-        # Store sample info
-        samples[hash] = sample
-
-        # Submit job while controling total number of running jobs
-        job_scheduler = config.get('job_scheduler', 'local')
-        if job_scheduler == 'local':
-            dispatch_md_job(hash, sample, config, job_scheduler)
-
-        elif job_scheduler not in SCHEDULER_CLASSES:
-            raise NotImplementedError(
-                f"Unsupported scheduler '{job_scheduler}'. "
-                f"Supported: {list(SCHEDULER_CLASSES)}"
+    try:
+        for idx, sample in enumerate(parameter_samples):
+            sample_id = f"{idx:0{pad}d}"
+            logger.info(
+                f"{action}: {idx + 1}/{n_total} "
+                f"({((idx + 1) / n_total * 100):.0f}%)",
+                level=1,
+                overwrite=True,
             )
 
-        else:
-            n_max = config[job_scheduler].get('max_parallel_jobs', 1)
-            n_max = np.inf if n_max == -1 else n_max
-            while True:
-                if n_max > 0:
-                    n_active = get_active_jobs(job_ids, job_scheduler)
-                    if n_active < n_max and idx < n_total:
-                        id = dispatch_md_job(hash, sample, config, job_scheduler)
-                        if id is not None:
-                            job_ids.append(id)
-                        break
-                    else:
-                        time.sleep(5)
-                else:
-                    break
+            sample = np.asarray(sample, dtype=float).reshape(-1)
+            fn_config_md = write_sample_job_config(
+                sample_id=sample_id,
+                sample=sample,
+                trainset_dir=trainset_dir,
+                fn_specs=fn_specs,
+                gmx_cmd=config.gmx_cmd,
+                job_scheduler=config.job_scheduler,
+                store=config.store,
+                systems=systems,
+            )
+            samples[sample_id] = {
+                "params": sample.tolist(),
+                "job_id": None,
+                "status": "staged" if not config.dispatch else "failed",
+                "outputs": [],
+            }
 
-    # Wait for jobs to finish if using a job scheduler
-    if job_scheduler != 'local' and n_max > 0:
-        control_jobs(job_ids, job_scheduler)
+            if not config.dispatch:
+                stage_sample_topologies(
+                    sample_id=sample_id,
+                    sample=sample,
+                    trainset_dir=trainset_dir,
+                    fn_specs=fn_specs,
+                    systems=systems,
+                )
+                write_submission_script(
+                    sample_id=sample_id,
+                    fn_config_md=fn_config_md,
+                    config=config,
+                )
+                continue
 
-    logger.info(f"Running MD: {n_total}/{n_total} (100%) | Done.", level=1)
+            if job_scheduler == "local":
+                dispatch_simulation_job(
+                    sample_id=sample_id,
+                    config=config,
+                )
+                continue
 
-    # Cleanup
-    clean_up_train_dir(
-        samples,
-        Path(config['data_dir']),
-        compress=config.get('compress', False),
-        remove=config.get('cleanup', False)
-    )
+            assert config.slurm is not None
+            max_parallel_jobs = config.slurm.max_parallel_jobs
+            max_parallel_jobs = np.inf if max_parallel_jobs == -1 else max_parallel_jobs
+            if max_parallel_jobs > 0:
+                wait_for_scheduler_slot(
+                    job_ids=job_ids,
+                    scheduler=job_scheduler,
+                    max_parallel_jobs=max_parallel_jobs,
+                )
+                job_id = dispatch_simulation_job(
+                    sample_id=sample_id,
+                    config=config,
+                )
+                if job_id is not None:
+                    job_ids.append(job_id)
+                    samples[sample_id]["job_id"] = job_id
 
+        if (
+            config.dispatch
+            and job_scheduler != "local"
+            and max_parallel_jobs is not None
+            and max_parallel_jobs > 0
+        ):
+            control_jobs(job_ids, job_scheduler)
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description=(
-            'Generate training/validation set for MD simulations.'
+        campaign_finished = True
+        logger.info(f"{action}: {n_total}/{n_total} (100%) | Done.", level=1)
+    finally:
+        collect_campaign_metadata(
+            samples=samples,
+            systems=systems,
+            trainset_dir=trainset_dir,
+            compress=(
+                config.compress
+                if config.dispatch and campaign_finished
+                else False
+            ),
+            remove=(
+                config.cleanup
+                if config.dispatch and campaign_finished
+                else False
+            ),
         )
+
+
+def build_parameter_samples(config: SimulateConfig) -> tuple[Path, np.ndarray]:
+    """Build ``specs.yaml`` and sample explicit parameters for one campaign."""
+    fn_specs = build_specs(config)
+    constraint = ChargeConstraint(fn_specs)
+    sampler = RandomParamsGenerator(constraint.explicit_bounds, constraint)
+    parameter_samples = np.asarray(
+        [sampler(1).squeeze(0) for _ in range(config.n_samples)],
+        dtype=float,
     )
-    parser.add_argument('fn_config', help='Path to the config file [YAML].')
-    args = parser.parse_args()
-    main(args.fn_config)
+    return fn_specs, parameter_samples

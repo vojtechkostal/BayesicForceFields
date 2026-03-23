@@ -8,9 +8,9 @@ from dataclasses import dataclass
 from .proposal import Proposal
 from .convergence import (
     ConvergenceInfo,
-    split_rhat,
-    stability_metrics,
-    integrated_autocorr_time
+    integrated_autocorr_time,
+    rank_normalize,
+    rank_normalized_split_rhat,
 )
 
 
@@ -134,16 +134,6 @@ class Checkpoint:
             "rhat": convergence.rhat.cpu() if convergence.rhat is not None else None,
             "tau": convergence.tau.cpu() if convergence.tau is not None else None,
             "ess": convergence.ess.cpu() if convergence.ess is not None else None,
-            "mean_rel_change": (
-                convergence.mean_rel_change.cpu()
-                if convergence.mean_rel_change is not None
-                else None
-            ),
-            "std_rel_change": (
-                convergence.std_rel_change.cpu()
-                if convergence.std_rel_change is not None
-                else None
-            ),
         }
 
     @staticmethod
@@ -156,8 +146,6 @@ class Checkpoint:
             rhat=data.get("rhat"),
             tau=data.get("tau"),
             ess=data.get("ess"),
-            mean_rel_change=data.get("mean_rel_change"),
-            std_rel_change=data.get("std_rel_change"),
         )
 
 
@@ -236,7 +224,7 @@ class Sampler:
     def _validate_inputs(
         self,
         p0: torch.Tensor,
-        n_steps: int,
+        total_steps: int,
         warmup: int,
         thin: int,
         progress_stride: int,
@@ -246,10 +234,12 @@ class Sampler:
 
         if p.ndim != 2:
             raise ValueError("p0 must have shape (n_walkers, n_dim)")
-        if n_steps < 1:
-            raise ValueError("n_steps must be positive")
+        if total_steps < 1:
+            raise ValueError("total_steps must be positive")
         if warmup < 0:
             raise ValueError("warmup must be non-negative")
+        if warmup >= total_steps:
+            raise ValueError("warmup must be smaller than total_steps")
         if thin < 1:
             raise ValueError("thin must be >= 1")
         if progress_stride < 1:
@@ -285,10 +275,10 @@ class Sampler:
         """
         Compute convergence diagnostics from a chain tensor.
         """
-
-        rh = split_rhat(chain)
-        mean_rel_change, std_rel_change = stability_metrics(chain)
-        tau = integrated_autocorr_time(chain)
+        pooled = chain.reshape(-1, chain.shape[-1])
+        ranked_chain = rank_normalize(pooled).reshape(chain.shape)
+        rh = rank_normalized_split_rhat(chain)
+        tau = integrated_autocorr_time(ranked_chain)
         n_total = chain.shape[0] * chain.shape[1]
         ess = n_total / tau.mean(dim=0)
 
@@ -296,8 +286,6 @@ class Sampler:
             rhat=rh,
             tau=tau,
             ess=ess,
-            mean_rel_change=mean_rel_change,
-            std_rel_change=std_rel_change,
         )
 
     def _validate_checkpoint(self, checkpoint: Checkpoint) -> None:
@@ -318,19 +306,13 @@ class Sampler:
         *,
         rhat_tol: float,
         ess_min: int,
-        tau_cv_max: float,
     ) -> bool:
         if conv is None:
             return False
 
         rhat_ok = conv.max_rhat is not None and conv.max_rhat < rhat_tol
         ess_ok = conv.min_ess is not None and conv.min_ess > ess_min
-        tau_cv_ok = (
-            conv.tau_cv is not None
-            and torch.all(conv.tau_cv < tau_cv_max).item()
-        )
-
-        return rhat_ok and ess_ok and tau_cv_ok
+        return rhat_ok and ess_ok
 
     def write_posterior(self, fn: Path | str) -> None:
         torch.save({"posterior": self.chain.detach().cpu()}, fn)
@@ -338,7 +320,7 @@ class Sampler:
     def run(
         self,
         p0: torch.Tensor,
-        n_steps: int = 1000,
+        total_steps: int = 1500,
         warmup: int = 500,
         thin: int = 1,
         progress_stride: int = 100,
@@ -346,7 +328,6 @@ class Sampler:
         restart: bool = False,
         rhat_tol: float = 1.01,
         ess_min: int = 100,
-        tau_cv_max: float = 0.2,
     ):
         """
         Run the sampler.
@@ -355,8 +336,8 @@ class Sampler:
         ----------
         p0 : torch.Tensor
             Initial walker positions with shape ``(n_walkers, n_dim)``.
-        n_steps : int, default=1000
-            Number of production steps.
+        total_steps : int, default=1500
+            Total number of MCMC steps including warmup.
         warmup : int, default=500
             Number of warmup steps during which the proposal may adapt.
         thin : int, default=1
@@ -375,9 +356,6 @@ class Sampler:
             Threshold for maximum R-hat to consider the chain converged.
         ess_min : int, default=100
             Minimum effective sample size to consider the chain converged.
-        tau_cv_max : float, default=0.2
-            Maximum coefficient of variation of autocorrelation times across parameters
-
         Yields
         ------
         Checkpoint
@@ -389,19 +367,23 @@ class Sampler:
         self._warmup = warmup
         self._thin = thin
         self._progress_stride = progress_stride
-        self._total_steps = warmup + n_steps
+        self._total_steps = total_steps
 
         if restart:
             if fn_checkpoint is None or not fn_checkpoint.exists():
                 raise ValueError("restart=True requires an existing checkpoint file.")
-            p_probe = self._validate_inputs(p0, n_steps, warmup, thin, progress_stride)
+            p_probe = self._validate_inputs(
+                p0, total_steps, warmup, thin, progress_stride
+            )
             _, n_dim = p_probe.shape
             self.proposal.initialize(n_dim)
             checkpoint = Checkpoint.load(fn_checkpoint)
             self._validate_checkpoint(checkpoint)
             p, logp, accepted, start_step = checkpoint.restore(self)
         else:
-            p = self._validate_inputs(p0, n_steps, warmup, thin, progress_stride)
+            p = self._validate_inputs(
+                p0, total_steps, warmup, thin, progress_stride
+            )
             n_walkers, n_dim = p.shape
             self.proposal.initialize(n_dim)
             logp = self._log_prob(p)
@@ -448,7 +430,10 @@ class Sampler:
             last_report_time = now
 
             phase = "warmup" if t < warmup else "sampling"
-            convergence = self._diagnose_convergence(self.chain) if t > warmup else None
+            chain = self.chain
+            convergence = None
+            if t >= warmup and chain.shape[0] >= 20:
+                convergence = self._diagnose_convergence(chain)
 
             # acceptance rate during sampling phase
             acceptance_rate = None
@@ -461,7 +446,6 @@ class Sampler:
                 convergence,
                 rhat_tol=rhat_tol,
                 ess_min=ess_min,
-                tau_cv_max=tau_cv_max,
             )
             if should_stop:
                 self.converged = True

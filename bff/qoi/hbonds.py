@@ -1,9 +1,12 @@
 import numpy as np
 import MDAnalysis as mda
 from MDAnalysis.lib.distances import capped_distance, calc_angles
-from typing import Dict, List
+from typing import Dict
 
-__all__ = ["compute_all_hbonds", "extract_hbonds"]
+from .data import QoI
+from ..tools import get_unitcell
+
+__all__ = ["compute_all_hbonds"]
 
 
 def count_hbonds(
@@ -31,7 +34,9 @@ def count_hbonds(
         Dictionary containing the hydrogen bond types and their frequencies.
     """
 
-    # Identify unique hbonds and their frequencies
+    if n_frames <= 0 or donor_indices.size == 0 or acceptor_indices.size == 0:
+        return {}
+
     hbonds = np.column_stack(
         (
             universe.atoms[donor_indices].resnames,
@@ -50,6 +55,35 @@ def count_hbonds(
         results[name] = count / n_frames
 
     return results
+
+
+def _paired_donors_and_hydrogens(
+    universe: mda.Universe,
+    selection: str,
+    *,
+    hb_elements: set[str],
+) -> tuple[mda.AtomGroup, mda.AtomGroup]:
+    """Return donor and hydrogen groups with one-to-one indexing."""
+    hydrogens_all = universe.select_atoms(f"{selection} and element H")
+    donor_indices: list[int] = []
+    hydrogen_indices: list[int] = []
+
+    for hydrogen in hydrogens_all:
+        if not hydrogen.bonded_atoms:
+            continue
+        donor = hydrogen.bonded_atoms[0]
+        if donor.element not in hb_elements:
+            continue
+        donor_indices.append(donor.index)
+        hydrogen_indices.append(hydrogen.index)
+
+    if not donor_indices:
+        empty = universe.atoms[np.asarray([], dtype=int)]
+        return empty, empty
+
+    donors = universe.atoms[np.asarray(donor_indices, dtype=int)]
+    hydrogens = universe.atoms[np.asarray(hydrogen_indices, dtype=int)]
+    return donors, hydrogens
 
 
 def compute_hbonds(
@@ -95,26 +129,29 @@ def compute_hbonds(
     angle_cutoff = np.deg2rad(angle_cutoff)
 
     donor_indices, acceptor_indices = [], []
+    n_frames = 0
     for ts in universe.trajectory[sl]:
-        # Compute donor-acceptor distances
+        n_frames += 1
+        box = get_unitcell(universe, ts)
         da_indices = capped_distance(
             donors,
             acceptors,
             max_cutoff=distance_cutoff,
             min_cutoff=1.0,
-            box=universe.dimensions,
+            box=box,
             return_distances=False,
         )
+        if da_indices.size == 0:
+            continue
 
         d = donors[da_indices[:, 0]]
         h = hydrogens[da_indices[:, 0]]
         a = acceptors[da_indices[:, 1]]
 
-        # Compute donor-hydrogen-acceptor angles
-        dha_angles = calc_angles(d, h, a, box=universe.dimensions)
-
-        # Select those that satisfity distance and angle criterion
+        dha_angles = calc_angles(d, h, a, box=box)
         hbond_indices = np.where(dha_angles > angle_cutoff)[0]
+        if hbond_indices.size == 0:
+            continue
 
         donor_indices.extend(d[hbond_indices].indices)
         acceptor_indices.extend(a[hbond_indices].indices)
@@ -122,79 +159,64 @@ def compute_hbonds(
     return (
         np.asarray(donor_indices, dtype=int),
         np.asarray(acceptor_indices, dtype=int),
-        len(universe.trajectory[sl]),
+        n_frames,
     )
 
 
 def compute_all_hbonds(
-        universe: mda.Universe, mol_resname: str, **kwargs) -> Dict[str, float]:
-    """
-    Computes all hydrogen bonds between a molecule and water.
-
-    Parameters
-    ----------
-    universe : MDAnalysis.Universe
-    mol_resname : str
-        Residue name of the molecule.
-    **kwargs : Dict, optional
-        Additional keyword arguments passed to the
-        underlying hydrogen bond analysis function.
-        - `distance_cutoff` (float): Maximum acceptable
-        donor-acceptor distance in Angstroms.
-        - `angle_cutoff` (float): Minimum acceptable
-        donor-hydrogen-acceptor angle in degrees.
-        - `start` (int): Start analysis from this frame.
-        - `stop` (int): Stop analysis at this frame.
-        - `step` (int): Frame stride for the analysis.
-
-    Returns
-    -------
-    hbonds : dict
-        Dictionary containing the hydrogen bond their counts.
-    """
+    universe: mda.Universe,
+    mol_resname: str,
+    distance_cutoff: float = 3.5,
+    angle_cutoff: float = 150,
+    start: int = 0,
+    stop: int | None = None,
+    step: int = 1,
+) -> QoI:
+    """Compute all solute-water hydrogen-bond QoIs for one trajectory."""
 
     hb_elements = {"O", "N", "S"}
     water_resnames = "SOL HOH WAT"
     selection_1 = f"resname {mol_resname}"
     selection_2 = f"resname {water_resnames}"
 
-    selection_mesh = [[selection_1, selection_2], [selection_2, selection_1]]
-    hbonds = {}
-    for sel_donors, sel_acceptors in selection_mesh:
-        hydrogens = universe.select_atoms(f"{sel_donors} and element H")
-        donors = sum([
-            h.bonded_atoms[0]
-            for h in hydrogens
-            if h.bonded_atoms and h.bonded_atoms[0].element in hb_elements
-        ])
-
-        if isinstance(donors, int):
+    selection_pairs = ((selection_1, selection_2), (selection_2, selection_1))
+    hbonds: dict[str, float] = {}
+    for sel_donors, sel_acceptors in selection_pairs:
+        donors, hydrogens = _paired_donors_and_hydrogens(
+            universe,
+            sel_donors,
+            hb_elements=hb_elements,
+        )
+        if len(donors) == 0:
             continue
 
-        acceptors = universe.select_atoms(
-            f"{sel_acceptors} and element O S N")
+        acceptors = universe.select_atoms(f"{sel_acceptors} and element O S N")
+        if len(acceptors) == 0:
+            continue
 
         donor_indices, acceptor_indices, n_frames = compute_hbonds(
-            universe, hydrogens, donors, acceptors, **kwargs
+            universe,
+            hydrogens,
+            donors,
+            acceptors,
+            distance_cutoff=distance_cutoff,
+            angle_cutoff=angle_cutoff,
+            start=start,
+            stop=stop,
+            step=step,
         )
+        hbonds.update(count_hbonds(universe, donor_indices, acceptor_indices, n_frames))
 
-        counts = count_hbonds(
-            universe, donor_indices, acceptor_indices, n_frames
-        )
-        hbonds.update(counts)
-
-    return hbonds
-
-
-def extract_hbonds(
-    hbonds_true: Dict[str, float],
-    hbonds_pred: Dict[str, float]
-) -> List[float]:
-    """Gets the average number of hydrogen bonds
-    with respect to the reference."""
-
-    n = []
-    for name in hbonds_true.keys():
-        hbonds = hbonds_pred.get(name, 0.0)
-        n.append(hbonds)
-    return n
+    labels = tuple(sorted(hbonds))
+    values = np.asarray([hbonds[label] for label in labels], dtype=float)
+    metadata = {
+        "distance_cutoff": float(distance_cutoff),
+        "angle_cutoff": float(angle_cutoff),
+    }
+    return QoI(
+        name="hb",
+        values=values,
+        labels=labels,
+        values_per_label=1,
+        settings_kwargs=metadata,
+    )

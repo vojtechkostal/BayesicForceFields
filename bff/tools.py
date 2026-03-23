@@ -6,6 +6,7 @@ from scipy.constants import atomic_mass
 from scipy.spatial.transform import Rotation as R
 
 from MDAnalysis.guesser.tables import masses as MDA_MASSES
+from MDAnalysis.lib.distances import distance_array
 
 MASSES = np.array(list(MDA_MASSES.values()))
 ELEMENTS = list(MDA_MASSES.keys())
@@ -41,16 +42,52 @@ def compute_distances(
     start = start or 0
     stop = stop or len(universe.trajectory)
     step = step or 1
-    displacements = [
-        ag1.positions[:, np.newaxis] - ag2.positions
-        for ts in universe.trajectory[start:stop:step]
-    ]
-    displacements = np.array(displacements)
-    if pbc:
-        box = universe.dimensions[:3]
-        displacements -= np.round(displacements / box) * box
-    distances = np.linalg.norm(displacements, axis=-1)
-    return distances
+    distances = []
+    for ts in universe.trajectory[start:stop:step]:
+        box = get_unitcell(universe, ts) if pbc else None
+        distances.append(distance_array(ag1.positions, ag2.positions, box=box))
+    return np.asarray(distances)
+
+
+def get_unitcell(
+    universe: mda.Universe,
+    ts: mda.coordinates.base.Timestep | None = None,
+) -> np.ndarray:
+    """Return the current or fallback unit cell for a universe.
+
+    Parameters
+    ----------
+    universe
+        MDAnalysis universe that provides the default box information.
+    ts
+        Optional timestep whose box should be preferred.
+
+    Returns
+    -------
+    numpy.ndarray
+        Unit-cell vector of length 6.
+
+    Raises
+    ------
+    ValueError
+        If neither the timestep nor the universe provides box dimensions.
+    """
+    if ts is not None and ts.dimensions is not None:
+        return np.asarray(ts.dimensions, dtype=float)
+
+    dimensions = universe.dimensions
+    if dimensions is not None:
+        return np.asarray(dimensions, dtype=float)
+
+    default = getattr(universe, "_bff_default_dimensions", None)
+    if default is None:
+        raise ValueError(
+            "Trajectory frames do not define box dimensions and no fallback "
+            "unit cell is available."
+        )
+    if ts is not None and ts.dimensions is None:
+        ts.dimensions = np.asarray(default, dtype=float)
+    return np.asarray(default, dtype=float)
 
 
 def random_placement(coords: np.ndarray, box: np.ndarray) -> np.ndarray:

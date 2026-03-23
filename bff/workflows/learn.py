@@ -2,80 +2,77 @@ import sys
 from pathlib import Path
 from typing import Union
 
-from ..bff import BFFLearner
-from ..structures import QoIDataset, ChargeConstraint
+from ..bayes.learning import InferenceProblem, train_surrogates
+from ..domain.specs import ChargeConstraint
 from ..io.logs import Logger
-from ..io.utils import load_yaml
+from ..qoi.data import QoIDataset
+from .configs import LearnConfig
 
 
 PathLike = Union[str, Path]
 
 
-def load_config(fn_config: PathLike) -> dict:
-    fn_config = Path(fn_config).resolve()
-    config = load_yaml(fn_config)
-    base_dir = fn_config.parent
-
-    required_keys = ["fn_specs", "datasets"]
-
-    def resolve_and_check(path: PathLike) -> Path:
-        """Resolve a path relative to base_dir and ensure it exists."""
-        path = (base_dir / path).resolve()
-        if not path.exists():
-            raise FileNotFoundError(f"File not found: {path}")
-        return path
-
-    # --- validate required keys ---
-    missing = [key for key in required_keys if key not in config]
-    if missing:
-        raise ValueError(
-            "Missing required key(s) in configuration: "
-            f"{', '.join(repr(k) for k in missing)}"
-        )
-
-    datasets = config.get("datasets")
-    if not datasets:
-        raise ValueError("Missing 'qoi' in 'lgp_train' configuration.")
-
-    for qoi_name, qoi_data in datasets.items():
-        try:
-            qoi_data["data"] = resolve_and_check(qoi_data["data"])
-            qoi_data["mean"] = qoi_data["mean"]
-        except KeyError as exc:
-            raise ValueError(
-                f"Missing {exc.args[0]!r} for QoI '{qoi_name}' in 'lgp_train.qoi'."
-            ) from None
-
-    # --- validate fn_specs ---
-    config["fn_specs"] = resolve_and_check(config["fn_specs"])
-
-    # --- validate log file directory ---
-    fn_log = config.get("fn_log", "./out.log")
-    fn_log = (base_dir / fn_log).resolve()
-    if not fn_log.parent.exists():
-        raise ValueError(f"Directory does not exist: {fn_log.parent}")
-    config["fn_log"] = fn_log
-
-    return config
+def _load_datasets(config: LearnConfig) -> tuple[QoIDataset, ...]:
+    datasets: list[QoIDataset] = []
+    for dataset_config in config.datasets:
+        dataset = QoIDataset.load(dataset_config.fn_data)
+        dataset.nuisance = dataset_config.nuisance
+        datasets.append(dataset)
+    return tuple(datasets)
 
 
 def main(fn_config: PathLike) -> None:
+    config = LearnConfig.load(fn_config)
+    logger = Logger("BFF", str(config.fn_log), mode="w")
+    constraint = ChargeConstraint(config.fn_specs)
+    datasets = _load_datasets(config)
 
-    config = load_config(fn_config)
-    logger = Logger("BFF", config.get("fn_log"))
+    config.training.model_dir.mkdir(parents=True, exist_ok=True)
+    model_paths = {
+        dataset.name: dataset.fn_model
+        for dataset in config.datasets
+    }
+    y_means = {
+        dataset.name: dataset.mean
+        for dataset in config.datasets
+    }
 
-    # train LGP surrogates for the requested QoIs
-    datasets = [
-        QoIDataset.load(qoi["data"])
-        for qoi in config["datasets"].values()
-    ]
-    qoi = config.get("qoi", None)
+    models = train_surrogates(
+        datasets,
+        y_means=y_means,
+        model_paths=model_paths,
+        reuse_models=config.training.reuse_models,
+        n_hyper_max=config.training.n_hyper_max,
+        committee_size=config.training.committee_size,
+        test_fraction=config.training.test_fraction,
+        device=config.training.device,
+        logger=logger,
+        **config.training.opt_kwargs,
+    )
 
-    charge_constraint = ChargeConstraint(config["fn_specs"])
+    problem = InferenceProblem.from_datasets(
+        models,
+        datasets,
+        qoi=config.qoi,
+        constraint=constraint,
+    )
+    problem.infer(
+        priors_disttype=config.mcmc.priors_disttype,
+        total_steps=config.mcmc.total_steps,
+        warmup=config.mcmc.warmup,
+        thin=config.mcmc.thin,
+        progress_stride=config.mcmc.progress_stride,
+        n_walkers=config.mcmc.n_walkers,
+        fn_posterior=config.mcmc.fn_posterior,
+        fn_checkpoint=config.mcmc.fn_checkpoint,
+        fn_priors=config.mcmc.fn_priors,
+        restart=config.mcmc.restart,
+        device=config.mcmc.device,
+        logger=logger,
+        rhat_tol=config.mcmc.rhat_tol,
+        ess_min=config.mcmc.ess_min,
+    )
 
-    learner = BFFLearner(*datasets, logger=logger)
-    learner.train(**config.get("lgp_train", {}))
-    learner.run(qoi=qoi, constraint=charge_constraint, **config.get("mcmc", {}))
 
 if __name__ == "__main__":
     fn_config = sys.argv[1]

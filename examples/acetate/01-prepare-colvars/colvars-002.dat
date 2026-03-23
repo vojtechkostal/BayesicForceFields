@@ -1,0 +1,13 @@
+colvar {
+  name dist_ca_002
+  distance {
+    group1 { atomNumbers 2 }
+    group2 { atomNumbers 8 }
+  }
+}
+
+harmonic {
+  colvars dist_ca_002
+  centers 0.550000
+  forceConstant 20000.000000
+}
