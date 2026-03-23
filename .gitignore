@@ -29,6 +29,8 @@ examples/acetate/**
 !examples/acetate/**/config.yaml
 !examples/acetate/**/config-*.yaml
 !examples/acetate/**/*.py
+!examples/acetate/**/ff/
+!examples/acetate/**/ff/**
 
 # Ignore nested trainset directories under the training-trajectories example
 examples/acetate/03-training-trjs/*/

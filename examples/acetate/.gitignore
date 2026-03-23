@@ -1,7 +1,6 @@
 01-prepare/prepare/
 01-prepare/cp2k/
 01-prepare/train/
-01-prepare/ff/
 01-prepare/gmx.log
 01-prepare/mdout.mdp
 
