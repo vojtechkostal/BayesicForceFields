@@ -6,7 +6,6 @@ from scipy.constants import atomic_mass
 from scipy.spatial.transform import Rotation as R
 
 from MDAnalysis.guesser.tables import masses as MDA_MASSES
-from MDAnalysis.lib.distances import distance_array
 
 MASSES = np.array(list(MDA_MASSES.values()))
 ELEMENTS = list(MDA_MASSES.keys())
@@ -42,11 +41,15 @@ def compute_distances(
     start = start or 0
     stop = stop or len(universe.trajectory)
     step = step or 1
-    distances = []
-    for ts in universe.trajectory[start:stop:step]:
-        box = get_unitcell(universe, ts) if pbc else None
-        distances.append(distance_array(ag1.positions, ag2.positions, box=box))
-    return np.asarray(distances)
+    displacements = [
+        ag1.positions[:, np.newaxis] - ag2.positions
+        for ts in universe.trajectory[start:stop:step]
+    ]
+    displacements = np.asarray(displacements, dtype=float)
+    if pbc:
+        box = np.asarray(get_unitcell(universe)[:3], dtype=float)
+        displacements -= np.round(displacements / box) * box
+    return np.linalg.norm(displacements, axis=-1)
 
 
 def get_unitcell(

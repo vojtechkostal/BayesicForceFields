@@ -4,7 +4,7 @@ from MDAnalysis.guesser.tables import masses as MDA_MASSES
 from MDAnalysis.lib.distances import distance_array
 
 from pathlib import Path
-from gmxtop import Topology, MoleculeType
+from gmxtopology import Topology, MoleculeType
 
 from .data import WATER_3SITE, WATER_4SITE, IONS, WATERS
 from .tools import random_placement, guess_box
@@ -220,7 +220,7 @@ def fill_universe(topol: Topology) -> mda.Universe:
     return universe
 
 
-class TopologyModifier(Topology):
+class TopologyModifier(Topology if Topology is not None else object):
 
     """A class for modifying Gromacs topologies.
 

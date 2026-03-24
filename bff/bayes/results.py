@@ -167,6 +167,7 @@ class InferenceResults:
         discard: Optional[int] = None,
         thin: Optional[int] = None,
         sample_transform: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+        strip_outliers: bool = True
     ) -> None:
         tau = self.autocorr_time
         discard = discard if discard is not None else int(2 * np.max(tau))
@@ -184,6 +185,14 @@ class InferenceResults:
         if transform_fn is not None:
             prepared = np.asarray(transform_fn(prepared), dtype=float)
         self._posterior_samples = prepared
+
+        if strip_outliers:
+            # Remove samples outside the 99.9% quantiles to avoid skewing the plots.
+            q_low = 0.01 / 2
+            q_high = 1 - q_low
+            confint = np.quantile(prepared, [q_low, q_high], axis=0)
+            mask = np.all((prepared >= confint[0]) & (prepared <= confint[1]), axis=1)
+            self._posterior_samples = prepared[mask]
 
     @property
     def map_estimates(self) -> dict[str, float]:

@@ -2,11 +2,10 @@ from typing import Tuple
 
 import MDAnalysis as mda
 import numpy as np
-from MDAnalysis.lib.distances import capped_distance
 from scipy.ndimage import gaussian_filter
 
 from .data import QoI
-from ..tools import get_unitcell
+from ..tools import compute_distances
 
 
 def compute_rdf(
@@ -21,53 +20,27 @@ def compute_rdf(
     step: int = None,
     smooth: bool = True,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Compute the radial distribution function between two atom groups.
-
-    Distances are accumulated frame-by-frame using ``capped_distance`` up to
-    the maximum requested RDF radius, which avoids building full pair-distance
-    matrices and keeps the memory footprint small.
-    """
-    start = 0 if start is None else start
-    stop = len(universe.trajectory) if stop is None else stop
-    step = 1 if step is None else step
-
-    edges = np.linspace(r_range[0], r_range[1], n_bins + 1, dtype=float)
-    counts = np.zeros(n_bins, dtype=float)
-    shell_volumes = 4.0 / 3.0 * np.pi * (edges[1:] ** 3 - edges[:-1] ** 3)
+    """Compute the radial distribution function between two atom groups."""
+    distances = compute_distances(
+        universe,
+        atoms_ref,
+        atoms_sel,
+        start=start,
+        stop=stop,
+        step=step,
+        pbc=pbc,
+    )
+    g, edges = np.histogram(distances.reshape(-1), range=r_range, bins=n_bins)
+    g = g.astype(np.float64)
     r = 0.5 * (edges[1:] + edges[:-1])
 
-    normalization = 0.0
-    n_ref = len(atoms_ref)
-    n_sel = len(atoms_sel)
-    if n_ref == 0 or n_sel == 0:
-        return r, counts
-
-    min_cutoff = None if r_range[0] <= 0 else float(r_range[0])
-    max_cutoff = float(r_range[1])
-
-    for ts in universe.trajectory[start:stop:step]:
-        box = get_unitcell(universe, ts) if pbc else None
-        _, distances = capped_distance(
-            atoms_ref,
-            atoms_sel,
-            max_cutoff=max_cutoff,
-            min_cutoff=min_cutoff,
-            box=box,
-            return_distances=True,
-        )
-        if len(distances) > 0:
-            counts += np.histogram(distances, bins=edges)[0]
-
-        if pbc:
-            volume = float(np.prod(np.asarray(box[:3], dtype=float)))
-            normalization += n_ref * n_sel / volume
-        else:
-            normalization += n_ref * n_sel
-
-    if normalization > 0:
-        g = counts / (shell_volumes * normalization)
+    shell_volumes = 4.0 / 3.0 * np.pi * (edges[1:] ** 3 - edges[:-1] ** 3)
+    if pbc:
+        volume = float(np.prod(np.asarray(universe.dimensions[:3], dtype=float)))
+        norm = distances.size * (1.0 / volume) * shell_volumes
+        g /= norm
     else:
-        g = counts
+        g /= distances.size * shell_volumes
 
     if smooth:
         g = gaussian_filter(g, sigma=3)

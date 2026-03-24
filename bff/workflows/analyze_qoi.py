@@ -5,9 +5,67 @@ from ..qoi.analysis import (
     analyze_trajectory_sets,
     collect_qoi_dataset,
 )
-from ..qoi.data import QoIDataset
+from ..qoi.data import QoI, QoIDataset
 from ..qoi.routines import build_analysis_routines
 from .configs import AnalyzeConfig
+
+
+def _build_reference_set(config: AnalyzeConfig) -> TrajectorySet:
+    return TrajectorySet(
+        sample_id="reference",
+        fn_topol=tuple(system.fn_topol for system in config.systems),
+        fn_coord=tuple(system.fn_coord for system in config.systems),
+        fn_trj=tuple(system.fn_trj for system in config.systems),
+    )
+
+
+def _write_qoi_datasets(
+    *,
+    config: AnalyzeConfig,
+    trainset: TrainSetInfo,
+    qoi_train: list[list[dict[str, QoI]]],
+    qoi_ref: list[dict[str, QoI]],
+    logger: Logger,
+) -> None:
+    qoi_names = sorted({name for sample in qoi_ref for name in sample})
+    logger.info("Saving QoI data: in progress...", level=1, overwrite=True)
+
+    for qoi_name in qoi_names:
+        fn_out = config.base_name.with_name(f"{config.base_name.name}-{qoi_name}.pt")
+        system_indices = [i for i, sample in enumerate(qoi_ref) if qoi_name in sample]
+        ref_blocks = [qoi_ref[i][qoi_name] for i in system_indices]
+        train_blocks = [
+            [sample[i][qoi_name] for i in system_indices]
+            for sample in qoi_train
+        ]
+        output_ref, output_train, qoi_data = collect_qoi_dataset(
+            ref_blocks,
+            train_blocks,
+        )
+        if output_ref.size == 0:
+            if fn_out.exists():
+                fn_out.unlink()
+            logger.info(
+                f"Skipping QoI '{qoi_name}': no reference observations found.",
+                level=2,
+            )
+            continue
+
+        metadata = dict(qoi_data["metadata"])
+        metadata["system_indices"] = system_indices
+        dataset = QoIDataset(
+            name=qoi_name,
+            inputs=trainset.inputs,
+            outputs=output_train,
+            outputs_ref=output_ref,
+            nuisance=None,
+            settings_kwargs=qoi_data["settings_kwargs"],
+            metadata=metadata,
+        )
+        dataset.write(fn_out)
+
+    logger.info("Saving QoI data: Done.", level=1, overwrite=True)
+    logger.info("", level=0)
 
 
 def main(fn_config: str) -> None:
@@ -27,12 +85,7 @@ def main(fn_config: str) -> None:
             "Analysis system count must match the number of staged trainset systems."
         )
 
-    reference_set = TrajectorySet(
-        sample_id="reference",
-        fn_topol=tuple(system.fn_topol for system in config.systems),
-        fn_coord=tuple(system.fn_coord for system in config.systems),
-        fn_trj=tuple(system.fn_trj for system in config.systems),
-    )
+    reference_set = _build_reference_set(config)
 
     logger.info("=== Quantities of Interest (QoI) Analysis ===\n", level=0)
 
@@ -49,7 +102,6 @@ def main(fn_config: str) -> None:
         logger=logger,
         in_memory=config.analysis.in_memory,
         gc_collect=config.analysis.gc_collect,
-        chunksize=config.analysis.chunksize,
         maxtasksperchild=config.analysis.maxtasksperchild,
     )
 
@@ -69,49 +121,13 @@ def main(fn_config: str) -> None:
     )
     qoi_ref = qoi_ref_sets[0]
     logger.info("", level=0)
-
-    qoi_names = sorted({name for sample in qoi_ref for name in sample})
-
-    logger.info("Saving QoI data: in progress...", level=1, overwrite=True)
-    for qoi_name in qoi_names:
-        fn_base = config.base_name
-        fn_out = fn_base.with_name(f"{config.base_name.name}-{qoi_name}.pt")
-        system_indices = [
-            i for i, sample in enumerate(qoi_ref) if qoi_name in sample
-        ]
-        ref_blocks = [qoi_ref[i][qoi_name] for i in system_indices]
-        train_blocks = [
-            [sample[i][qoi_name] for i in system_indices]
-            for sample in qoi_train
-        ]
-        output_ref, output_train, qoi_data = collect_qoi_dataset(
-            ref_blocks,
-            train_blocks,
-        )
-        if output_ref.size == 0:
-            if fn_out.exists():
-                fn_out.unlink()
-            logger.info(
-                f"Skipping QoI '{qoi_name}': no reference observations found.",
-                level=2,
-            )
-            continue
-        metadata = qoi_data["metadata"]
-        metadata["system_indices"] = system_indices
-
-        data = QoIDataset(
-            name=qoi_name,
-            inputs=trainset.inputs,
-            outputs=output_train,
-            outputs_ref=output_ref,
-            nuisance=None,
-            settings_kwargs=qoi_data["settings_kwargs"],
-            metadata=metadata,
-        )
-        data.write(fn_out)
-
-    logger.info("Saving QoI data: Done.", level=1, overwrite=True)
-    logger.info("", level=0)
+    _write_qoi_datasets(
+        config=config,
+        trainset=trainset,
+        qoi_train=qoi_train,
+        qoi_ref=qoi_ref,
+        logger=logger,
+    )
 
     if config.write_raw_qoi:
         logger.info("Saving raw QoI data: in progress...", level=1, overwrite=True)

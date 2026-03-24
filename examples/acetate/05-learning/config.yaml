@@ -8,27 +8,30 @@ datasets:
   rdf:
     data: ../04-qoi/qoi-rdf.pt
     mean: sigmoid
+    observation_scale: 1.0
   hb:
     data: ../04-qoi/qoi-hb.pt
     mean: 0
+    observation_scale: 1.0
   dist:
     data: ../04-qoi/qoi-dist.pt
     mean: 0
+    observation_scale: 1.0
 training:
   model_dir: ./models
   reuse_models: true
   n_hyper_max: 200
   committee_size: 1
   test_fraction: 0.2
-  device: cpu
+  device: cuda
 mcmc:
   priors_disttype: normal
   total_steps: 10000
   warmup: 2000
-  progress_stride: 100
+  progress_stride: 1000
   fn_checkpoint: mcmc-checkpoint.pt
   fn_posterior: posterior.pt
   fn_priors: priors.pt
   restart: false
-  device: cpu
-  rhat_tol: 1.2
+  device: cuda
+  rhat_tol: 1.05

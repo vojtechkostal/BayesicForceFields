@@ -1,6 +1,8 @@
 import logging
 from typing import Optional
 
+import numpy as np
+
 from ..mcmc.sampler import Sampler
 
 
@@ -128,11 +130,25 @@ def print_progress_mcmc(
 
     rhat_tol = kwargs.get("rhat_tol", 1.01)
     ess_target = kwargs.get("ess_min", 100)
+    total_digits = len(str(total_steps))
+    warmup_digits = len(str(kwargs.get("warmup", total_steps)))
+    sampling_digits = len(str(max(total_steps - kwargs.get("warmup", 0), 0)))
+    ess_digits = max(len(str(int(ess_target))), 1)
 
-    logger.info("Posterior sampling: in progress...", level=1, overwrite=True)
+    def _fmt_progress(current: int, total: int, width: int, label: str) -> str:
+        return f"{label}: {current:>{width}d}/{total:<{width}d}"
 
     if fn_checkpoint is not None:
         logger.info(f"Checkpoint: {fn_checkpoint}", level=2)
+
+    logger.info(
+        (
+            f"Posterior sampling: it. {0:>{total_digits}d}/"
+            f"{total_steps:<{total_digits}d}"
+        ),
+        level=1,
+        overwrite=True,
+    )
 
     line = ""
     for state in sampler.run(
@@ -145,31 +161,44 @@ def print_progress_mcmc(
         total_steps = state.total_steps
         sampling_steps = total_steps - state.warmup
         if state.phase == "warmup":
-            phase_progress = f"warmup: {state.step}/{state.warmup}"
+            phase_progress = _fmt_progress(
+                state.step,
+                state.warmup,
+                warmup_digits,
+                "warmup",
+            )
         else:
             sampling_step = max(state.step - state.warmup, 0)
-            phase_progress = f"sampling: {sampling_step}/{sampling_steps}"
+            phase_progress = _fmt_progress(
+                sampling_step,
+                sampling_steps,
+                sampling_digits,
+                "sampling",
+            )
 
         if state.phase == "sampling" and state.convergence is not None:
             line = (
-                f"Posterior sampling: it. {state.step}/{total_steps} | "
+                f"Posterior sampling: it. "
+                f"{state.step:>{total_digits}d}/{total_steps:<{total_digits}d} | "
                 f"{phase_progress} | "
                 f"R-hat max: {state.convergence.max_rhat:.4f}/{rhat_tol:.4f} | "
-                f"ESS min: {state.convergence.min_ess:.0f}/{ess_target:.0f}"
+                f"ESS min: {state.convergence.min_ess:>{ess_digits}.0f}/"
+                f"{ess_target:<{ess_digits}.0f}"
             )
             if state.acceptance_rate is not None:
                 line += f" | acc: {state.acceptance_rate:.3f}"
             if state.it_per_sec is not None:
-                line += f" | {state.it_per_sec:.0f} it/s"
+                line += f" | {state.it_per_sec:>3.0f} it/s"
         else:
             line = (
-                f"Posterior sampling: it. {state.step}/{total_steps} | "
+                f"Posterior sampling: it. "
+                f"{state.step:>{total_digits}d}/{total_steps:<{total_digits}d} | "
                 f"{phase_progress}"
             )
             if state.acceptance_rate is not None:
                 line += f" | acc: {state.acceptance_rate:.3f}"
             if state.it_per_sec is not None:
-                line += f" | {state.it_per_sec:.0f} it/s"
+                line += f" | {state.it_per_sec:>3.0f} it/s"
         logger.info(line, level=1, overwrite=True)
 
     if line and logger.fn_log is None:

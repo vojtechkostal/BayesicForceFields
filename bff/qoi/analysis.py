@@ -1,9 +1,9 @@
-import gc
-from functools import partial
 import multiprocessing as mp
+import gc
 import warnings
+from functools import partial
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 import MDAnalysis as mda
 import numpy as np
@@ -27,7 +27,7 @@ warnings.filterwarnings(
 )
 
 
-def _cleanup_universe(universe: mda.Universe | None, *, gc_collect: bool) -> None:
+def _cleanup_universe(universe: mda.Universe | None) -> None:
     """Release trajectory resources after one analysis task."""
     if universe is not None:
         trajectory = getattr(universe, "trajectory", None)
@@ -40,8 +40,6 @@ def _cleanup_universe(universe: mda.Universe | None, *, gc_collect: bool) -> Non
             close = getattr(raw_trajectory, "close", None)
             if callable(close):
                 close()
-    if gc_collect:
-        gc.collect()
 
 
 def _prepare_universe(
@@ -81,7 +79,6 @@ def analyze_trajectory_set(
     stop: int | None = None,
     step: int = 1,
     in_memory: bool = False,
-    gc_collect: bool = True,
 ) -> list[dict[str, QoI]]:
     """Analyze all trajectories that belong to one sample or reference set."""
     if len(routines_by_system) != len(trajectory_set.fn_trj):
@@ -119,9 +116,43 @@ def analyze_trajectory_set(
                 raise ValueError("Analysis routine returned no QoI outputs.")
             results.append(result)
         finally:
-            _cleanup_universe(universe, gc_collect=gc_collect)
-
+            _cleanup_universe(universe)
     return results
+
+
+def _maybe_collect_garbage(
+    completed: int,
+    total: int,
+    *,
+    gc_collect: bool,
+    progress_stride: int,
+) -> None:
+    """Run the garbage collector at coarse progress intervals when requested."""
+    if not gc_collect:
+        return
+    if (completed % progress_stride == 0) or (completed == total):
+        gc.collect()
+
+
+def _iter_analyzed_sets(
+    trajectory_sets: Sequence[TrajectorySet],
+    *,
+    analyze_one: Any,
+    workers: int,
+    maxtasksperchild: int,
+) -> Iterable[list[dict[str, QoI]]]:
+    """Yield analyzed trajectory sets from the serial or multiprocessing path."""
+    if workers <= 1:
+        yield from (analyze_one(trajectory_set) for trajectory_set in trajectory_sets)
+        return
+
+    context = mp.get_context()
+    with context.Pool(workers, maxtasksperchild=maxtasksperchild) as pool:
+        yield from pool.imap(
+            analyze_one,
+            trajectory_sets,
+            chunksize=1,
+        )
 
 
 def analyze_trajectory_sets(
@@ -137,9 +168,8 @@ def analyze_trajectory_sets(
     progress_label: str = "Trajectory QoI",
     logger: Logger | None = None,
     in_memory: bool = False,
-    gc_collect: bool = True,
-    chunksize: int = 1,
-    maxtasksperchild: int = 1,
+    gc_collect: bool = False,
+    maxtasksperchild: int = 100,
 ) -> list[list[dict[str, QoI]]]:
     """Analyze multiple trajectory sets with one shared routine setup."""
     logger = logger or Logger(progress_label)
@@ -155,32 +185,33 @@ def analyze_trajectory_sets(
         stop=stop,
         step=step,
         in_memory=in_memory,
-        gc_collect=gc_collect,
     )
 
     workers = mp.cpu_count() if workers == -1 else workers
-    if workers > 1:
-        context = mp.get_context("spawn")
-        with context.Pool(workers, maxtasksperchild=maxtasksperchild) as pool:
-            iterator = pool.imap(analyze_one, trajectory_sets, chunksize=chunksize)
-            qoi = list(
-                iter_progress(
-                    iterator,
-                    total=n_sets,
-                    stride=progress_stride,
-                    logger=logger,
-                    label=progress_label,
-                )
-            )
-    else:
-        iterator = iter_progress(
-            trajectory_sets,
+    completed_sets = _iter_analyzed_sets(
+        trajectory_sets,
+        analyze_one=analyze_one,
+        workers=workers,
+        maxtasksperchild=maxtasksperchild,
+    )
+    qoi = []
+    for completed, result in enumerate(
+        iter_progress(
+            completed_sets,
             total=n_sets,
             stride=progress_stride,
             logger=logger,
             label=progress_label,
+        ),
+        start=1,
+    ):
+        qoi.append(result)
+        _maybe_collect_garbage(
+            completed,
+            n_sets,
+            gc_collect=gc_collect,
+            progress_stride=progress_stride,
         )
-        qoi = [analyze_one(trajectory_set) for trajectory_set in iterator]
     return qoi
 
 

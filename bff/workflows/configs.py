@@ -744,6 +744,7 @@ class LearnDatasetConfig:
     fn_data: Path
     mean: Any = 0
     nuisance: float | None = None
+    observation_scale: float = 1.0
     fn_model: Path | None = None
 
 
@@ -854,6 +855,11 @@ class LearnConfig:
                         "Dataset "
                         f"{name!r} nuisance must be a positive standard deviation."
                     )
+            observation_scale = float(dataset.get("observation_scale", 1.0))
+            if observation_scale <= 0:
+                raise ValueError(
+                    f"Dataset {name!r} observation_scale must be positive."
+                )
             fn_model = dataset.get("model")
             if fn_model is None:
                 fn_model_resolved = model_dir / f"{name}.lgp"
@@ -874,6 +880,7 @@ class LearnConfig:
                     ),
                     mean=dataset.get("mean", 0),
                     nuisance=nuisance,
+                    observation_scale=observation_scale,
                     fn_model=fn_model_resolved,
                 )
             )

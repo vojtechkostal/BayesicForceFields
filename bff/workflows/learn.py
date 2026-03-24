@@ -21,25 +21,30 @@ def _load_datasets(config: LearnConfig) -> tuple[QoIDataset, ...]:
     return tuple(datasets)
 
 
+def _dataset_options(
+    config: LearnConfig,
+) -> tuple[dict[str, Path | None], dict[str, object], dict[str, float]]:
+    model_paths = {dataset.name: dataset.fn_model for dataset in config.datasets}
+    y_means = {dataset.name: dataset.mean for dataset in config.datasets}
+    observation_scales = {
+        dataset.name: dataset.observation_scale for dataset in config.datasets
+    }
+    return model_paths, y_means, observation_scales
+
+
 def main(fn_config: PathLike) -> None:
     config = LearnConfig.load(fn_config)
     logger = Logger("BFF", str(config.fn_log), mode="w")
     constraint = ChargeConstraint(config.fn_specs)
     datasets = _load_datasets(config)
+    model_paths, y_means, observation_scales = _dataset_options(config)
 
     config.training.model_dir.mkdir(parents=True, exist_ok=True)
-    model_paths = {
-        dataset.name: dataset.fn_model
-        for dataset in config.datasets
-    }
-    y_means = {
-        dataset.name: dataset.mean
-        for dataset in config.datasets
-    }
 
     models = train_surrogates(
         datasets,
         y_means=y_means,
+        observation_scales=observation_scales,
         model_paths=model_paths,
         reuse_models=config.training.reuse_models,
         n_hyper_max=config.training.n_hyper_max,

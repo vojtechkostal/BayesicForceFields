@@ -1,6 +1,8 @@
-import importlib.util
 import importlib
+import importlib.util
 import inspect
+import hashlib
+import sys
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -15,86 +17,98 @@ FIXED_SIGNATURE = ("universe", "mol_resname", "start", "stop", "step")
 FIXED_SIGNATURE_SET = set(FIXED_SIGNATURE)
 
 
-def _extract_defaults(fn: Callable[..., Any]) -> dict[str, Any]:
-    """Extract default keyword arguments from a callable signature.
+def _is_builtin_spec(spec: str) -> bool:
+    return spec.startswith("builtin:")
 
-    Parameters
-    ----------
-    fn
-        Callable whose defaults should be extracted.
 
-    Returns
-    -------
-    dict
-        Mapping of parameter names to their default values.
-    """
+def _split_routine_spec(spec: str) -> tuple[str, str]:
+    if ":" not in spec:
+        raise ValueError(
+            "Analysis routine must be a builtin name or 'module:function'."
+        )
+    return spec.split(":", maxsplit=1)
+
+
+def _builtin_callable(name: str) -> Callable[..., Any]:
+    try:
+        return BUILTIN_ROUTINES[name]
+    except KeyError as exc:
+        known = ", ".join(sorted(BUILTIN_ROUTINES))
+        raise ValueError(
+            f"Unknown builtin analysis routine {name!r}. "
+            f"Known routines are: {known}."
+        ) from exc
+
+
+def _user_module_name(module_path: Path) -> str:
+    digest = hashlib.sha1(str(module_path).encode("utf-8")).hexdigest()[:12]
+    return f"bff_user_routine_{module_path.stem}_{digest}"
+
+
+def _load_module_from_path(module_path: Path) -> Any:
+    if not module_path.exists():
+        raise ValueError(f"Analysis routine file not found: {module_path}")
+
+    module_name = _user_module_name(module_path)
+    existing = sys.modules.get(module_name)
+    if existing is not None:
+        return existing
+
+    module_spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if module_spec is None or module_spec.loader is None:
+        raise ValueError(f"Could not load analysis routine module {module_path}.")
+
+    module = importlib.util.module_from_spec(module_spec)
+    sys.modules[module_name] = module
+    module_spec.loader.exec_module(module)
+    return module
+
+
+def _import_module(module_name: str) -> Any:
+    if module_name.endswith(".py") or "/" in module_name:
+        return _load_module_from_path(Path(module_name).resolve())
+    return importlib.import_module(module_name)
+
+
+@lru_cache(maxsize=None)
+def _signature_info(
+    fn: Callable[..., Any],
+) -> tuple[bool, frozenset[str], dict[str, Any]]:
     sig = inspect.signature(fn)
-    return {
+    params = sig.parameters
+    accepts_var_kwargs = any(
+        param.kind is inspect.Parameter.VAR_KEYWORD
+        for param in params.values()
+    )
+    defaults = {
         name: param.default
-        for name, param in sig.parameters.items()
+        for name, param in params.items()
         if param.default is not inspect.Parameter.empty
     }
+    return accepts_var_kwargs, frozenset(params), defaults
 
 
-def _extract_defaults_without(
+def _default_kwargs(
     fn: Callable[..., Any],
     ignored: set[str],
 ) -> dict[str, Any]:
     """Extract callable defaults while omitting ignored parameters."""
+    _, _, defaults = _signature_info(fn)
     return {
         name: value
-        for name, value in _extract_defaults(fn).items()
+        for name, value in defaults.items()
         if name not in ignored
     }
 
 
 @lru_cache(maxsize=None)
-def _load_callable_from_string(spec: str) -> Callable[..., Any]:
-    """Resolve a builtin or import-string routine specification.
+def _load_routine(spec: str) -> Callable[..., Any]:
+    """Resolve a builtin or import-string routine specification."""
+    if _is_builtin_spec(spec):
+        return _builtin_callable(spec.split(":", maxsplit=1)[1])
 
-    Parameters
-    ----------
-    spec
-        ``builtin:<name>`` selector or an import string in the form
-        ``module:function``.
-
-    Returns
-    -------
-    callable
-        Resolved trajectory analysis routine.
-
-    Raises
-    ------
-    ValueError
-        If the specification cannot be resolved to a callable.
-    """
-    if spec.startswith("builtin:"):
-        name = spec.split(":", maxsplit=1)[1]
-        if name not in BUILTIN_ROUTINES:
-            known = ", ".join(sorted(BUILTIN_ROUTINES))
-            raise ValueError(
-                f"Unknown builtin analysis routine {name!r}. "
-                f"Known routines are: {known}."
-            )
-        return BUILTIN_ROUTINES[name]
-    if ":" not in spec:
-        raise ValueError(
-            "Analysis routine must be a builtin name or 'module:function'."
-        )
-
-    module_name, attr_name = spec.split(":", maxsplit=1)
-    if module_name.endswith(".py") or "/" in module_name:
-        module_path = Path(module_name).resolve()
-        if not module_path.exists():
-            raise ValueError(f"Analysis routine file not found: {module_path}")
-        spec_name = f"bff_user_routine_{module_path.stem}_{abs(hash(module_path))}"
-        module_spec = importlib.util.spec_from_file_location(spec_name, module_path)
-        if module_spec is None or module_spec.loader is None:
-            raise ValueError(f"Could not load analysis routine module {module_path}.")
-        module = importlib.util.module_from_spec(module_spec)
-        module_spec.loader.exec_module(module)
-    else:
-        module = importlib.import_module(module_name)
+    module_name, attr_name = _split_routine_spec(spec)
+    module = _import_module(module_name)
     try:
         fn = getattr(module, attr_name)
     except AttributeError as exc:
@@ -112,7 +126,7 @@ def _load_callable(spec: str | Callable[..., Any]) -> Callable[..., Any]:
         return spec
     if not isinstance(spec, str):
         raise ValueError(f"Invalid analysis routine specification: {spec!r}")
-    return _load_callable_from_string(spec)
+    return _load_routine(spec)
 
 
 def _validate_signature(fn: Callable[..., Any], name: str) -> None:
@@ -130,16 +144,11 @@ def _validate_signature(fn: Callable[..., Any], name: str) -> None:
     ValueError
         If the routine is missing one or more required arguments.
     """
-    sig = inspect.signature(fn)
-    params = sig.parameters
-    accepts_var_kwargs = any(
-        param.kind is inspect.Parameter.VAR_KEYWORD
-        for param in params.values()
-    )
+    accepts_var_kwargs, supported, _ = _signature_info(fn)
     missing = [
         arg
         for arg in FIXED_SIGNATURE
-        if arg not in params and not accepts_var_kwargs
+        if arg not in supported and not accepts_var_kwargs
     ]
     if missing:
         missing_text = ", ".join(repr(arg) for arg in missing)
@@ -175,19 +184,15 @@ def _validate_kwargs(
     dict
         Validated keyword arguments.
     """
-    sig = inspect.signature(fn)
-    accepts_var_kwargs = any(
-        param.kind is inspect.Parameter.VAR_KEYWORD
-        for param in sig.parameters.values()
-    )
+    accepts_var_kwargs, supported, _ = _signature_info(fn)
     if accepts_var_kwargs:
         return dict(values)
 
-    supported = set(sig.parameters) - ignored
-    unknown = set(values) - supported
+    allowed = set(supported) - ignored
+    unknown = set(values) - allowed
     if unknown:
         unknown_text = ", ".join(sorted(unknown))
-        supported_text = ", ".join(sorted(supported))
+        supported_text = ", ".join(sorted(allowed))
         raise ValueError(
             f"Unsupported option(s) in {name}: {unknown_text}. "
             f"Supported options are: {supported_text}."
@@ -210,18 +215,14 @@ def _call_with_supported_kwargs(fn: Callable[..., Any], **kwargs: Any) -> Any:
     Any
         Callable return value.
     """
-    sig = inspect.signature(fn)
-    accepts_var_kwargs = any(
-        param.kind is inspect.Parameter.VAR_KEYWORD
-        for param in sig.parameters.values()
-    )
+    accepts_var_kwargs, supported, _ = _signature_info(fn)
     if accepts_var_kwargs:
         return fn(**kwargs)
 
     supported_kwargs = {
         name: value
         for name, value in kwargs.items()
-        if name in sig.parameters
+        if name in supported
     }
     return fn(**supported_kwargs)
 
@@ -260,9 +261,8 @@ class AnalysisRoutinesConfig:
 
     systems: tuple[SystemAnalysisConfig, ...]
     in_memory: bool = False
-    gc_collect: bool = True
-    chunksize: int = 1
-    maxtasksperchild: int = 1
+    gc_collect: bool = False
+    maxtasksperchild: int = 100
 
 
 def _normalize_qoi_mapping(result: Mapping[str, Any]) -> dict[str, QoI]:
@@ -282,7 +282,7 @@ def _normalize_qoi_mapping(result: Mapping[str, Any]) -> dict[str, QoI]:
     return normalized
 
 
-RuntimeRoutine: TypeAlias = tuple[str | Callable[..., Any], dict[str, Any]]
+RuntimeRoutine: TypeAlias = tuple[Callable[..., Any], dict[str, Any]]
 
 
 def _normalize_routine_config(
@@ -313,12 +313,8 @@ def _normalize_routine_config(
     if not isinstance(kwargs, Mapping):
         raise ValueError("Routine 'kwargs' must be a mapping.")
 
-    if (
-        isinstance(routine, str)
-        and ":" in routine
-        and not routine.startswith("builtin:")
-    ):
-        module_name, attr_name = routine.split(":", maxsplit=1)
+    if isinstance(routine, str) and ":" in routine and not _is_builtin_spec(routine):
+        module_name, attr_name = _split_routine_spec(routine)
         if module_name.endswith(".py") or "/" in module_name:
             if base_dir is None:
                 module_path = Path(module_name).resolve()
@@ -326,16 +322,9 @@ def _normalize_routine_config(
                 module_path = (base_dir / module_name).resolve()
             routine = f"{module_path}:{attr_name}"
 
-    if isinstance(routine, str) and routine.startswith("builtin:"):
-        builtin_name = routine.split(":", maxsplit=1)[1]
-        if builtin_name not in BUILTIN_ROUTINES:
-            known = ", ".join(sorted(BUILTIN_ROUTINES))
-            raise ValueError(
-                f"Unknown builtin analysis routine {builtin_name!r}. "
-                f"Known routines are: {known}."
-            )
-        fn = BUILTIN_ROUTINES[builtin_name]
-        kwargs = _extract_defaults_without(fn, FIXED_SIGNATURE_SET) | _validate_kwargs(
+    if isinstance(routine, str) and _is_builtin_spec(routine):
+        fn = _builtin_callable(routine.split(":", maxsplit=1)[1])
+        kwargs = _default_kwargs(fn, FIXED_SIGNATURE_SET) | _validate_kwargs(
             fn,
             kwargs,
             ignored=FIXED_SIGNATURE_SET,
@@ -387,18 +376,14 @@ def normalize_analysis_config(
             )
         )
 
-    chunksize = int(config.get("chunksize", 1))
-    maxtasksperchild = int(config.get("maxtasksperchild", 1))
-    if chunksize <= 0:
-        raise ValueError("'analysis.chunksize' must be a positive integer.")
+    maxtasksperchild = int(config.get("maxtasksperchild", 100))
     if maxtasksperchild <= 0:
         raise ValueError("'analysis.maxtasksperchild' must be a positive integer.")
 
     return AnalysisRoutinesConfig(
         systems=tuple(systems),
         in_memory=bool(config.get("in_memory", False)),
-        gc_collect=bool(config.get("gc_collect", True)),
-        chunksize=chunksize,
+        gc_collect=bool(config.get("gc_collect", False)),
         maxtasksperchild=maxtasksperchild,
     )
 
@@ -414,8 +399,7 @@ def run_analysis_routines(
 ) -> dict[str, QoI]:
     """Run all configured routines for one trajectory and merge QoI outputs."""
     result: dict[str, QoI] = {}
-    for routine_spec, kwargs in routines:
-        fn = _load_callable(routine_spec)
+    for fn, kwargs in routines:
         qoi_result = _call_with_supported_kwargs(
             fn,
             universe=universe,
@@ -450,15 +434,15 @@ def build_analysis_routines(
     """Build runtime analysis routines for all trajectory positions."""
     routines_by_system: list[tuple[RuntimeRoutine, ...]] = []
     for system in config.systems:
-        routines: list[RuntimeRoutine] = []
+        runtime_routines: list[RuntimeRoutine] = []
         for routine in system.routines:
             fn = _load_callable(routine.routine)
-            routine_name = (
+            name = (
                 routine.routine
                 if isinstance(routine.routine, str)
                 else getattr(routine.routine, "__name__", "routine")
             )
-            _validate_signature(fn, str(routine_name))
-            routines.append((routine.routine, dict(routine.kwargs)))
-        routines_by_system.append(tuple(routines))
+            _validate_signature(fn, str(name))
+            runtime_routines.append((fn, dict(routine.kwargs)))
+        routines_by_system.append(tuple(runtime_routines))
     return routines_by_system

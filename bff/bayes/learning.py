@@ -341,10 +341,19 @@ def fit_lgp_committee(
     return lgp_committee
 
 
+def _effective_observations(
+    dataset: QoIDataset,
+    observation_scale: float = 1.0,
+) -> int:
+    """Return the effective observation count used in the likelihood term."""
+    return max(1, int(round(dataset.n_observations * float(observation_scale))))
+
+
 def train_surrogates(
     datasets: Sequence[QoIDataset],
     *,
     y_means: Optional[Mapping[str, ArrayLike | float | str]] = None,
+    observation_scales: Optional[Mapping[str, float]] = None,
     model_paths: Optional[Mapping[str, PathLike | None]] = None,
     reuse_models: bool = True,
     n_hyper_max: int = 200,
@@ -357,6 +366,7 @@ def train_surrogates(
     """Train or load QoI surrogate models."""
     logger = logger or Logger("BFFLearn")
     y_means = dict(y_means or {})
+    observation_scales = dict(observation_scales or {})
     model_paths = dict(model_paths or {})
 
     logger.info("=== Optimizing LGP surrogates ===", level=0)
@@ -370,6 +380,10 @@ def train_surrogates(
             )
 
         qoi = dataset.name
+        observations = _effective_observations(
+            dataset,
+            observation_scales.get(qoi, 1.0),
+        )
         logger.info(f"QoI: {qoi}", level=1)
 
         fn_model_raw = model_paths.get(qoi)
@@ -379,8 +393,10 @@ def train_surrogates(
 
         if reuse_models and fn_model is not None and fn_model.exists():
             models[qoi] = LGPCommittee.load(fn_model)
+            models[qoi].observations = observations
             logger.info(
-                f"Using cached model. | MAPE = {models[qoi].error:.2f}",
+                f"Using cached model. | obs = {observations} "
+                f"| MAPE = {models[qoi].error:.2f}",
                 level=2,
             )
             logger.info("", level=0)
@@ -393,13 +409,14 @@ def train_surrogates(
             test_fraction=test_fraction,
             n_hyper=n_hyper_max,
             committee=committee_size,
-            observations=dataset.n_observations,
+            observations=observations,
             nuisance=dataset.nuisance,
             fn_out=fn_model,
             device=device,
             logger=logger,
             opt_kwargs=opt_kwargs,
         )
+        logger.info(f"Effective observations: {observations}", level=2)
         logger.info("", level=0)
 
     return models

@@ -14,7 +14,7 @@ from MDAnalysis import transformations as trans
 
 from pathlib import Path
 
-from gmxtop import Topology
+from gmxtopology import Topology
 from ..domain.bias import BiasSpec
 from ..topology import create_box
 from ..io.colvars import (

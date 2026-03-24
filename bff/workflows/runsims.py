@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from gmxtop import Topology
+from gmxtopology import Topology
 
 from ..domain.specs import ChargeConstraint, RandomParamsGenerator, Specs
 from ..io.logs import Logger

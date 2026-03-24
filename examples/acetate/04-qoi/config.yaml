@@ -48,10 +48,10 @@ reference:
   stop: -1
   step: 1
 analysis:
-  in_memory: false
-  gc_collect: true
-  chunksize: 1
-  maxtasksperchild: 1
+  in_memory: true
+  gc_collect: false
+  chunksize: auto
+  maxtasksperchild: 100
 training:
   trainset_dir: ../03-training-trjs/c36-ecc80-00
   start: 1

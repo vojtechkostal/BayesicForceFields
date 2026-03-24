@@ -43,13 +43,39 @@ def _parameter_labels(
     labels: Optional[Sequence[str] | Mapping[str, str]] = None,
 ) -> list[str]:
     if labels is None:
-        return [name.split(maxsplit=1)[-1] for name in names]
+        return list(names)
     if isinstance(labels, Mapping):
         return [labels.get(name, name) for name in names]
     if len(labels) != len(names):
         raise ValueError(
             "parameter_labels must match the number of plotted parameters.")
     return list(labels)
+
+
+def _expand_short_labels(
+    labels: Sequence[str],
+    full_labels: Sequence[str],
+) -> list[str]:
+    """Expand shortened labels like ``C1`` back to ``charge C1`` when possible."""
+    if len(labels) != len(full_labels):
+        return list(labels)
+
+    lookup: dict[str, str] = {}
+    for full_label in full_labels:
+        if full_label.startswith("$"):
+            lookup.setdefault(full_label, full_label)
+            continue
+        lookup.setdefault(full_label, full_label)
+        lookup.setdefault(full_label.split(maxsplit=1)[-1], full_label)
+
+    expanded: list[str] = []
+    changed = False
+    for label in labels:
+        replacement = lookup.get(label, label)
+        expanded.append(replacement)
+        changed |= replacement != label
+
+    return expanded if changed else list(labels)
 
 
 def _axis_labels(kind: str) -> tuple[str, str]:
@@ -207,7 +233,7 @@ def plot_marginals(
         ax.set_xticklabels(
             [_wrap_label(tick_labels[i]) for i in indices],
             rotation=30,
-            ha="right",
+            ha="center",
         )
         xlabel, ylabel = _axis_labels(kind)
         ax.set_xlabel(xlabel)
@@ -240,15 +266,21 @@ def plot_corner(
     scatter_alpha: float = 0.15,
     fn_out: Optional[PathLike] = None,
 ) -> None:
+    sample_source = samples
     samples = _coerce_samples(samples)
     if samples.ndim != 2:
         raise ValueError("plot_corner expects samples with shape (n_samples, n_dim).")
 
     n_dim = samples.shape[1]
     if labels is None:
-        labels = [f"theta_{i}" for i in range(n_dim)]
+        if isinstance(sample_source, InferenceResults):
+            labels = list(sample_source.labels)
+        else:
+            labels = [f"theta_{i}" for i in range(n_dim)]
     elif len(labels) != n_dim:
         raise ValueError("labels must match the posterior sample dimension.")
+    elif isinstance(sample_source, InferenceResults):
+        labels = _expand_short_labels(labels, sample_source.labels)
 
     labels = [_wrap_label(label) for label in labels]
     base_cmap = plt.get_cmap(cmap)
@@ -297,8 +329,8 @@ def plot_corner(
                 ax.set_yticks([])
                 ax.tick_params(axis="y", left=False, labelleft=False)
             else:
-                x = samples[::100, j]
-                y = samples[::100, i]
+                x = samples[::10, j]
+                y = samples[::10, i]
                 ax.scatter(
                     x, y, s=5, lw=0, alpha=scatter_alpha, color="k", rasterized=True
                 )
@@ -334,6 +366,8 @@ def plot_corner(
                 ax.set_ylabel(labels[i], fontsize=12)
             elif i != j:
                 ax.set_yticklabels([])
+
+    fig.align_labels()
 
     if fn_out is not None:
         plt.savefig(fn_out, bbox_inches="tight")
