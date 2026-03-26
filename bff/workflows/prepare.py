@@ -114,7 +114,7 @@ def run_md(
     n_steps: int = -2,
     maxwarn: int = 0,
     fn_log: PathLike = 'gmx.log'
-) -> None:
+) -> Path:
 
     fn_mdp_path = Path(fn_mdp).resolve()
     fn_topol = str(Path(fn_topol).resolve())
@@ -122,6 +122,7 @@ def run_md(
     fn_ndx = str(Path(fn_ndx).resolve()) if fn_ndx else None
     fn_tpr = str(name) + '.tpr'
     fn_mdp_run = fn_mdp_path
+    run_cwd = fn_mdp_path.parent
     run_env = None
     mdrun_cmd = [
         gmx_cmd,
@@ -136,6 +137,7 @@ def run_md(
 
     if bias is not None and bias.kind == "colvars" and bias.input_file is not None:
         fn_mdp_run = Path(f"{name}-colvars.mdp").resolve()
+        run_cwd = fn_mdp_run.parent
         write_mdp_with_colvars(fn_mdp_path, bias.input_file, fn_mdp_run)
     elif bias is not None and bias.kind == "plumed" and bias.input_file is not None:
         kernel = ensure_plumed_kernel()
@@ -153,8 +155,17 @@ def run_md(
         grompp_cmd.extend(['-n', fn_ndx])
 
     with open(fn_log, "a") as f:
-        subprocess.run(grompp_cmd, stdout=f, stderr=f, check=True)
-        subprocess.run(mdrun_cmd, stdout=f, stderr=f, check=True, env=run_env)
+        subprocess.run(grompp_cmd, stdout=f, stderr=f, check=True, cwd=run_cwd)
+        subprocess.run(
+            mdrun_cmd,
+            stdout=f,
+            stderr=f,
+            check=True,
+            env=run_env,
+            cwd=run_cwd,
+        )
+
+    return fn_mdp_run
 
 
 def get_average_box(
@@ -257,6 +268,20 @@ def prepare_bias_file(
     fn_out = Path(fn_out).resolve()
     shutil.copy2(bias.input_file, fn_out)
     return fn_out
+
+
+def localize_bias_spec(
+    bias: BiasSpec,
+    fn_input: Path | None,
+) -> BiasSpec:
+    """Return a bias spec that points to a prepared local bias input file."""
+    if fn_input is None or not bias.is_biased:
+        return bias
+    if bias.kind == "colvars":
+        return BiasSpec(kind="colvars", colvars_file=fn_input)
+    if bias.kind == "plumed":
+        return BiasSpec(kind="plumed", plumed_file=fn_input)
+    return bias
 
 
 def resolve_bias_window_definition(
@@ -645,6 +670,7 @@ def main(fn_config: PathLike) -> None:
             system.bias,
             fn_bias_local,
         )
+        bias_run = localize_bias_spec(system.bias, fn_bias_input)
         pair_labels, target_distances = resolve_bias_window_definition(
             system.bias,
             topology_state.fn_coord,
@@ -662,13 +688,13 @@ def main(fn_config: PathLike) -> None:
 
         deffnm_nvt = equilibration_dir / f"{window_label}-nvt"
         logger.info("NVT equilibration: in progress...", overwrite=True, level=2)
-        run_md(
+        fn_nvt_run = run_md(
             deffnm_nvt,
             fn_nvt_local,
             fn_topol_local,
             fn_coord,
             fn_ndx,
-            bias=system.bias,
+            bias=bias_run,
             gmx_cmd=config.gmx_cmd,
             n_steps=system.nsteps_nvt,
             maxwarn=topology_state.maxwarn,
@@ -679,7 +705,7 @@ def main(fn_config: PathLike) -> None:
         save_training_artifacts(
             window_index=i,
             training_dir=training_dir,
-            fn_mdp_nvt=fn_nvt_local,
+            fn_mdp_nvt=fn_nvt_run,
             fn_coord=fn_coord,
             fn_ndx=fn_ndx,
             fn_topol=fn_topol_local,
