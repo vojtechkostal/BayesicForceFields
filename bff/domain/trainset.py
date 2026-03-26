@@ -54,7 +54,12 @@ class TrainSetInfo:
     samples: list[TrajectorySet]
 
     @classmethod
-    def from_dir(cls, train_dir: PathLike) -> "TrainSetInfo":
+    def from_dir(
+        cls,
+        train_dir: PathLike,
+        *,
+        strict: bool = True,
+    ) -> "TrainSetInfo":
         prepared_dir = prepare_path(Path(train_dir).resolve())
         specs_data, systems_data, samples_data = extract_train_dir(prepared_dir)
         if specs_data is None:
@@ -71,21 +76,67 @@ class TrainSetInfo:
         ]
 
         completed_samples: list[TrajectorySet] = []
+        sample_issues: list[str] = []
         for sample_id in sorted((samples_data or {})):
             sample = samples_data[sample_id]
-            outputs = sorted(
-                sample.get("outputs", []),
-                key=lambda item: item["system_id"],
-            )
+            if not isinstance(sample, dict):
+                sample_issues.append(
+                    f"sample {sample_id!r}: record must be a mapping, got "
+                    f"{type(sample).__name__}."
+                )
+                continue
+
             if sample.get("status") != "completed":
                 continue
-            if len(outputs) != len(systems):
+            outputs = sample.get("outputs", [])
+            if "params" not in sample:
+                sample_issues.append(
+                    f"sample {sample_id!r}: completed sample is missing 'params'."
+                )
                 continue
-            if any(output.get("trajectory") is None for output in outputs):
+            if not isinstance(outputs, list):
+                sample_issues.append(
+                    f"sample {sample_id!r}: 'outputs' must be a list."
+                )
+                continue
+            if any(not isinstance(output, dict) for output in outputs):
+                sample_issues.append(
+                    f"sample {sample_id!r}: all outputs must be mappings."
+                )
+                continue
+            if any("system_id" not in output for output in outputs):
+                sample_issues.append(
+                    f"sample {sample_id!r}: each output must define 'system_id'."
+                )
+                continue
+            outputs = sorted(outputs, key=lambda item: item["system_id"])
+            if len(outputs) != len(systems):
+                sample_issues.append(
+                    f"sample {sample_id!r}: expected {len(systems)} outputs, "
+                    f"found {len(outputs)}."
+                )
+                continue
+            if any(
+                output.get("trajectory") is None
+                for output in outputs
+            ):
+                sample_issues.append(
+                    f"sample {sample_id!r}: completed outputs must all define "
+                    "trajectory files."
+                )
                 continue
 
             fn_trj = tuple(prepared_dir / output["trajectory"] for output in outputs)
             if not all(path.exists() for path in fn_trj):
+                missing = [
+                    str(path.relative_to(prepared_dir))
+                    for path in fn_trj
+                    if not path.exists()
+                ]
+                sample_issues.append(
+                    f"sample {sample_id!r}: missing trajectory file(s): "
+                    + ", ".join(missing)
+                )
                 continue
 
             completed_samples.append(
@@ -96,6 +147,19 @@ class TrainSetInfo:
                     fn_trj=fn_trj,
                     params=np.asarray(sample["params"], dtype=float),
                 )
+            )
+
+        if strict and sample_issues:
+            issues = "\n".join(f"- {issue}" for issue in sample_issues)
+            raise ValueError(
+                "Training set contains invalid completed sample records:\n"
+                f"{issues}"
+            )
+        if strict and not completed_samples:
+            raise ValueError(
+                f"No completed training samples found in {prepared_dir}. "
+                "Check that validation/simulation finished and samples.yaml "
+                "contains completed outputs."
             )
 
         return cls(

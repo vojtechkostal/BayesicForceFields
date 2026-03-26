@@ -241,7 +241,25 @@ class InferenceResults:
             if fn_out.name.endswith(".npy"):
                 np.save(fn_out, draws)
             elif fn_out.name.endswith(".yaml"):
-                save_yaml(dict(zip(self.labels, draws.T)), fn_out)
+                save_yaml(
+                    {
+                        "schema_version": 1,
+                        "kind": "bff.parameter_samples",
+                        "parameter_names": list(self.labels),
+                        "n_samples": int(draws.shape[0]),
+                        "samples": [
+                            {
+                                "sample_id": f"{i:03d}",
+                                "params": {
+                                    label: float(value)
+                                    for label, value in zip(self.labels, row)
+                                },
+                            }
+                            for i, row in enumerate(draws)
+                        ],
+                    },
+                    fn_out,
+                )
             else:
                 raise ValueError("fn_out must end with .npy or .yaml")
 

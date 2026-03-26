@@ -98,7 +98,18 @@ command line, which is convenient for batch runs, or from the
 cd ../05-learning
 bff learn config.yaml
 ```
+The notebook can export posterior draws to `posterior-samples.yaml`,
+which can then be passed directly to the validation workflow.
 
-6. Visualization
+6. Validate posterior samples.
+Rerun selected force-field samples from the learned posterior using
+`bff validate` and a validation config such as
+`03-training-trjs/config-validate-local.yaml`.
+```sh
+cd ../03-training-trjs
+bff validate config-validate-local.yaml
+```
+
+7. Visualization
 Use the notebook in `06-visualize` to inspect the posterior samples and
 produce the standard plots from step 5.

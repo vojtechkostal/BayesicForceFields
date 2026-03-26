@@ -69,7 +69,7 @@ class Slurm:
         str
             The complete SLURM script.
         """
-        script = "#!/bin/bash\nset -euo pipefail\n"
+        script = "#!/bin/bash\n"
         if self.sbatch:
             script += "\n".join(self.sbatch) + "\n"
         if self.commands:

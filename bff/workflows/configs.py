@@ -367,7 +367,7 @@ class SimulateConfig(SimulationCampaignConfig):
 @dataclass(frozen=True, kw_only=True)
 class ValidateConfig(SimulationCampaignConfig):
     fn_specs: Path
-    inputs: Path
+    fn_samples: Path
 
     @classmethod
     def load(cls, fn_config: PathLike) -> "ValidateConfig":
@@ -375,13 +375,23 @@ class ValidateConfig(SimulationCampaignConfig):
 
         if "fn_specs" not in config:
             raise ValueError("Validation mode requires 'fn_specs'.")
-        if "inputs" not in config:
-            raise ValueError("Validation mode requires 'inputs'.")
+        sample_keys = [key for key in ("samples", "inputs") if key in config]
+        if not sample_keys:
+            raise ValueError("Validation mode requires 'samples' or legacy 'inputs'.")
+        if len(sample_keys) > 1:
+            raise ValueError(
+                "Validation mode accepts only one of 'samples' or legacy 'inputs'."
+            )
+        sample_key = sample_keys[0]
 
         return cls(
             **common,
             fn_specs=_resolve_path(base_dir, config["fn_specs"], kind="specs file"),
-            inputs=_resolve_path(base_dir, config["inputs"], kind="inputs file"),
+            fn_samples=_resolve_path(
+                base_dir,
+                config[sample_key],
+                kind="parameter samples file",
+            ),
         )
 
 

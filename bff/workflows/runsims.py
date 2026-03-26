@@ -418,6 +418,9 @@ def print_validate_summary(
         f"stored outputs: {', '.join(config.store) if config.store else 'none'}\n",
         level=1,
     )
+    fn_samples = getattr(config, "fn_samples", None)
+    if fn_samples is not None:
+        logger.info(f"sample source: {Path(fn_samples).resolve()}\n", level=1)
 
 
 def run_campaign(
@@ -550,3 +553,116 @@ def build_parameter_samples(config: SimulateConfig) -> tuple[Path, np.ndarray]:
         dtype=float,
     )
     return fn_specs, parameter_samples
+
+
+def _load_yaml_parameter_samples(
+    data: dict[str, Any],
+    *,
+    specs: Specs,
+) -> np.ndarray:
+    explicit_names = list(specs.parameter_names(explicit_only=True))
+
+    if isinstance(data.get("samples"), list):
+        records = data["samples"]
+        parameter_names = list(data.get("parameter_names", explicit_names))
+        rows: list[list[float]] = []
+        for i, record in enumerate(records):
+            if isinstance(record, dict) and isinstance(record.get("params"), dict):
+                params = record["params"]
+                missing = [name for name in explicit_names if name not in params]
+                if missing:
+                    raise ValueError(
+                        f"Sample record {i} is missing parameter(s): "
+                        + ", ".join(repr(name) for name in missing)
+                    )
+                rows.append([float(params[name]) for name in explicit_names])
+                continue
+            if isinstance(record, dict) and isinstance(record.get("params"), list):
+                values = np.asarray(record["params"], dtype=float).reshape(-1)
+                if values.size != len(parameter_names):
+                    raise ValueError(
+                        f"Sample record {i} has {values.size} values, expected "
+                        f"{len(parameter_names)}."
+                    )
+                params = dict(zip(parameter_names, values.tolist()))
+                missing = [name for name in explicit_names if name not in params]
+                if missing:
+                    raise ValueError(
+                        f"Sample record {i} is missing parameter(s): "
+                        + ", ".join(repr(name) for name in missing)
+                    )
+                rows.append([float(params[name]) for name in explicit_names])
+                continue
+            if isinstance(record, list):
+                values = np.asarray(record, dtype=float).reshape(-1)
+                if values.size != len(parameter_names):
+                    raise ValueError(
+                        f"Sample row {i} has {values.size} values, expected "
+                        f"{len(parameter_names)}."
+                    )
+                params = dict(zip(parameter_names, values.tolist()))
+                missing = [name for name in explicit_names if name not in params]
+                if missing:
+                    raise ValueError(
+                        f"Sample row {i} is missing parameter(s): "
+                        + ", ".join(repr(name) for name in missing)
+                    )
+                rows.append([float(params[name]) for name in explicit_names])
+                continue
+            raise ValueError(
+                f"Unsupported YAML sample record at index {i}: {record!r}."
+            )
+        return np.asarray(rows, dtype=float)
+
+    if all(name in data for name in explicit_names):
+        lengths = {len(data[name]) for name in explicit_names}
+        if len(lengths) != 1:
+            raise ValueError(
+                "Column-oriented YAML sample lists must all have the same length."
+            )
+        return np.column_stack(
+            [np.asarray(data[name], dtype=float) for name in explicit_names]
+        )
+
+    raise ValueError(
+        "Unsupported YAML parameter-sample format. Expected either a top-level "
+        "'samples' list or a column-oriented mapping keyed by explicit "
+        "parameter names."
+    )
+
+
+def load_parameter_samples(
+    fn_samples: PathLike,
+    fn_specs: PathLike,
+) -> np.ndarray:
+    """Load validation parameter samples from ``.npy`` or YAML."""
+    fn_samples = Path(fn_samples).resolve()
+    specs = Specs(fn_specs)
+
+    if fn_samples.suffix == ".npy":
+        samples = np.asarray(np.load(fn_samples), dtype=float)
+    elif fn_samples.suffix in {".yaml", ".yml"}:
+        raw = load_yaml(fn_samples)
+        if not isinstance(raw, dict):
+            raise ValueError(
+                f"YAML parameter sample file {fn_samples} must contain a mapping."
+            )
+        samples = _load_yaml_parameter_samples(raw, specs=specs)
+    else:
+        raise ValueError(
+            f"Unsupported sample file {fn_samples}. Expected .npy, .yaml, or .yml."
+        )
+
+    if samples.ndim != 2:
+        raise ValueError(
+            f"Parameter samples must form a 2D array, got shape {samples.shape}."
+        )
+    expected = len(specs.parameter_names(explicit_only=True))
+    if samples.shape[1] != expected:
+        raise ValueError(
+            f"Expected {expected} explicit parameter values per sample, got "
+            f"{samples.shape[1]}."
+        )
+    if samples.shape[0] == 0:
+        raise ValueError("No validation parameter samples were found.")
+    return samples

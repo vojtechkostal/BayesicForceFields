@@ -80,6 +80,9 @@ class Bounds:
 class Specs:
     """Force-field specification data."""
 
+    SCHEMA_VERSION = 1
+    KIND = "bff.forcefield_specs"
+
     source: InitVar[dict[str, Any] | PathLike]
 
     mol_resname: str = field(init=False)
@@ -102,6 +105,18 @@ class Specs:
             missing_list = ", ".join(sorted(repr(key) for key in missing))
             raise ValueError(f"Missing required specs field(s): {missing_list}")
 
+        schema_version = data.get("schema_version")
+        if schema_version is not None and int(schema_version) != self.SCHEMA_VERSION:
+            raise ValueError(
+                f"Unsupported specs schema_version {schema_version!r}. "
+                f"Expected {self.SCHEMA_VERSION}."
+            )
+        kind = data.get("kind")
+        if kind is not None and str(kind) != self.KIND:
+            raise ValueError(
+                f"Unsupported specs kind {kind!r}. Expected {self.KIND!r}."
+            )
+
         implicit_atoms = data["implicit_atoms"]
         if isinstance(implicit_atoms, str):
             implicit_atoms = implicit_atoms.split()
@@ -118,7 +133,12 @@ class Specs:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "schema_version": self.SCHEMA_VERSION,
+            "kind": self.KIND,
             "mol_resname": self.mol_resname,
+            "n_params": self.bounds.n_params,
+            "parameter_names": list(self.parameter_names()),
+            "explicit_parameter_names": list(self.parameter_names(explicit_only=True)),
             "bounds": self.bounds.to_dict(),
             "total_charge": self.total_charge,
             "constraint_charge": self.constraint_charge,
