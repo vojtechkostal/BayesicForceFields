@@ -86,6 +86,30 @@ def _paired_donors_and_hydrogens(
     return donors, hydrogens
 
 
+def _all_possible_hbond_labels(
+    donors: mda.AtomGroup,
+    acceptors: mda.AtomGroup,
+) -> set[str]:
+    """Enumerate all donor/acceptor type combinations possible for this system."""
+    if len(donors) == 0 or len(acceptors) == 0:
+        return set()
+
+    donor_types = np.unique(
+        np.column_stack((donors.resnames, donors.types)).astype(str),
+        axis=0,
+    )
+    acceptor_types = np.unique(
+        np.column_stack((acceptors.resnames, acceptors.types)).astype(str),
+        axis=0,
+    )
+
+    return {
+        f"{d_res}({d_type}) to {a_res}({a_type})"
+        for d_res, d_type in donor_types
+        for a_res, a_type in acceptor_types
+    }
+
+
 def compute_hbonds(
     universe: mda.Universe,
     hydrogens: mda.AtomGroup,
@@ -166,20 +190,23 @@ def compute_hbonds(
 def compute_all_hbonds(
     universe: mda.Universe,
     mol_resname: str,
+    water_resname: str = "SOL",
     distance_cutoff: float = 3.5,
     angle_cutoff: float = 150,
+    hb_elements: set[str] = {"O", "N", "S"},
     start: int = 0,
     stop: int | None = None,
     step: int = 1,
 ) -> QoI:
     """Compute all solute-water hydrogen-bond QoIs for one trajectory."""
 
-    hb_elements = {"O", "N", "S"}
-    water_resnames = "SOL HOH WAT"
     selection_1 = f"resname {mol_resname}"
-    selection_2 = f"resname {water_resnames}"
+    selection_2 = f"resname {water_resname}"
+    hb_elements = set(hb_elements)
+    hb_elements_str = " ".join(sorted(hb_elements))
 
     selection_pairs = ((selection_1, selection_2), (selection_2, selection_1))
+    possible_labels: set[str] = set()
     hbonds: dict[str, float] = {}
     for sel_donors, sel_acceptors in selection_pairs:
         donors, hydrogens = _paired_donors_and_hydrogens(
@@ -187,11 +214,13 @@ def compute_all_hbonds(
             sel_donors,
             hb_elements=hb_elements,
         )
-        if len(donors) == 0:
-            continue
+        acceptors = universe.select_atoms(
+            f"{sel_acceptors} and element {hb_elements_str}"
+        )
 
-        acceptors = universe.select_atoms(f"{sel_acceptors} and element O S N")
-        if len(acceptors) == 0:
+        possible_labels.update(_all_possible_hbond_labels(donors, acceptors))
+
+        if len(donors) == 0 or len(acceptors) == 0:
             continue
 
         donor_indices, acceptor_indices, n_frames = compute_hbonds(
@@ -207,8 +236,8 @@ def compute_all_hbonds(
         )
         hbonds.update(count_hbonds(universe, donor_indices, acceptor_indices, n_frames))
 
-    labels = tuple(sorted(hbonds))
-    values = np.asarray([hbonds[label] for label in labels], dtype=float)
+    labels = tuple(sorted(possible_labels))
+    values = np.asarray([hbonds.get(label, 0.0) for label in labels], dtype=float)
     metadata = {
         "distance_cutoff": float(distance_cutoff),
         "angle_cutoff": float(angle_cutoff),

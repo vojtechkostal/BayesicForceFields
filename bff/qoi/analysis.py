@@ -215,37 +215,41 @@ def analyze_trajectory_sets(
     return qoi
 
 
-def resolve_reference_labels(blocks: Sequence[QoI]) -> tuple[str, ...] | None:
-    """Resolve a stable label ordering from reference QoI blocks."""
-    labeled_blocks = [block for block in blocks if block.labels is not None]
-    if not labeled_blocks:
+def _validate_qoi_schema(blocks: Sequence[QoI], *, context: str) -> tuple[str, ...] | None:
+    """Return the shared label schema and fail if any block disagrees."""
+    if not blocks:
         return None
 
-    labels: list[str] = []
-    seen: set[str] = set()
-    for block in labeled_blocks:
-        for label in block.labels or ():
-            if label not in seen:
-                labels.append(label)
-                seen.add(label)
-    return tuple(labels)
+    first = blocks[0]
+    labels = first.labels
+    values_per_label = first.values_per_label
+    n_values = first.n_values
+
+    for block in blocks[1:]:
+        if block.values_per_label != values_per_label:
+            raise ValueError(
+                f"QoI schema mismatch in {context}: expected values_per_label="
+                f"{values_per_label}, got {block.values_per_label}."
+            )
+        if block.labels != labels:
+            raise ValueError(
+                f"QoI label mismatch in {context}: expected {labels}, got {block.labels}."
+            )
+        if block.n_values != n_values:
+            raise ValueError(
+                f"QoI value-count mismatch in {context}: expected {n_values}, got {block.n_values}."
+            )
+
+    return labels
 
 
-def stack_qoi_blocks(
-    blocks: Sequence[QoI],
-    *,
-    labels: tuple[str, ...] | None = None,
-) -> np.ndarray:
-    """Stack aligned QoI blocks into one flat numeric array."""
+def stack_qoi_blocks(blocks: Sequence[QoI]) -> np.ndarray:
+    """Stack QoI blocks without relabeling or padding."""
     if not blocks:
         return np.empty(0, dtype=float)
 
-    values_per_label = blocks[0].values_per_label
-    if any(block.values_per_label != values_per_label for block in blocks):
-        raise ValueError("All QoI blocks must have the same values_per_label.")
-
-    aligned = [block.aligned(labels) for block in blocks]
-    return np.concatenate(aligned) if aligned else np.empty(0, dtype=float)
+    _validate_qoi_schema(blocks, context="stacked QoI blocks")
+    return np.concatenate([block.values for block in blocks])
 
 
 def collect_qoi_dataset(
@@ -254,16 +258,23 @@ def collect_qoi_dataset(
     *,
     qoi_metadata: Mapping[str, Any] | None = None,
 ) -> tuple[np.ndarray, list[np.ndarray], dict[str, Any]]:
-    """Collect aligned reference and training arrays for one QoI."""
-    labels = resolve_reference_labels(ref_blocks)
-    outputs_ref = stack_qoi_blocks(ref_blocks, labels=labels)
-    outputs = [stack_qoi_blocks(blocks, labels=labels) for blocks in train_blocks]
+    """Collect reference and training arrays for one QoI with a fixed schema."""
+    labels = _validate_qoi_schema(ref_blocks, context="reference QoI blocks")
+    reference = ref_blocks[0] if ref_blocks else None
+
+    outputs_ref = stack_qoi_blocks(ref_blocks)
+    outputs = []
+    for i, blocks in enumerate(train_blocks):
+        if reference is not None and blocks:
+            expected = [reference, *blocks]
+            _validate_qoi_schema(expected, context=f"training QoI blocks for sample {i}")
+        outputs.append(stack_qoi_blocks(blocks))
 
     metadata = dict(qoi_metadata or {})
 
     settings_kwargs = {}
     metadata_out = dict(metadata)
-    first = ref_blocks[0] if ref_blocks else None
+    first = reference
     if first is not None:
         settings_kwargs = dict(first.settings_kwargs)
         metadata_out = dict(first.metadata) | metadata_out

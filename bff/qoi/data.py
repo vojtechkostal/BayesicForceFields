@@ -39,34 +39,6 @@ class QoI:
         """Total number of numeric values stored in the QoI."""
         return int(self.values.size)
 
-    def aligned(self, labels: tuple[str, ...] | None = None) -> np.ndarray:
-        """Align the QoI to a reference label set."""
-        if labels is None:
-            return self.values.copy()
-
-        if self.labels is None:
-            expected = len(labels) * self.values_per_label
-            if self.values.size != expected:
-                raise ValueError(
-                    "Unlabeled QoI cannot be aligned to a differently sized "
-                    "reference label set."
-                )
-            return self.values.copy()
-
-        aligned = np.zeros(len(labels) * self.values_per_label, dtype=float)
-        index = {label: i for i, label in enumerate(labels)}
-        for i, label in enumerate(self.labels):
-            if label not in index:
-                continue
-            src = slice(i * self.values_per_label, (i + 1) * self.values_per_label)
-            dst_index = index[label]
-            dst = slice(
-                dst_index * self.values_per_label,
-                (dst_index + 1) * self.values_per_label,
-            )
-            aligned[dst] = self.values[src]
-        return aligned
-
     def to_dict(self) -> dict[str, Any]:
         """Serialize the QoI to a JSON/PT-friendly mapping."""
         return {
