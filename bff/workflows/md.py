@@ -9,6 +9,7 @@ import numpy as np
 from pathlib import Path
 
 from ..io.colvars import write_mdp_with_colvars
+from ..io.commands import build_command
 from ..io.mdp import get_n_frames_target
 from ..io.plumed import ensure_plumed_kernel
 from ..domain.specs import Specs
@@ -65,7 +66,7 @@ def check_success(
 ) -> bool:
     """Check if the trajectory has reached the target number of frames."""
     output = subprocess.run(
-        [gmx_cmd, 'check', '-f', fn_trj],
+        build_command(gmx_cmd, 'check', '-f', fn_trj),
         capture_output=True,
         text=True,
         check=True,
@@ -154,8 +155,10 @@ def main(fn_config: PathLike) -> None:
                 mdrun_extra_args: list[str] = []
                 run_env = None
                 if bias.kind == "colvars" and bias.input_file is not None:
+                    fn_bias_local = run_dir / Path(bias.input_file).name
+                    shutil.copy2(bias.input_file, fn_bias_local)
                     fn_prod_mdp = run_dir / f"md-{sample_id}-{i:03d}-colvars.mdp"
-                    write_mdp_with_colvars(prod, bias.input_file, fn_prod_mdp)
+                    write_mdp_with_colvars(prod, fn_bias_local, fn_prod_mdp)
                 elif bias.kind == "plumed" and bias.input_file is not None:
                     kernel = ensure_plumed_kernel()
                     run_env = dict(os.environ)
@@ -178,13 +181,27 @@ def main(fn_config: PathLike) -> None:
                     deffnm_em = run_dir / f"md-{sample_id}-{i}-em"
                     fn_tpr_em = run_dir / f"{deffnm_em}.tpr"
                     subprocess.run(
-                        [gmx_cmd, 'grompp', '-f', em, '-c', coord, '-p',
-                         fn_top_new, '-n', ndx, '-o', fn_tpr_em, '-maxwarn', '2'],
+                        build_command(
+                            gmx_cmd,
+                            'grompp',
+                            '-f',
+                            em,
+                            '-c',
+                            coord,
+                            '-p',
+                            fn_top_new,
+                            '-n',
+                            ndx,
+                            '-o',
+                            fn_tpr_em,
+                            '-maxwarn',
+                            '2',
+                        ),
                         cwd=run_dir, stdout=log, stderr=log, check=True
                     )
 
                     subprocess.run(
-                        [gmx_cmd, 'mdrun', '-s', fn_tpr_em, '-deffnm', deffnm_em],
+                        build_command(gmx_cmd, 'mdrun', '-s', fn_tpr_em, '-deffnm', deffnm_em),
                         cwd=run_dir, stdout=log, stderr=log, check=True
                     )
                     fn_coord_prod = deffnm_em.with_suffix(".gro")
@@ -194,14 +211,27 @@ def main(fn_config: PathLike) -> None:
 
                 # Run production MD
                 subprocess.run(
-                    [gmx_cmd, 'grompp', '-f', fn_prod_mdp,
-                     '-c', fn_coord_prod,
-                     '-p', fn_top_new, '-n', ndx, '-o', fn_tpr, '-maxwarn', '2'],
+                    build_command(
+                        gmx_cmd,
+                        'grompp',
+                        '-f',
+                        fn_prod_mdp,
+                        '-c',
+                        fn_coord_prod,
+                        '-p',
+                        fn_top_new,
+                        '-n',
+                        ndx,
+                        '-o',
+                        fn_tpr,
+                        '-maxwarn',
+                        '2',
+                    ),
                     cwd=run_dir, stdout=log, stderr=log, check=True
                 )
 
                 subprocess.run(
-                    [
+                    build_command(
                         gmx_cmd,
                         'mdrun',
                         '-deffnm',
@@ -210,10 +240,8 @@ def main(fn_config: PathLike) -> None:
                         str(steps),
                         '-dlb',
                         'yes',
-                        '-ntmpi',
-                        '1',
                         *mdrun_extra_args,
-                    ],
+                    ),
                     cwd=run_dir, stdout=log, stderr=log, check=True, env=run_env
                 )
 

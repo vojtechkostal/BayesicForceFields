@@ -89,6 +89,21 @@ def main(fn_config: str) -> None:
 
     logger.info("=== Quantities of Interest (QoI) Analysis ===\n", level=0)
 
+    qoi_ref_sets = analyze_trajectory_sets(
+        [reference_set],
+        mol_resname=trainset.specs.mol_resname,
+        routines_by_system=routines_by_system,
+        start=config.reference_start,
+        stop=config.reference_stop,
+        step=config.reference_step,
+        workers=1,
+        progress_stride=1,
+        progress_label="Reference QoI",
+        logger=logger,
+        in_memory=config.analysis.in_memory,
+        gc_collect=config.analysis.gc_collect,
+    )
+
     qoi_train = analyze_trajectory_sets(
         trainset.samples,
         mol_resname=trainset.specs.mol_resname,
@@ -105,20 +120,20 @@ def main(fn_config: str) -> None:
         maxtasksperchild=config.analysis.maxtasksperchild,
     )
 
-    qoi_ref_sets = analyze_trajectory_sets(
-        [reference_set],
-        mol_resname=trainset.specs.mol_resname,
-        routines_by_system=routines_by_system,
-        start=config.reference_start,
-        stop=config.reference_stop,
-        step=config.reference_step,
-        workers=1,
-        progress_stride=1,
-        progress_label="Reference QoI",
-        logger=logger,
-        in_memory=config.analysis.in_memory,
-        gc_collect=config.analysis.gc_collect,
-    )
+    # qoi_ref_sets = analyze_trajectory_sets(
+    #     [reference_set],
+    #     mol_resname=trainset.specs.mol_resname,
+    #     routines_by_system=routines_by_system,
+    #     start=config.reference_start,
+    #     stop=config.reference_stop,
+    #     step=config.reference_step,
+    #     workers=1,
+    #     progress_stride=1,
+    #     progress_label="Reference QoI",
+    #     logger=logger,
+    #     in_memory=config.analysis.in_memory,
+    #     gc_collect=config.analysis.gc_collect,
+    # )
     qoi_ref = qoi_ref_sets[0]
     logger.info("", level=0)
     _write_qoi_datasets(

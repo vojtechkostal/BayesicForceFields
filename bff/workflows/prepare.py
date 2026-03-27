@@ -16,6 +16,7 @@ from pathlib import Path
 
 from gmxtopology import Topology
 from ..domain.bias import BiasSpec
+from ..io.commands import build_command
 from ..topology import create_box
 from ..io.colvars import (
     resolve_distance_bias_metadata as resolve_colvars_distance_bias_metadata,
@@ -53,7 +54,7 @@ def check_gmx_available(gmx_cmd: str = 'gmx') -> None:
     """Check if the 'gmx' command is available in the system PATH."""
     try:
         subprocess.run(
-            [gmx_cmd, '--version'],
+            build_command(gmx_cmd, '--version'),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=True
@@ -125,20 +126,22 @@ def run_md(
     run_cwd = fn_mdp_path.parent
     run_env = None
     mdrun_cmd = [
-        gmx_cmd,
-        'mdrun',
-        '-deffnm',
-        name,
-        '-nsteps',
-        str(n_steps),
-        '-ntmpi',
-        '1',
+        *build_command(
+            gmx_cmd,
+            'mdrun',
+            '-deffnm',
+            name,
+            '-nsteps',
+            str(n_steps),
+        ),
     ]
 
     if bias is not None and bias.kind == "colvars" and bias.input_file is not None:
+        fn_bias_local = Path(fn_mdp_path.parent) / Path(bias.input_file).name
+        shutil.copy2(bias.input_file, fn_bias_local)
         fn_mdp_run = Path(f"{name}-colvars.mdp").resolve()
         run_cwd = fn_mdp_run.parent
-        write_mdp_with_colvars(fn_mdp_path, bias.input_file, fn_mdp_run)
+        write_mdp_with_colvars(fn_mdp_path, fn_bias_local, fn_mdp_run)
     elif bias is not None and bias.kind == "plumed" and bias.input_file is not None:
         kernel = ensure_plumed_kernel()
         run_env = dict(os.environ)
@@ -148,8 +151,20 @@ def run_md(
     maxwarn = str(maxwarn)
 
     grompp_cmd = [
-        gmx_cmd, 'grompp', '-f', str(fn_mdp_run), '-c', fn_coord,
-        '-p', fn_topol, '-o', fn_tpr, '-maxwarn', maxwarn
+        *build_command(
+            gmx_cmd,
+            'grompp',
+            '-f',
+            str(fn_mdp_run),
+            '-c',
+            fn_coord,
+            '-p',
+            fn_topol,
+            '-o',
+            fn_tpr,
+            '-maxwarn',
+            maxwarn,
+        ),
     ]
     if fn_ndx:
         grompp_cmd.extend(['-n', fn_ndx])

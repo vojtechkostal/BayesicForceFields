@@ -11,6 +11,21 @@ MASSES = np.array(list(MDA_MASSES.values()))
 ELEMENTS = list(MDA_MASSES.keys())
 
 
+def _normalized_dimensions(dimensions: np.ndarray | None) -> np.ndarray | None:
+    """Return a usable unit-cell array or ``None`` when box data is missing."""
+    if dimensions is None:
+        return None
+
+    arr = np.asarray(dimensions, dtype=float).reshape(-1)
+    if arr.size < 3:
+        return None
+    if not np.all(np.isfinite(arr[:3])):
+        return None
+    if np.any(arr[:3] <= 0):
+        return None
+    return arr
+
+
 def modify_dcd_frc_header(fn: str) -> None:
     """
     Modify the header of a DCD file to include the 'CORD' flag.
@@ -45,6 +60,10 @@ def compute_distances(
         ag1.positions[:, np.newaxis] - ag2.positions
         for ts in universe.trajectory[start:stop:step]
     ]
+    if not displacements:
+        shape = (0, len(ag1), len(ag2))
+        return np.empty(shape, dtype=float)
+
     displacements = np.asarray(displacements, dtype=float)
     if pbc:
         box = np.asarray(get_unitcell(universe)[:3], dtype=float)
@@ -75,22 +94,23 @@ def get_unitcell(
     ValueError
         If neither the timestep nor the universe provides box dimensions.
     """
-    if ts is not None and ts.dimensions is not None:
-        return np.asarray(ts.dimensions, dtype=float)
+    ts_dimensions = None if ts is None else _normalized_dimensions(ts.dimensions)
+    if ts_dimensions is not None:
+        return ts_dimensions
 
-    dimensions = universe.dimensions
+    dimensions = _normalized_dimensions(universe.dimensions)
     if dimensions is not None:
-        return np.asarray(dimensions, dtype=float)
+        return dimensions
 
-    default = getattr(universe, "_bff_default_dimensions", None)
+    default = _normalized_dimensions(getattr(universe, "_bff_default_dimensions", None))
     if default is None:
         raise ValueError(
             "Trajectory frames do not define box dimensions and no fallback "
             "unit cell is available."
         )
     if ts is not None and ts.dimensions is None:
-        ts.dimensions = np.asarray(default, dtype=float)
-    return np.asarray(default, dtype=float)
+        ts.dimensions = default
+    return default
 
 
 def random_placement(coords: np.ndarray, box: np.ndarray) -> np.ndarray:

@@ -1,4 +1,5 @@
 import shutil
+import shlex
 import subprocess
 import sys
 import time
@@ -206,6 +207,7 @@ def build_submission_script(
         return None
 
     trainset_dir = config.trainset_dir.resolve()
+    repo_root = Path(__file__).resolve().parents[2]
     cmd_run = [sys.executable, "-m", "bff.cli", "md", str(fn_config_md)]
 
     submit_cls = SCHEDULER_CLASSES[config.job_scheduler]
@@ -216,7 +218,11 @@ def build_submission_script(
 
     for cmd in config.slurm.setup:
         submit_script.add_command(cmd)
-    submit_script.add_command(" ".join(cmd_run))
+    pythonpath_prefix = (
+        f"PYTHONPATH={shlex.quote(str(repo_root))}"
+        '${PYTHONPATH:+":$PYTHONPATH"}'
+    )
+    submit_script.add_command(f"{pythonpath_prefix} {shlex.join(cmd_run)}")
     for cmd in config.slurm.teardown:
         submit_script.add_command(cmd)
 

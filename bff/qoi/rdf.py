@@ -5,7 +5,7 @@ import numpy as np
 from scipy.ndimage import gaussian_filter
 
 from .data import QoI
-from ..tools import compute_distances
+from ..tools import compute_distances, get_unitcell
 
 
 def compute_rdf(
@@ -36,7 +36,7 @@ def compute_rdf(
 
     shell_volumes = 4.0 / 3.0 * np.pi * (edges[1:] ** 3 - edges[:-1] ** 3)
     if pbc:
-        volume = float(np.prod(np.asarray(universe.dimensions[:3], dtype=float)))
+        volume = float(np.prod(np.asarray(get_unitcell(universe)[:3], dtype=float)))
         norm = distances.size * (1.0 / volume) * shell_volumes
         g /= norm
     else:

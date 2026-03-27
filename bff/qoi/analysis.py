@@ -13,6 +13,7 @@ from .data import QoI
 from ..io.logs import Logger
 from ..io.progress import iter_progress
 from ..topology import prepare_universe
+from ..tools import _normalized_dimensions
 from .routines import RuntimeRoutine, run_analysis_routines
 
 
@@ -54,11 +55,7 @@ def _prepare_universe(
 ) -> mda.Universe:
     """Prepare one MDAnalysis universe for trajectory analysis."""
     universe = prepare_universe(str(fn_topol), str(fn_coord), dt=1)
-    default_dimensions = (
-        None
-        if universe.dimensions is None
-        else np.asarray(universe.dimensions, dtype=float)
-    )
+    default_dimensions = _normalized_dimensions(universe.dimensions)
     universe.load_new(str(fn_trj))
     universe._bff_default_dimensions = default_dimensions
     if in_memory:
@@ -87,6 +84,9 @@ def analyze_trajectory_set(
         )
 
     results: list[dict[str, QoI]] = []
+    routine_start = 0 if in_memory else start
+    routine_stop = None if in_memory else stop
+    routine_step = 1 if in_memory else step
     for fn_topol, fn_coord, fn_trj, routines in zip(
         trajectory_set.fn_topol,
         trajectory_set.fn_coord,
@@ -108,9 +108,9 @@ def analyze_trajectory_set(
                 routines,
                 universe=universe,
                 mol_resname=mol_resname,
-                start=start,
-                stop=stop,
-                step=step,
+                start=routine_start,
+                stop=routine_stop,
+                step=routine_step,
             )
             if not result:
                 raise ValueError("Analysis routine returned no QoI outputs.")
