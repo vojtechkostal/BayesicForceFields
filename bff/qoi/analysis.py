@@ -215,7 +215,11 @@ def analyze_trajectory_sets(
     return qoi
 
 
-def _validate_qoi_schema(blocks: Sequence[QoI], *, context: str) -> tuple[str, ...] | None:
+def _validate_qoi_schema(
+    blocks: Sequence[QoI],
+    *,
+    context: str
+) -> tuple[str, ...] | None:
     """Return the shared label schema and fail if any block disagrees."""
     if not blocks:
         return None
@@ -233,11 +237,13 @@ def _validate_qoi_schema(blocks: Sequence[QoI], *, context: str) -> tuple[str, .
             )
         if block.labels != labels:
             raise ValueError(
-                f"QoI label mismatch in {context}: expected {labels}, got {block.labels}."
+                f"QoI label mismatch in {context}: "
+                f"expected {labels}, got {block.labels}."
             )
         if block.n_values != n_values:
             raise ValueError(
-                f"QoI value-count mismatch in {context}: expected {n_values}, got {block.n_values}."
+                f"QoI value-count mismatch in {context}: "
+                f"expected {n_values}, got {block.n_values}."
             )
 
     return labels
@@ -267,7 +273,10 @@ def collect_qoi_dataset(
     for i, blocks in enumerate(train_blocks):
         if reference is not None and blocks:
             expected = [reference, *blocks]
-            _validate_qoi_schema(expected, context=f"training QoI blocks for sample {i}")
+            _validate_qoi_schema(
+                expected,
+                context=f"training QoI blocks for sample {i}"
+            )
         outputs.append(stack_qoi_blocks(blocks))
 
     metadata = dict(qoi_metadata or {})

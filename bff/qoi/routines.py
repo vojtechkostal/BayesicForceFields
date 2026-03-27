@@ -13,7 +13,7 @@ from .hbonds import compute_all_hbonds
 from .rdf import compute_all_rdfs
 
 
-FIXED_SIGNATURE = ("universe", "mol_resname", "start", "stop", "step")
+FIXED_SIGNATURE = ("universe", "start", "stop", "step")
 FIXED_SIGNATURE_SET = set(FIXED_SIGNATURE)
 
 
@@ -392,7 +392,6 @@ def run_analysis_routines(
     routines: tuple[RuntimeRoutine, ...],
     *,
     universe: Any,
-    mol_resname: str,
     start: int,
     stop: int | None,
     step: int,
@@ -403,7 +402,6 @@ def run_analysis_routines(
         qoi_result = _call_with_supported_kwargs(
             fn,
             universe=universe,
-            mol_resname=mol_resname,
             start=start,
             stop=stop,
             step=step,
