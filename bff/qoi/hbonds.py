@@ -199,9 +199,9 @@ def compute_all_hbonds(
     step: int = 1,
 ) -> QoI:
     """Compute all solute-water hydrogen-bond QoIs for one trajectory."""
-
     selection_1 = f"resname {mol_resname}"
     selection_2 = f"resname {water_resname}"
+
     hb_elements = set(hb_elements)
     hb_elements_str = " ".join(sorted(hb_elements))
 
@@ -239,6 +239,8 @@ def compute_all_hbonds(
     labels = tuple(sorted(possible_labels))
     values = np.asarray([hbonds.get(label, 0.0) for label in labels], dtype=float)
     metadata = {
+        "mol_resname": mol_resname,
+        "water_resname": water_resname,
         "distance_cutoff": float(distance_cutoff),
         "angle_cutoff": float(angle_cutoff),
     }

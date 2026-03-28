@@ -142,7 +142,13 @@ def _validate_signature(fn: Callable[..., Any], name: str) -> None:
     Raises
     ------
     ValueError
-        If the routine is missing one or more required arguments.
+        If the routine is missing one or more required fixed arguments.
+
+    Notes
+    -----
+    The fixed signature is the minimal contract required for all analysis
+    routines, including custom ones. Builtins may accept additional workflow
+    context arguments, but those are not required for user-defined routines.
     """
     accepts_var_kwargs, supported, _ = _signature_info(fn)
     missing = [
@@ -200,7 +206,10 @@ def _validate_kwargs(
     return dict(values)
 
 
-def _call_with_supported_kwargs(fn: Callable[..., Any], **kwargs: Any) -> Any:
+def _call_with_supported_kwargs(
+    fn: Callable[..., Any],
+    **kwargs: Any,
+) -> Any:
     """Call a function with only the keyword arguments it accepts.
 
     Parameters

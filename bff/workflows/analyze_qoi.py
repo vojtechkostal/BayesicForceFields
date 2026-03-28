@@ -91,7 +91,6 @@ def main(fn_config: str) -> None:
 
     qoi_ref_sets = analyze_trajectory_sets(
         [reference_set],
-        mol_resname=trainset.specs.mol_resname,
         routines_by_system=routines_by_system,
         start=config.reference_start,
         stop=config.reference_stop,
@@ -106,7 +105,6 @@ def main(fn_config: str) -> None:
 
     qoi_train = analyze_trajectory_sets(
         trainset.samples,
-        mol_resname=trainset.specs.mol_resname,
         routines_by_system=routines_by_system,
         start=config.training_start,
         stop=config.training_stop,

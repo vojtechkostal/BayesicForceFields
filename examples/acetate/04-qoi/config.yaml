@@ -9,10 +9,12 @@ systems:
     routines:
       - routine: builtin:rdf
         kwargs:
+          mol_resname: ACE
           r_range: [1, 7]
           smooth: false
       - routine: builtin:hb
-        kwargs: {}
+        kwargs:
+          mol_resname: ACE
   - reference:
       coordinates: ../01-prepare/ace/reference/md/window-001/system.gro
       topology: ../01-prepare/ace/reference/md/window-001/system.top
@@ -20,10 +22,12 @@ systems:
     routines:
       - routine: builtin:rdf
         kwargs:
+          mol_resname: ACE
           r_range: [1, 7]
           smooth: false
       - routine: builtin:hb
-        kwargs: {}
+        kwargs:
+          mol_resname: ACE
       - routine: ./custom_routine.py:distance_distribution
         kwargs:
           atom_pair: [C2, CAL]
@@ -35,10 +39,12 @@ systems:
     routines:
       - routine: builtin:rdf
         kwargs:
+          mol_resname: ACE
           r_range: [1, 7]
           smooth: false
       - routine: builtin:hb
-        kwargs: {}
+        kwargs:
+          mol_resname: ACE
       - routine: ./custom_routine.py:distance_distribution
         kwargs:
           atom_pair: [C2, CAL]

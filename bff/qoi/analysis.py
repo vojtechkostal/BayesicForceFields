@@ -70,7 +70,6 @@ def _prepare_universe(
 def analyze_trajectory_set(
     trajectory_set: TrajectorySet,
     *,
-    mol_resname: str,
     routines_by_system: Sequence[tuple[RuntimeRoutine, ...]],
     start: int = 0,
     stop: int | None = None,
@@ -107,7 +106,6 @@ def analyze_trajectory_set(
             result = run_analysis_routines(
                 routines,
                 universe=universe,
-                mol_resname=mol_resname,
                 start=routine_start,
                 stop=routine_stop,
                 step=routine_step,
@@ -158,7 +156,6 @@ def _iter_analyzed_sets(
 def analyze_trajectory_sets(
     trajectory_sets: Sequence[TrajectorySet],
     *,
-    mol_resname: str,
     routines_by_system: Sequence[tuple[RuntimeRoutine, ...]],
     start: int = 0,
     stop: int | None = None,
@@ -179,7 +176,6 @@ def analyze_trajectory_sets(
 
     analyze_one = partial(
         analyze_trajectory_set,
-        mol_resname=mol_resname,
         routines_by_system=routines_by_system,
         start=start,
         stop=stop,

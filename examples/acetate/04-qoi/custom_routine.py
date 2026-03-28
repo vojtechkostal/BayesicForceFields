@@ -11,7 +11,6 @@ from bff.tools import get_unitcell
 
 def distance_distribution(
     universe: Any,
-    mol_resname: str,
     atom_pair: Sequence[str] = ("C2", "CAL"),
     start: int = 0,
     stop: int | None = None,
@@ -25,9 +24,6 @@ def distance_distribution(
     ----------
     universe
         MDAnalysis universe with the trajectory already loaded.
-    mol_resname
-        Residue name of the solute molecule. Present to match the fixed
-        routine signature; this routine does not need it directly.
     atom_pair
         Atom-name pair such as ``["C2", "CAL"]``.
     start, stop, step
@@ -42,7 +38,6 @@ def distance_distribution(
     QoI
         Flattened distance distribution for the requested pair.
     """
-    _ = mol_resname
     if len(atom_pair) != 2:
         raise ValueError("'atom_pair' must contain exactly two atom names.")
 

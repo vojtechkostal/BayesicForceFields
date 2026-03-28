@@ -91,6 +91,7 @@ def compute_all_rdfs(
         ]
     )
     metadata = {
+        "mol_resname": mol_resname,
         "solvent_sel": solvent_sel,
         "r_range": tuple(r_range),
         "n_bins": int(n_bins),
