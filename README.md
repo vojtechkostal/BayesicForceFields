@@ -1,115 +1,142 @@
-# Bayesic Force Fields (BFF)
+# Bayesic Force Fields
 
-## Description
+Bayesic Force Fields (BFF) is a workflow-oriented Python package for learning
+fixed-charge molecular force-field parameters from molecular dynamics
+observables. It combines system preparation, sampled MD campaigns, QoI
+analysis, surrogate training, posterior inference, and validation in one
+toolchain.
 
-Bayesic Force Fields (BFF) is a Python package for optimizing
-fixed-charge force-field parameters for molecular dynamics,
-specifically `charges` and Lennard-Jones parameters `sigma` and
-`epsilon`. The optimization uses structural data derived from reference
-trajectories, typically obtained through *ab initio* molecular dynamics
-simulations, in order to account for `electronic polarization effects`.
+The public CLI is centered around six workflows:
 
-The optimization uses `Bayesian inference` driven by Markov Chain Monte
-Carlo (MCMC) sampling with a `Local Gaussian process (LGP)` surrogate
-for the usually costly MD simulations. The LGP hyperparameters are
-optimized and their uncertainty can be propagated to the posterior.
+- `bff prepare`
+- `bff simulate`
+- `bff qoi`
+- `bff train`
+- `bff learn`
+- `bff validate`
 
-## Dependencies (non-standard)
+Documentation lives under [docs/](docs/) and is intended to be published with
+MkDocs on GitHub Pages.
 
-* [SciPy](https://scipy.org/)
-* [MDAnalysis](https://www.mdanalysis.org) (trajectory analysis)
-* [PyTorch](https://pytorch.org/get-started/locally/)
-  (surrogate modeling with optional GPU/CUDA acceleration)
-* [PyYAML](https://pypi.org/project/PyYAML/) (handling .yaml files)
-* [Matplotlib](https://matplotlib.org/) (Plotting)
-* [gmxtop](https://github.com/vojtechkostal/gmxtop) (Topology handling)
+Published documentation:
+[vojtechkostal.github.io/BayesicForceFields](https://vojtechkostal.github.io/BayesicForceFields/)
 
 ## Installation
-1. Clone this repository and create a fresh environment with `mamba`
-   or `conda`:
-```sh
-cd BayesicForceFields
-mamba env create -f ./environment.yaml
-mamba activate bff
-```
-2. Install prerequisites:
-   - `PyTorch`: install the CPU or GPU build following
-     <https://pytorch.org/get-started/locally/>.
-   - `GROMACS`: make sure it is available from the command line via
-     `gmx` (or a compatible alternative configured in BFF).
-   - `gmxtop`: follow the installation instructions at
-     <https://github.com/vojtechkostal/gmxtop>.
 
-3. Install BFF as:
-```sh
-pip install -e .
+Create the development environment from the repository root:
+
+```bash
+conda env create -f environment.yaml
+conda activate bff
+pip install -e . --no-deps
 ```
 
-## Usage
-Here, we'll go through the acetate example from `examples/acetate`.
-Each stage includes a working example config, but production runs will
-typically require edits for local paths, compute resources, and target
-simulation lengths.
+If you prefer `pip`, the package also exposes optional extras:
 
-Partial charges on acetate are optimized. The parameterization uses data
-from three systems: 1. aqueous acetate, 2. acetate with calcium kept at
-contact distance from the carboxyl group, and 3. acetate with calcium
-kept in a solvent-shared position relative to the carboxyl group.
+```bash
+pip install -e ".[dev,docs,notebook]"
+```
 
-1. Prepare the systems
-```sh
-cd ./examples/acetate/01-prepare
+External tools are still required for full workflows:
+
+- `gmx` for `prepare`, `simulate`, and `validate`
+- CP2K for staged reference calculations
+- PLUMED only for PLUMED-biased systems
+- PyTorch installed separately for `train`, `learn`, and posterior notebooks
+
+PyTorch is not installed by default because the appropriate CPU or CUDA build
+depends on the target machine. Install the matching PyTorch build first, then
+install BFF.
+
+## Quick Start
+
+The acetate example in [examples/acetate/](examples/acetate/) shows the
+intended stage order:
+
+```bash
+cd examples/acetate/01-prepare/colvars
 bff prepare config.yaml
-```
-This generates the files and directories needed for both reference
-(CP2K) and training (GROMACS) trajectories. The step also performs the
-initial equilibration needed to stage the systems. Reference trajectories
-may later be replaced by any user-provided set of simulations with the
-same system layout.
 
-2. Run the reference calculations using CP2K.
-This step can take a long time on a cluster with the default DFT setup.
-For the example, reference trajectories are already provided in
-compressed `.xtc` format after discarding the first 5 ps of
-equilibration and saving every 50 fs.
-
-3. Run training simulations.
-For each sampled force-field parameter vector, a triplet of trajectories
-is calculated. This step can be run either locally via
-`config-local.yaml` or on a cluster via `config-slurm.yaml`.
-```sh
-cd ../03-training-trjs
+cd ../../03-training-trjs
 bff simulate config-local.yaml
-```
 
-4. Analyze quantities of interest.
-Analyze the QoIs for both the training and reference datasets.
-```sh
 cd ../04-qoi
-bff analyze config.yaml
-``` 
+bff qoi config.yaml
 
-5. Learn the posterior distribution.
-Infer the posterior distribution of force-field parameters that best
-reproduces the reference data. This step can be executed from the
-command line, which is convenient for batch runs, or from the
-`05-learning/learn.ipynb` notebook.
-```sh
-cd ../05-learning
+cd ../05-train-lgp
+bff train config.yaml
+
+cd ../06-learn
 bff learn config.yaml
 ```
-The notebook can export posterior draws to `posterior-samples.yaml`,
-which can then be passed directly to the validation workflow.
 
-6. Validate posterior samples.
-Rerun selected force-field samples from the learned posterior using
-`bff validate` and a validation config such as
-`03-training-trjs/config-validate-local.yaml`.
-```sh
-cd ../03-training-trjs
-bff validate config-validate-local.yaml
+Validation is configured separately in stage `08`:
+
+```bash
+cd ../08-validate
+bff validate config.yaml
 ```
 
-7. Visualization
-Use the notebook in `06-visualize` to inspect the posterior samples and
-produce the standard plots from step 5.
+Two notebooks are included in the example:
+
+- [06-learn/interactive.ipynb](examples/acetate/06-learn/interactive.ipynb)
+  shows interactive surrogate training, posterior sampling, and posterior
+  sample export.
+- [07-visualize/visualize.ipynb](examples/acetate/07-visualize/visualize.ipynb)
+  focuses on plotting and inspection only.
+
+## Repository Layout
+
+- [bff/](bff/) contains the package code.
+- [examples/acetate/](examples/acetate/) contains the worked example.
+- [data/](data/) contains repository example inputs.
+- [docs/](docs/) contains the documentation source.
+
+## Documentation Locally
+
+Preview the docs locally with MkDocs:
+
+```bash
+mkdocs serve
+```
+
+Build the static site with:
+
+```bash
+mkdocs build --strict
+```
+
+Shortcuts are also available:
+
+```bash
+make docs
+make docs-build
+```
+
+## Shell Completion
+
+When `bff` runs inside an activated conda environment, it writes a small
+completion hook for bash and zsh into that environment. After the first `bff`
+run, reactivate the environment once:
+
+```bash
+conda deactivate
+conda activate bff
+```
+
+After that, `bff <TAB>` should offer the public workflow commands.
+
+## Development and Release
+
+Packaging, docs, and deployment configuration live in:
+
+- [pyproject.toml](pyproject.toml)
+- [environment.yaml](environment.yaml)
+- [.github/workflows/](.github/workflows/)
+
+The release and publication strategy is documented in
+[docs/development.md](docs/development.md).
+
+## License
+
+BFF is distributed under the GNU GPL v3. See [LICENSE](LICENSE).

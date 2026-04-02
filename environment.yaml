@@ -3,9 +3,12 @@ channels:
   - conda-forge
 dependencies:
   - python>=3.9
+  - pip
   - ipython
   - ipykernel
   - ipywidgets
+  - jupyterlab
+  - notebook
   - numpy
   - scipy
   - matplotlib
@@ -13,3 +16,10 @@ dependencies:
   - mdanalysis
   - typer
   - gmxtop
+  - pytest
+  - ruff
+  - mkdocs
+  - mkdocs-material
+  - pymdown-extensions
+  - build
+  - twine

@@ -1,9 +1,15 @@
 tests/
 __pycache__/
 .vscode/
+.codex
 .ipynb_checkpoints
+.pytest_cache/
+.ruff_cache/
 *.swp
 *.egg-info/
+build/
+dist/
+site/
 
 # Common runtime artifacts
 *.log

@@ -1,0 +1,44 @@
+site_name: Bayesic Force Fields
+site_description: Bayesian optimization workflows for fixed-charge molecular force fields
+site_url: https://vojtechkostal.github.io/BayesicForceFields/
+repo_url: https://github.com/vojtechkostal/BayesicForceFields
+repo_name: vojtechkostal/BayesicForceFields
+edit_uri: edit/main/docs/
+docs_dir: docs
+site_dir: site
+strict: true
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - content.code.copy
+    - content.action.edit
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - Installation: installation.md
+  - CLI: cli.md
+  - Configuration:
+      - Prepare: configuration/prepare.md
+      - Simulate: configuration/simulate.md
+      - QoI: configuration/qoi.md
+      - Train: configuration/train.md
+      - Learn: configuration/learn.md
+      - Validate: configuration/validate.md
+  - Example:
+      - Acetate: examples/acetate.md
+  - Development: development.md
