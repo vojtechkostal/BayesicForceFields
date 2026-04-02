@@ -110,12 +110,27 @@ def save_pt(data: object, fn: PathLike) -> None:
 
 
 def load_pt(fn: PathLike) -> object:
-    """Load a JSON-serialized object from a `.pt` file."""
+    """Load an object from a `.pt` file.
+
+    The preferred format is plain JSON. Legacy Torch `.pt` archives are still
+    accepted when PyTorch is available.
+    """
     path = Path(fn)
     if path.suffix != ".pt":
         raise ValueError(f"Expected a '.pt' file, got {path}.")
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        try:
+            import torch
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                f"Legacy binary .pt file detected at {path}, but PyTorch is not "
+                "installed. Install PyTorch or regenerate the file with the "
+                "current BFF version."
+            ) from exc
+        return torch.load(path, map_location="cpu", weights_only=False)
 
 
 def compress_results(source_dir: PathLike) -> None:

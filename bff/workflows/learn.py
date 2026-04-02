@@ -2,7 +2,7 @@
 
 import sys
 from pathlib import Path
-from typing import Union
+from typing import Mapping, Union
 
 from ..domain.specs import ChargeConstraint
 from ..io.logs import Logger
@@ -12,17 +12,7 @@ from .configs import LearnConfig
 PathLike = Union[str, Path]
 
 
-def _load_models(
-    config: LearnConfig,
-    lgp_committee_type,
-) -> dict[str, object]:
-    return {
-        name: lgp_committee_type.load(path)
-        for name, path in config.models.items()
-    }
-
-
-def main(fn_config: PathLike) -> None:
+def _import_learning_stack():
     try:
         from ..bayes.gaussian_process import LGPCommittee
         from ..bayes.learning import InferenceProblem
@@ -33,12 +23,37 @@ def main(fn_config: PathLike) -> None:
                 "build of PyTorch first."
             ) from exc
         raise
+    return LGPCommittee, InferenceProblem
 
+
+def load_models(model_paths: Mapping[str, PathLike]) -> dict[str, object]:
+    """Load trained surrogate models from QoI-name to file-path mapping."""
+    lgp_committee_type, _ = _import_learning_stack()
+    return {
+        name: lgp_committee_type.load(path)
+        for name, path in model_paths.items()
+    }
+
+
+def build_problem(
+    *,
+    specs: PathLike,
+    model_paths: Mapping[str, PathLike],
+):
+    """Build the inference problem from specs and trained model files."""
+    _, inference_problem_type = _import_learning_stack()
+    constraint = ChargeConstraint(specs)
+    models = load_models(model_paths)
+    return inference_problem_type.from_models(models, constraint=constraint)
+
+
+def main(fn_config: PathLike) -> None:
     config = LearnConfig.load(fn_config)
     logger = Logger("BFF", str(config.log), mode="w")
-    constraint = ChargeConstraint(config.specs)
-    models = _load_models(config, LGPCommittee)
-    problem = InferenceProblem.from_models(models, constraint=constraint)
+    problem = build_problem(
+        specs=config.specs,
+        model_paths=config.models,
+    )
     problem.infer(
         priors_disttype=config.mcmc.priors_disttype,
         total_steps=config.mcmc.total_steps,
