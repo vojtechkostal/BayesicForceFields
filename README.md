@@ -1,5 +1,8 @@
 # Bayesic Force Fields
 
+[![Docs](https://img.shields.io/badge/docs-latest-brightgreen)](https://vojtechkostal.github.io/BayesicForceFields/)
+[![Paper](https://img.shields.io/badge/paper-JCTC%202026-blue)](https://pubs.acs.org/doi/10.1021/acs.jctc.5c02051)
+
 Bayesic Force Fields (BFF) is a workflow-oriented Python package for learning
 fixed-charge molecular force-field parameters from molecular dynamics
 observables. It combines system preparation, sampled MD campaigns, QoI
