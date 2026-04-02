@@ -1,66 +1,58 @@
-fn_log: ./out.log
-base_name: ./qoi
-write_raw_qoi: true
-systems:
-  - reference:
-      coordinates: ../01-prepare/ace/reference/md/window-000/system.gro
-      topology: ../01-prepare/ace/reference/md/window-000/system.top
-      trajectory: ../02-reference-trjs/pos-000.xtc
-    routines:
-      - routine: builtin:rdf
-        kwargs:
-          mol_resname: ACE
-          r_range: [1, 7]
-          smooth: false
-      - routine: builtin:hb
-        kwargs:
-          mol_resname: ACE
-  - reference:
-      coordinates: ../01-prepare/ace/reference/md/window-001/system.gro
-      topology: ../01-prepare/ace/reference/md/window-001/system.top
-      trajectory: ../02-reference-trjs/pos-001.xtc
-    routines:
-      - routine: builtin:rdf
-        kwargs:
-          mol_resname: ACE
-          r_range: [1, 7]
-          smooth: false
-      - routine: builtin:hb
-        kwargs:
-          mol_resname: ACE
-      - routine: ./custom_routine.py:distance_distribution
-        kwargs:
-          atom_pair: [C2, CAL]
-          r_range: [2.0, 5.0]
-  - reference:
-      coordinates: ../01-prepare/ace/reference/md/window-002/system.gro
-      topology: ../01-prepare/ace/reference/md/window-002/system.top
-      trajectory: ../02-reference-trjs/pos-002.xtc
-    routines:
-      - routine: builtin:rdf
-        kwargs:
-          mol_resname: ACE
-          r_range: [1, 7]
-          smooth: false
-      - routine: builtin:hb
-        kwargs:
-          mol_resname: ACE
-      - routine: ./custom_routine.py:distance_distribution
-        kwargs:
-          atom_pair: [C2, CAL]
-          r_range: [4.0, 6.0]
-reference:
-  start: 1
-  stop: -1
-  step: 1
-analysis:
-  in_memory: true
-  gc_collect: false
-  chunksize: auto
-  maxtasksperchild: 100
-training:
-  trainset_dir: ../03-training-trjs/c36-ecc80-00
+trainset:
+  dir: ../03-training-trjs/trainset
   start: 1
   stop: -1
   step: 1
   progress_stride: 10
+
+refset:
+  start: 1
+  stop: -1
+  step: 1
+  systems:
+    - coordinates: ../01-prepare/colvars/ace-colvars/reference/md/window-000/system.gro
+      topology: ../01-prepare/colvars/ace-colvars/reference/md/window-000/system.top
+      trajectory: ../02-reference-trjs/pos-000.xtc
+      routines:
+        - routine: rdf
+          mol_resname: ACE
+          r_range: [1, 7]
+          smooth: false
+        - routine: hb
+          mol_resname: ACE
+    - coordinates: ../01-prepare/colvars/ace-colvars/reference/md/window-001/system.gro
+      topology: ../01-prepare/colvars/ace-colvars/reference/md/window-001/system.top
+      trajectory: ../02-reference-trjs/pos-001.xtc
+      routines:
+        - routine: rdf
+          mol_resname: ACE
+          r_range: [1, 7]
+          smooth: false
+        - routine: hb
+          mol_resname: ACE
+        - routine: ./restraint.py:distance_distribution
+          atom_pair: [C2, CAL]
+          r_range: [2.0, 5.0]
+    - coordinates: ../01-prepare/colvars/ace-colvars/reference/md/window-002/system.gro
+      topology: ../01-prepare/colvars/ace-colvars/reference/md/window-002/system.top
+      trajectory: ../02-reference-trjs/pos-002.xtc
+      routines:
+        - routine: rdf
+          mol_resname: ACE
+          r_range: [1, 7]
+          smooth: false
+        - routine: hb
+          mol_resname: ACE
+        - routine: ./restraint.py:distance_distribution
+          atom_pair: [C2, CAL]
+          r_range: [4.0, 6.0]
+
+run:
+  in_memory: true
+  gc_collect: false
+  maxtasksperchild: 100
+
+output:
+  path: ./qoi
+  log: ./out.log
+  write_raw: true

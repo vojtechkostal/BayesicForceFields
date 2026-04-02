@@ -11,6 +11,7 @@ from bff.tools import get_unitcell
 
 def distance_distribution(
     universe: Any,
+    *,
     atom_pair: Sequence[str] = ("C2", "CAL"),
     start: int = 0,
     stop: int | None = None,
@@ -80,7 +81,7 @@ def distance_distribution(
         values=hist,
         labels=(f"{atom_1} {atom_2}",),
         values_per_label=int(n_bins),
-        settings_kwargs={
+        settings={
             "atom_pair": [atom_1, atom_2],
             "n_bins": int(n_bins),
             "r_range": tuple(r_range),

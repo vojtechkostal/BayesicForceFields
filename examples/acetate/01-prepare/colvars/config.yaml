@@ -1,0 +1,51 @@
+project:
+  directory: ace-colvars
+
+gromacs:
+  command: gmx
+
+defaults:
+  nsteps:
+    npt: 0
+    prod: 100000
+
+reference:
+  n_single_point_snapshots: 1000
+
+systems:
+  - topology: ../plumed/topol.top
+    templates:
+      ACE: ../plumed/ace.gro
+    mdp:
+      em: ../../../../data/mdp/em.mdp
+      npt: ../../../../data/mdp/npt.mdp
+      prod: ../../../../data/mdp/nvt.mdp
+    charge: -1
+    multiplicity: 1
+    box: [15.7107, 15.7107, 15.7107, 90, 90, 90]
+
+  - topology: ../plumed/topol-ions.top
+    templates:
+      ACE: ../plumed/ace.gro
+    mdp:
+      em: ../../../../data/mdp/em.mdp
+      npt: ../../../../data/mdp/npt.mdp
+      prod: ../../../../data/mdp/nvt.mdp
+    charge: 1
+    multiplicity: 1
+    box: [15.7480, 15.7480, 15.7480, 90, 90, 90]
+    bias:
+      colvars_file: ./colvars-001.dat
+
+  - topology: ../plumed/topol-ions.top
+    templates:
+      ACE: ../plumed/ace.gro
+    mdp:
+      em: ../../../../data/mdp/em.mdp
+      npt: ../../../../data/mdp/npt.mdp
+      prod: ../../../../data/mdp/nvt.mdp
+    charge: 1
+    multiplicity: 1
+    box: [15.7480, 15.7480, 15.7480, 90, 90, 90]
+    bias:
+      colvars_file: ./colvars-002.dat

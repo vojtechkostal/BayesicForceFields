@@ -1,0 +1,17 @@
+log: out.log
+specs: ../03-training-trjs/trainset/specs.yaml
+models:
+  rdf: ../05-train-lgp/models/rdf.lgp
+  hb: ../05-train-lgp/models/hb.lgp
+  dist: ../05-train-lgp/models/dist.lgp
+mcmc:
+  priors_disttype: normal
+  total_steps: 10000
+  warmup: 2000
+  progress_stride: 1000
+  checkpoint: mcmc-checkpoint.pt
+  posterior: posterior.pt
+  priors: priors.pt
+  restart: false
+  device: cuda
+  rhat_tol: 1.05

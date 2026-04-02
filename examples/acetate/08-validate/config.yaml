@@ -1,20 +1,13 @@
-mol_resname: ACE
-trainset_dir: ./trainset
+trainset_dir: ./validation-trainset
+parameters: ../06-learn/posterior-samples.yaml
+specs: ../03-training-trjs/trainset/specs.yaml
 systems:
   - assets: ../01-prepare/colvars/ace-colvars/training/window-000
-    n_steps: 20000
+    n_steps: 1000
   - assets: ../01-prepare/colvars/ace-colvars/training/window-001
-    n_steps: 20000
+    n_steps: 1000
   - assets: ../01-prepare/colvars/ace-colvars/training/window-002
-    n_steps: 20000
-bounds:
-  charge C2: [0.0, 1.0]
-  charge O1 O2: [-0.8, -0.3]
-  charge C1: [-1.0, 0.3]
-  charge H1 H2 H3: [-0.3, 0.3]
-implicit_atoms: [C2]
-total_charge: -0.80
-n_samples: 20
+    n_steps: 1000
 compress: false
 cleanup: true
 store: ["xtc"]

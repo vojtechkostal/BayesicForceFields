@@ -7,20 +7,30 @@ gromacs:
 defaults:
   nsteps:
     npt: 0
-    nvt: 100000
+    prod: 100000
 
 reference:
   n_single_point_snapshots: 1000
 
 systems:
   - topology: ./topol.top
-    coordinates: ./ace.gro
+    templates:
+      ACE: ./ace.gro
+    mdp:
+      em: ../../../../data/mdp/em.mdp
+      npt: ../../../../data/mdp/npt.mdp
+      prod: ../../../../data/mdp/nvt.mdp
     charge: -1
     multiplicity: 1
     box: [15.7107, 15.7107, 15.7107, 90, 90, 90]
 
   - topology: ./topol-ions.top
-    coordinates: ./ace.gro
+    templates:
+      ACE: ./ace.gro
+    mdp:
+      em: ../../../../data/mdp/em.mdp
+      npt: ../../../../data/mdp/npt.mdp
+      prod: ../../../../data/mdp/nvt.mdp
     charge: 1
     multiplicity: 1
     box: [15.7480, 15.7480, 15.7480, 90, 90, 90]
@@ -28,7 +38,12 @@ systems:
       plumed_file: ./plumed-001.dat
 
   - topology: ./topol-ions.top
-    coordinates: ./ace.gro
+    templates:
+      ACE: ./ace.gro
+    mdp:
+      em: ../../../../data/mdp/em.mdp
+      npt: ../../../../data/mdp/npt.mdp
+      prod: ../../../../data/mdp/nvt.mdp
     charge: 1
     multiplicity: 1
     box: [15.7480, 15.7480, 15.7480, 90, 90, 90]

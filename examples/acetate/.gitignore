@@ -1,8 +1,7 @@
-01-prepare/prepare/
-01-prepare/cp2k/
-01-prepare/train/
-01-prepare/gmx.log
-01-prepare/mdout.mdp
+01-prepare/colvars/ace-colvars/
+01-prepare/colvars/*.log
+01-prepare/plumed/ace/
+01-prepare/plumed/*.log
 
 02-reference-trjs/*.npz
 02-reference-trjs/*.lock
@@ -13,20 +12,17 @@
 04-qoi/*.npy
 04-qoi/qoi-*
 
-05-learning/*.h5
-05-learning/hyperparams*.yaml
-05-learning/hyperparams*.yml
-05-learning/priors*.yml
-05-learning/priors*.yaml
-05-learning/*.log
-05-learning/*.npy
+05-train-lgp/*.log
+05-train-lgp/models/
 
-05-learning-interactive/*.h5
-05-learning-interactive/*.yaml
-05-learning-interactive/*.yml
-05-learning-interactive/*.log
-05-learning-interactive/*.npy
+06-learn/*.log
+06-learn/*.pt
+06-learn/posterior-samples.yaml
+06-learn/*.png
 
-06-visualize/*.npy
-06-visualize/*.top
-06-visualize/*.yaml
+07-visualize/*.png
+
+08-validate/validation-trainset/
+
+**/__pycache__/
+*.pyc
