@@ -32,7 +32,7 @@ def _coerce_samples(
     samples: InferenceResults | ArrayLike,
 ) -> np.ndarray:
     if isinstance(samples, InferenceResults):
-        return np.asarray(samples.samples, dtype=float)
+        return np.asarray(samples.prepared_samples, dtype=float)
     if isinstance(samples, torch.Tensor):
         return samples.detach().cpu().numpy()
     return np.asarray(samples, dtype=float)
@@ -86,19 +86,6 @@ def _axis_labels(kind: str) -> tuple[str, str]:
     return kind.capitalize(), kind.capitalize()
 
 
-def _posterior_with_implicit_charge(
-    results: InferenceResults,
-    specs: Specs,
-) -> np.ndarray:
-    samples = np.asarray(results.samples, dtype=float)
-    n_explicit = specs.bounds.without(specs.implicit_param).n_params
-    explicit_charge = samples[:, :n_explicit] @ specs.constraint_matrix
-    implicit_charge = (
-        specs.constraint_charge - explicit_charge
-    ) / len(specs.implicit_atoms)
-    return np.insert(samples, specs.implicit_param_index, implicit_charge, axis=1)
-
-
 def plot_marginals(
     results: InferenceResults,
     specs: Specs | PathLike,
@@ -109,7 +96,7 @@ def plot_marginals(
     fn_out: Optional[PathLike] = None,
 ) -> None:
     specs = _coerce_specs(specs)
-    posterior = _posterior_with_implicit_charge(results, specs)
+    posterior = specs.with_implicit_charge(results.prepared_samples)
     param_names = specs.bounds.names.tolist()
     tick_labels = _parameter_labels(param_names, parameter_labels)
 

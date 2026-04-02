@@ -1,9 +1,10 @@
 import json
 import tarfile
-import yaml
-import numpy as np
 from pathlib import Path
 from typing import Union
+
+import numpy as np
+import yaml
 
 PathLike = Union[str, Path]
 
@@ -84,6 +85,37 @@ def load_json(fn: PathLike) -> dict:
     with open(fn, "r") as f:
         file = json.load(f)
     return file
+
+
+def _to_json_compatible(data: object) -> object:
+    """Convert nested numpy objects into plain JSON-compatible values."""
+    if isinstance(data, dict):
+        return {str(key): _to_json_compatible(value) for key, value in data.items()}
+    if isinstance(data, (list, tuple)):
+        return [_to_json_compatible(value) for value in data]
+    if isinstance(data, np.ndarray):
+        return data.tolist()
+    if isinstance(data, (np.generic, np.number)):
+        return data.item()
+    return data
+
+
+def save_pt(data: object, fn: PathLike) -> None:
+    """Save a JSON-serializable object to a `.pt` file."""
+    path = Path(fn)
+    if path.suffix != ".pt":
+        raise ValueError(f"Expected a '.pt' file, got {path}.")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(_to_json_compatible(data), f)
+
+
+def load_pt(fn: PathLike) -> object:
+    """Load a JSON-serialized object from a `.pt` file."""
+    path = Path(fn)
+    if path.suffix != ".pt":
+        raise ValueError(f"Expected a '.pt' file, got {path}.")
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
 def compress_results(source_dir: PathLike) -> None:

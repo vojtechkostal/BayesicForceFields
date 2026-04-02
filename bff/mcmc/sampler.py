@@ -177,7 +177,7 @@ class Sampler:
         proposal: Proposal,
         args: Tuple = (),
         rng: Optional[torch.Generator] = None,
-        device: Optional[torch.device] = 'cuda:0',
+        device: Optional[torch.device] = 'cuda',
         dtype: Optional[torch.dtype] = torch.float32,
     ) -> None:
         self.log_prob = log_prob

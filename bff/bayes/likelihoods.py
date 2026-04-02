@@ -132,7 +132,7 @@ def gaussian_log_likelihood(
         log_like_valid = torch.zeros(mask.sum(), device=device)
         for (qoi, model), sigma in zip(problem.models.items(), sigmas.T):
             y_trial = model.predict(params)
-            N = model.observations
+            N = model.n_observations
             diff = problem.observations[qoi] - y_trial
             ssq = torch.sum(diff**2, dim=1)
             log_like_valid += -0.5 * ssq / sigma**2 - N * torch.log(sigma)

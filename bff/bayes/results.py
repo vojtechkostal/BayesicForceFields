@@ -7,6 +7,7 @@ import torch
 from scipy.stats import gaussian_kde
 
 from .priors import Priors
+from ..domain.specs import Specs
 from ..io.utils import save_yaml
 from ..mcmc.convergence import integrated_autocorr_time
 
@@ -18,37 +19,46 @@ PathLike = Union[str, Path]
 class InferenceResults:
     posterior: np.ndarray
     priors: Optional[Priors] = None
-    parameter_names: Optional[List[str]] = None
+    sample_labels: Optional[List[str]] = None
     sample_transform: Optional[Callable[[np.ndarray], np.ndarray]] = None
+    specs: Optional[Specs] = None
+    include_implicit_charge: bool = False
 
-    _posterior_samples: Optional[np.ndarray] = field(
+    _prepared_samples: Optional[np.ndarray] = field(
         default=None,
         init=False,
         repr=False,
     )
     _tau: Optional[np.ndarray] = field(default=None, init=False, repr=False)
+    _prepared_labels: Optional[list[str]] = field(default=None, init=False, repr=False)
 
     @classmethod
     def load(
         cls,
         posterior: PathLike | np.ndarray | torch.Tensor,
         priors: Optional[Union[Priors, PathLike, list]] = None,
-        parameter_names: Optional[List[str]] = None,
+        sample_labels: Optional[List[str]] = None,
         sample_transform: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+        specs: Optional[Specs | PathLike] = None,
+        include_implicit_charge: bool = False,
     ) -> "InferenceResults":
         return cls(
             posterior=posterior,
             priors=priors,
-            parameter_names=parameter_names,
+            sample_labels=sample_labels,
             sample_transform=sample_transform,
+            specs=specs,
+            include_implicit_charge=include_implicit_charge,
         )
 
     def __post_init__(self) -> None:
         self.posterior = self._coerce_posterior(self.posterior)
         if self.priors is not None:
             self.priors = self._coerce_priors(self.priors)
-        if self.parameter_names is None and self.priors is not None:
-            self.parameter_names = self._default_labels()
+        if self.specs is not None and not isinstance(self.specs, Specs):
+            self.specs = Specs(self.specs)
+        if self.sample_labels is None and self.priors is not None:
+            self.sample_labels = self._default_sample_labels()
         if self.sample_transform is None and self._nuisance_indices:
             self.sample_transform = self._default_transform
 
@@ -61,7 +71,7 @@ class InferenceResults:
             if name.startswith("log_sigma_")
         ]
 
-    def _default_labels(self) -> list[str]:
+    def _default_sample_labels(self) -> list[str]:
         if self.priors is None:
             return [f"theta_{i}" for i in range(self.n_dim)]
         labels = []
@@ -141,26 +151,53 @@ class InferenceResults:
         return self._tau
 
     @property
-    def samples(self) -> np.ndarray:
-        if self._posterior_samples is None:
+    def prepared_samples(self) -> np.ndarray:
+        if self._prepared_samples is None:
             raise ValueError(
                 "No prepared samples available. Call prepare_samples() first."
             )
-        return self._posterior_samples
+        return self._prepared_samples
 
     @property
-    def is_prepared(self) -> bool:
-        return self._posterior_samples is not None
+    def has_prepared_samples(self) -> bool:
+        return self._prepared_samples is not None
 
     @property
     def labels(self) -> List[str]:
-        if self.parameter_names is not None:
-            if len(self.parameter_names) != self.n_dim:
+        if self._prepared_samples is not None and self._prepared_labels is not None:
+            return self._prepared_labels
+        if self.sample_labels is not None:
+            if len(self.sample_labels) != self.n_dim:
                 raise ValueError(
-                    "parameter_names length does not match the posterior dimension."
+                    "sample_labels length does not match the posterior dimension."
                 )
-            return self.parameter_names
+            return self.sample_labels
         return [f"theta_{i}" for i in range(self.n_dim)]
+
+    def _labels_with_implicit_charge(self) -> list[str]:
+        if self.specs is None:
+            raise ValueError(
+                "Implicit-charge expansion requires Specs to be attached to "
+                "InferenceResults."
+            )
+        raw_labels = (
+            list(self.sample_labels)
+            if self.sample_labels is not None
+            else [f"theta_{i}" for i in range(self.n_dim)]
+        )
+        n_explicit = self.specs.explicit_bounds.n_params
+        if len(raw_labels) < n_explicit:
+            raise ValueError(
+                "Posterior labels do not cover all explicit parameters required "
+                "by the specs."
+            )
+        insert_at = self.specs.implicit_param_index
+        implicit_param = self.specs.implicit_param
+        return (
+            raw_labels[:insert_at]
+            + [implicit_param]
+            + raw_labels[insert_at:]
+        )
 
     def prepare_samples(
         self,
@@ -184,20 +221,33 @@ class InferenceResults:
         transform_fn = sample_transform or self.sample_transform
         if transform_fn is not None:
             prepared = np.asarray(transform_fn(prepared), dtype=float)
-        self._posterior_samples = prepared
+        if self.include_implicit_charge:
+            if self.specs is None:
+                raise ValueError(
+                    "include_implicit_charge=True requires Specs to be provided."
+                )
+            prepared = self.specs.with_implicit_charge(prepared)
+            self._prepared_labels = self._labels_with_implicit_charge()
+        else:
+            self._prepared_labels = (
+                list(self.sample_labels)
+                if self.sample_labels is not None
+                else [f"theta_{i}" for i in range(prepared.shape[1])]
+            )
+        self._prepared_samples = prepared
 
         if strip_outliers:
-            # Remove samples outside the 99.9% quantiles to avoid skewing the plots.
+            # Remove samples outside the 99% central interval to avoid skewing plots.
             q_low = 0.01 / 2
             q_high = 1 - q_low
             confint = np.quantile(prepared, [q_low, q_high], axis=0)
             mask = np.all((prepared >= confint[0]) & (prepared <= confint[1]), axis=1)
-            self._posterior_samples = prepared[mask]
+            self._prepared_samples = prepared[mask]
 
     @property
     def map_estimates(self) -> dict[str, float]:
         modes: list[float] = []
-        for col in self.samples.T:
+        for col in self.prepared_samples.T:
             grid = np.linspace(col.min(), col.max(), 1000)
             density = gaussian_kde(col)
             modes.append(float(np.round(grid[np.argmax(density(grid))], 3)))
@@ -206,9 +256,36 @@ class InferenceResults:
     def quantiles(self, confidence: float = 0.95) -> np.ndarray:
         q_low = (1 - confidence) / 2
         q_high = 1 - q_low
-        return np.quantile(self.samples, [q_low, 0.5, q_high], axis=0)
+        return np.quantile(self.prepared_samples, [q_low, 0.5, q_high], axis=0)
 
-    def sample_posterior(
+    def _export_parameter_indices_and_labels(self) -> tuple[list[int], list[str]]:
+        if self.specs is not None:
+            explicit_names = list(self.specs.parameter_names(explicit_only=True))
+            label_to_index = {label: i for i, label in enumerate(self.labels)}
+            missing = [name for name in explicit_names if name not in label_to_index]
+            if missing:
+                raise ValueError(
+                    "Prepared samples do not contain all explicit parameter "
+                    "labels required by the specs: "
+                    + ", ".join(repr(name) for name in missing)
+                )
+            return [label_to_index[name] for name in explicit_names], explicit_names
+
+        if self.priors is not None:
+            indices = [
+                i for i, name in enumerate(self.priors.names)
+                if not name.startswith("log_sigma_")
+            ]
+            labels = [self.labels[i] for i in indices]
+            return indices, labels
+
+        return list(range(self.prepared_samples.shape[1])), list(self.labels)
+
+    def _parameter_draw_source(self) -> tuple[np.ndarray, list[str]]:
+        indices, labels = self._export_parameter_indices_and_labels()
+        return np.asarray(self.prepared_samples[:, indices], dtype=float), labels
+
+    def sample_parameters(
         self,
         n_samples: int = 10,
         distribution: str = "normal",
@@ -216,7 +293,7 @@ class InferenceResults:
         fn_out: Optional[str] = None,
         overwrite: bool = False,
     ) -> np.ndarray:
-        param_samples = self.samples
+        param_samples, export_labels = self._parameter_draw_source()
         q_low = (1 - confidence) / 2
         q_high = 1 - q_low
         confint = np.quantile(param_samples, [q_low, q_high], axis=0)
@@ -238,29 +315,14 @@ class InferenceResults:
             fn_out = Path(fn_out).resolve()
             if fn_out.exists() and not overwrite:
                 raise FileExistsError(f"File '{fn_out}' already exists.")
-            if fn_out.name.endswith(".npy"):
-                np.save(fn_out, draws)
-            elif fn_out.name.endswith(".yaml"):
-                save_yaml(
-                    {
-                        "schema_version": 1,
-                        "kind": "bff.parameter_samples",
-                        "parameter_names": list(self.labels),
-                        "n_samples": int(draws.shape[0]),
-                        "samples": [
-                            {
-                                "sample_id": f"{i:03d}",
-                                "params": {
-                                    label: float(value)
-                                    for label, value in zip(self.labels, row)
-                                },
-                            }
-                            for i, row in enumerate(draws)
-                        ],
-                    },
-                    fn_out,
-                )
-            else:
-                raise ValueError("fn_out must end with .npy or .yaml")
+            if fn_out.suffix != ".yaml":
+                raise ValueError("fn_out must end with .yaml")
+            save_yaml(
+                {
+                    label: draws[:, i].tolist()
+                    for i, label in enumerate(export_labels)
+                },
+                fn_out,
+            )
 
-        return draws
+        return np.asarray(draws, dtype=float)

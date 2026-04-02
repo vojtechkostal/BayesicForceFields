@@ -2,7 +2,8 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 import numpy as np
-import torch
+
+from ..io.utils import load_pt, save_pt
 
 
 @dataclass(slots=True)
@@ -13,7 +14,7 @@ class QoI:
     values: np.ndarray
     labels: tuple[str, ...] | None = None
     values_per_label: int = 1
-    settings_kwargs: dict[str, Any] = field(default_factory=dict)
+    settings: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -31,7 +32,7 @@ class QoI:
         self.values = values
         self.labels = labels
         self.values_per_label = values_per_label
-        self.settings_kwargs = dict(self.settings_kwargs)
+        self.settings = dict(self.settings)
         self.metadata = dict(self.metadata)
 
     @property
@@ -46,7 +47,7 @@ class QoI:
             "values": self.values.tolist(),
             "labels": None if self.labels is None else list(self.labels),
             "values_per_label": self.values_per_label,
-            "settings_kwargs": dict(self.settings_kwargs),
+            "settings": dict(self.settings),
             "metadata": dict(self.metadata),
         }
 
@@ -58,7 +59,7 @@ class QoI:
             values=np.asarray(data["values"], dtype=float),
             labels=None if data.get("labels") is None else tuple(data["labels"]),
             values_per_label=int(data.get("values_per_label", 1)),
-            settings_kwargs=dict(data.get("settings_kwargs", {})),
+            settings=dict(data.get("settings", {})),
             metadata=dict(data.get("metadata", {})),
         )
 
@@ -71,16 +72,20 @@ class QoIDataset:
     inputs: np.ndarray
     outputs: np.ndarray
     outputs_ref: np.ndarray
+    labels: tuple[str, ...] | None = None
+    values_per_label: int = 1
     nuisance: float | None = None
-    settings_kwargs: dict[str, Any] | None = None
+    settings: dict[str, Any] | None = None
     metadata: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         self.inputs = np.asarray(self.inputs, dtype=float)
         self.outputs = np.asarray(self.outputs, dtype=float)
         self.outputs_ref = np.asarray(self.outputs_ref, dtype=float).reshape(-1)
-        self.settings_kwargs = self._coerce_mapping(self.settings_kwargs)
+        self.settings = self._coerce_mapping(self.settings)
         self.metadata = self._coerce_mapping(self.metadata)
+        self.labels = None if self.labels is None else tuple(self.labels)
+        self.values_per_label = int(self.values_per_label)
 
         if self.inputs.shape[0] != self.outputs.shape[0]:
             raise ValueError(
@@ -93,6 +98,15 @@ class QoIDataset:
                 f"Output dimension ({self.outputs.shape[1]}) does not match "
                 f"reference dimension ({self.outputs_ref.shape[0]})."
             )
+        if self.values_per_label <= 0:
+            raise ValueError("'values_per_label' must be a positive integer.")
+        if (
+            self.labels is not None
+            and self.outputs_ref.size != len(self.labels) * self.values_per_label
+        ):
+            raise ValueError(
+                "Reference output size does not match labels * values_per_label."
+            )
 
     @staticmethod
     def _coerce_mapping(value: Any) -> dict[str, Any]:
@@ -104,15 +118,12 @@ class QoIDataset:
 
     @property
     def n_observations(self) -> int:
-        values_per_label = int(self.metadata.get("values_per_label", 1) or 1)
-        if values_per_label <= 0:
-            raise ValueError("'values_per_label' must be a positive integer.")
-        if self.outputs_ref.size % values_per_label != 0:
+        if self.outputs_ref.size % self.values_per_label != 0:
             raise ValueError(
                 "Reference output size must be divisible by "
-                "'metadata[\"values_per_label\"]'."
+                "'values_per_label'."
             )
-        return int(self.outputs_ref.size // values_per_label)
+        return int(self.outputs_ref.size // self.values_per_label)
 
     def to_dict(self) -> dict[str, Any]:
         data = {
@@ -120,7 +131,9 @@ class QoIDataset:
             "inputs": self.inputs.tolist(),
             "outputs": self.outputs.tolist(),
             "outputs_ref": self.outputs_ref.tolist(),
-            "settings_kwargs": dict(self.settings_kwargs),
+            "labels": None if self.labels is None else list(self.labels),
+            "values_per_label": self.values_per_label,
+            "settings": dict(self.settings),
             "metadata": dict(self.metadata),
         }
         if self.nuisance is not None:
@@ -134,17 +147,19 @@ class QoIDataset:
             inputs=np.asarray(data["inputs"], dtype=float),
             outputs=np.asarray(data["outputs"], dtype=float),
             outputs_ref=np.asarray(data["outputs_ref"], dtype=float),
+            labels=None if data.get("labels") is None else tuple(data["labels"]),
+            values_per_label=int(data.get("values_per_label", 1)),
             nuisance=data.get("nuisance"),
-            settings_kwargs=dict(data.get("settings_kwargs", {})),
+            settings=dict(data.get("settings", {})),
             metadata=dict(data.get("metadata", {})),
         )
 
     def write(self, fn_out: str) -> None:
-        torch.save(self.to_dict(), fn_out)
+        save_pt(self.to_dict(), fn_out)
 
     @classmethod
     def load(cls, fn_in: str) -> "QoIDataset":
-        data = torch.load(fn_in, map_location="cpu", weights_only=False)
+        data = load_pt(fn_in)
         return cls.from_dict(data)
 
     def __repr__(self) -> str:

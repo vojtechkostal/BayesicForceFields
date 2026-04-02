@@ -189,6 +189,7 @@ def compute_hbonds(
 
 def compute_all_hbonds(
     universe: mda.Universe,
+    *,
     mol_resname: str,
     water_resname: str = "SOL",
     distance_cutoff: float = 3.5,
@@ -249,5 +250,5 @@ def compute_all_hbonds(
         values=values,
         labels=labels,
         values_per_label=1,
-        settings_kwargs=metadata,
+        settings=metadata,
     )

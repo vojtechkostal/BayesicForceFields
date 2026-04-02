@@ -1,66 +1,44 @@
+"""Workflow entry point for posterior learning from trained surrogates."""
+
 import sys
 from pathlib import Path
 from typing import Union
 
-from ..bayes.learning import InferenceProblem, train_surrogates
 from ..domain.specs import ChargeConstraint
 from ..io.logs import Logger
-from ..qoi.data import QoIDataset
 from .configs import LearnConfig
 
 
 PathLike = Union[str, Path]
 
 
-def _load_datasets(config: LearnConfig) -> tuple[QoIDataset, ...]:
-    datasets: list[QoIDataset] = []
-    for dataset_config in config.datasets:
-        dataset = QoIDataset.load(dataset_config.fn_data)
-        dataset.nuisance = dataset_config.nuisance
-        datasets.append(dataset)
-    return tuple(datasets)
-
-
-def _dataset_options(
+def _load_models(
     config: LearnConfig,
-) -> tuple[dict[str, Path | None], dict[str, object], dict[str, float]]:
-    model_paths = {dataset.name: dataset.fn_model for dataset in config.datasets}
-    y_means = {dataset.name: dataset.mean for dataset in config.datasets}
-    observation_scales = {
-        dataset.name: dataset.observation_scale for dataset in config.datasets
+    lgp_committee_type,
+) -> dict[str, object]:
+    return {
+        name: lgp_committee_type.load(path)
+        for name, path in config.models.items()
     }
-    return model_paths, y_means, observation_scales
 
 
 def main(fn_config: PathLike) -> None:
+    try:
+        from ..bayes.gaussian_process import LGPCommittee
+        from ..bayes.learning import InferenceProblem
+    except ModuleNotFoundError as exc:
+        if exc.name == "torch":
+            raise RuntimeError(
+                "PyTorch is required for 'bff learn'. Install a CPU or CUDA "
+                "build of PyTorch first."
+            ) from exc
+        raise
+
     config = LearnConfig.load(fn_config)
-    logger = Logger("BFF", str(config.fn_log), mode="w")
-    constraint = ChargeConstraint(config.fn_specs)
-    datasets = _load_datasets(config)
-    model_paths, y_means, observation_scales = _dataset_options(config)
-
-    config.training.model_dir.mkdir(parents=True, exist_ok=True)
-
-    models = train_surrogates(
-        datasets,
-        y_means=y_means,
-        observation_scales=observation_scales,
-        model_paths=model_paths,
-        reuse_models=config.training.reuse_models,
-        n_hyper_max=config.training.n_hyper_max,
-        committee_size=config.training.committee_size,
-        test_fraction=config.training.test_fraction,
-        device=config.training.device,
-        logger=logger,
-        **config.training.opt_kwargs,
-    )
-
-    problem = InferenceProblem.from_datasets(
-        models,
-        datasets,
-        qoi=config.qoi,
-        constraint=constraint,
-    )
+    logger = Logger("BFF", str(config.log), mode="w")
+    constraint = ChargeConstraint(config.specs)
+    models = _load_models(config, LGPCommittee)
+    problem = InferenceProblem.from_models(models, constraint=constraint)
     problem.infer(
         priors_disttype=config.mcmc.priors_disttype,
         total_steps=config.mcmc.total_steps,
@@ -68,14 +46,15 @@ def main(fn_config: PathLike) -> None:
         thin=config.mcmc.thin,
         progress_stride=config.mcmc.progress_stride,
         n_walkers=config.mcmc.n_walkers,
-        fn_posterior=config.mcmc.fn_posterior,
-        fn_checkpoint=config.mcmc.fn_checkpoint,
-        fn_priors=config.mcmc.fn_priors,
+        fn_posterior=config.mcmc.posterior,
+        fn_checkpoint=config.mcmc.checkpoint,
+        fn_priors=config.mcmc.priors,
         restart=config.mcmc.restart,
         device=config.mcmc.device,
         logger=logger,
         rhat_tol=config.mcmc.rhat_tol,
         ess_min=config.mcmc.ess_min,
+        include_implicit_charge=config.mcmc.include_implicit_charge,
     )
 
 

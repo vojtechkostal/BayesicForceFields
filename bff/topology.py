@@ -1,15 +1,16 @@
-import numpy as np
+from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
+import warnings
+
 import MDAnalysis as mda
+import numpy as np
 from MDAnalysis.guesser.tables import masses as MDA_MASSES
 from MDAnalysis.lib.distances import distance_array
-
-from pathlib import Path
 from gmxtopology import Topology, MoleculeType
 
-from .data import WATER_3SITE, WATER_4SITE, IONS, WATERS
+from .data import IONS, WATER_3SITE, WATER_4SITE, WATERS
 from .tools import random_placement, guess_box
-
-import warnings
 
 
 # 1) MDAnalysis DeprecationWarning from ITPParser (elements guessing transition)
@@ -29,6 +30,12 @@ warnings.filterwarnings(
 
 MASSES = np.array(list(MDA_MASSES.values()))
 ELEMENTS = list(MDA_MASSES.keys())
+
+
+@dataclass(frozen=True, slots=True)
+class ResidueTemplate:
+    positions: np.ndarray
+    real_mask: np.ndarray
 
 
 def guess_elements(u: mda.Universe) -> list:
@@ -125,15 +132,13 @@ def prepare_universe(
 
 def create_box(
     fn_topol: str,
-    fn_mol: str,
+    templates: dict[str, str | Path],
     fn_out: str,
     box: np.ndarray = None,
     min_dist: float = 1.5,
-    disp_limit: float = 0.4
 ) -> tuple:
-    """Fills a box with molecules, solvent and ions."""
+    """Fill a box from topology molecule counts and residue templates."""
 
-    # Create universe
     topol = Topology(fn_topol)
     universe = fill_universe(topol)
 
@@ -144,53 +149,169 @@ def create_box(
         box = np.array(box)
     universe.dimensions = box
 
-    # Insert moleculal positions
-    mol = mda.Universe(fn_mol)  # TODO: get rid of the elements warning
-    pos_mol = mol.atoms.positions - mol.atoms.center_of_mass()
+    residue_templates = build_residue_templates(topol, templates)
     coords = insert_molecules(
-        universe, topol, box, pos_mol,
-        min_dist=min_dist, disp_limit=disp_limit
+        topol,
+        residue_templates,
+        box,
+        min_dist=min_dist,
     )
     universe.atoms.positions = coords
 
-    # Write positons into a file
     universe.atoms.write(fn_out)
 
     return universe, topol
 
 
-def insert_molecules(
-    universe: mda.Universe,
+def build_residue_templates(
     topol: Topology,
+    templates: dict[str, str | Path],
+) -> dict[tuple[str, int], ResidueTemplate]:
+    """Load one centered placement template for each residue layout."""
+    residue_templates: dict[tuple[str, int], ResidueTemplate] = {}
+    for residue in topol.residues:
+        key = (residue.name, len(residue.atoms))
+        if key in residue_templates:
+            continue
+        residue_templates[key] = load_residue_template(residue, templates)
+    return residue_templates
+
+
+@lru_cache(maxsize=None)
+def _load_positions_from_file(fn_template: str) -> tuple[np.ndarray, tuple[str, ...]]:
+    universe = mda.Universe(fn_template)
+    return (
+        np.asarray(universe.atoms.positions, dtype=float).copy(),
+        tuple(str(name) for name in universe.atoms.names),
+    )
+
+
+@lru_cache(maxsize=None)
+def _load_water_template(n_atoms: int) -> tuple[np.ndarray, tuple[str, ...]]:
+    if n_atoms == 3:
+        return WATER_3SITE.copy(), ("OW", "HW1", "HW2")
+    if n_atoms == 4:
+        return WATER_4SITE.copy(), ("OW", "HW1", "HW2", "IW")
+    raise ValueError(f"Unsupported water template with {n_atoms} atoms.")
+
+
+def load_residue_template(
+    residue,
+    templates: dict[str, str | Path],
+) -> ResidueTemplate:
+    """Resolve one residue placement template from builtins or user input."""
+    residue_names = tuple(atom.name for atom in residue.atoms)
+    n_atoms = len(residue.atoms)
+    key = residue.name.lower()
+
+    if residue.name in WATERS:
+        positions, template_names = _load_water_template(n_atoms)
+    elif key in IONS:
+        if n_atoms != 1:
+            raise ValueError(
+                f"Ion residue {residue.name!r} is expected to be monoatomic, "
+                f"but has {n_atoms} atoms."
+            )
+        positions = np.zeros((1, 3), dtype=float)
+        template_names = residue_names
+    else:
+        if residue.name not in templates:
+            raise ValueError(
+                f"Missing template for non-standard residue {residue.name!r}."
+            )
+        positions, template_names = _load_positions_from_file(
+            str(Path(templates[residue.name]).resolve())
+        )
+
+    if len(template_names) != n_atoms:
+        raise ValueError(
+            f"Template for residue {residue.name!r} has {len(template_names)} atoms, "
+            f"expected {n_atoms}."
+        )
+    if residue_names != template_names:
+        raise ValueError(
+            f"Template atom names for residue {residue.name!r} do not match the "
+            f"topology order: expected {residue_names}, got {template_names}."
+        )
+
+    positions = np.asarray(positions, dtype=float)
+    real_mask = np.asarray([atom.mass > 0.5 for atom in residue.atoms], dtype=bool)
+    anchor = positions[real_mask].mean(axis=0) if np.any(real_mask) else positions[0]
+    return ResidueTemplate(
+        positions=positions - anchor,
+        real_mask=real_mask,
+    )
+
+
+def _neighboring_cells(
+    cell: tuple[int, int, int],
+    shape: np.ndarray,
+) -> list[tuple[int, int, int]]:
+    neighbors: list[tuple[int, int, int]] = []
+    for dx in (-1, 0, 1):
+        for dy in (-1, 0, 1):
+            for dz in (-1, 0, 1):
+                neighbors.append(
+                    (
+                        (cell[0] + dx) % int(shape[0]),
+                        (cell[1] + dy) % int(shape[1]),
+                        (cell[2] + dz) % int(shape[2]),
+                    )
+                )
+    return neighbors
+
+
+def _cell_index(
+    position: np.ndarray,
+    cell_size: np.ndarray,
+    shape: np.ndarray,
+) -> tuple[int, int, int]:
+    wrapped = np.mod(position, cell_size * shape)
+    index = np.floor(wrapped / cell_size).astype(int) % shape.astype(int)
+    return int(index[0]), int(index[1]), int(index[2])
+
+
+def insert_molecules(
+    topol: Topology,
+    templates: dict[tuple[str, int], ResidueTemplate],
     box: np.ndarray,
-    pos_mol: np.ndarray,
     min_dist: float = 1.5,
-    disp_limit: float = 0.4
 ) -> np.ndarray:
-    """Insert molecules into the box."""
+    """Insert residue templates into the box with a simple spatial grid."""
 
     coords = np.zeros((len(topol.atoms), 3))
-    i = 0
+    occupied: list[np.ndarray] = []
+    cell_shape = np.maximum(1, np.floor(box[:3] / min_dist).astype(int))
+    cell_size = box[:3] / cell_shape
+    cells: dict[tuple[int, int, int], list[int]] = {}
+    atom_index = 0
+
     for residue in topol.residues:
         n_atoms = len(residue.atoms)
-        if residue.name in WATERS:
-            pos = WATER_3SITE if n_atoms == 3 else WATER_4SITE
-            displacement_limit = box[:3]
-        elif residue.name.lower() in IONS:
-            pos = np.zeros(3)
-            displacement_limit = box[:3] * disp_limit
-        else:
-            pos = pos_mol
-            displacement_limit = box[:3] * disp_limit
+        template = templates[(residue.name, n_atoms)]
+        displacement_limit = box[:3]
         while True:
-            pos_trial = random_placement(pos.copy(), displacement_limit)
-            distances = distance_array(
-                pos_trial, coords, box=universe.dimensions
-            )
-            if not np.any(distances < min_dist):
-                coords[i:i+n_atoms] = pos_trial
-                break
-        i += n_atoms
+            pos_trial = random_placement(template.positions.copy(), displacement_limit)
+            pos_trial = np.mod(pos_trial, box[:3])
+            trial_real = pos_trial[template.real_mask]
+            neighbor_ids: set[int] = set()
+            for point in trial_real:
+                cell = _cell_index(point, cell_size, cell_shape)
+                for neighbor in _neighboring_cells(cell, cell_shape):
+                    neighbor_ids.update(cells.get(neighbor, []))
+            if neighbor_ids:
+                existing = np.asarray([occupied[i] for i in sorted(neighbor_ids)])
+                distances = distance_array(trial_real, existing, box=box)
+                if np.any(distances < min_dist):
+                    continue
+
+            coords[atom_index:atom_index + n_atoms] = pos_trial
+            for point in trial_real:
+                occupied.append(point.copy())
+                cell = _cell_index(point, cell_size, cell_shape)
+                cells.setdefault(cell, []).append(len(occupied) - 1)
+            break
+        atom_index += n_atoms
 
     return coords
 

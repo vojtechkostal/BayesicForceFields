@@ -3,10 +3,9 @@ import gc
 import warnings
 from functools import partial
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Iterable, Sequence
 
 import MDAnalysis as mda
-import numpy as np
 
 from ..domain.trainset import TrajectorySet
 from .data import QoI
@@ -209,85 +208,3 @@ def analyze_trajectory_sets(
             progress_stride=progress_stride,
         )
     return qoi
-
-
-def _validate_qoi_schema(
-    blocks: Sequence[QoI],
-    *,
-    context: str
-) -> tuple[str, ...] | None:
-    """Return the shared label schema and fail if any block disagrees."""
-    if not blocks:
-        return None
-
-    first = blocks[0]
-    labels = first.labels
-    values_per_label = first.values_per_label
-    n_values = first.n_values
-
-    for block in blocks[1:]:
-        if block.values_per_label != values_per_label:
-            raise ValueError(
-                f"QoI schema mismatch in {context}: expected values_per_label="
-                f"{values_per_label}, got {block.values_per_label}."
-            )
-        if block.labels != labels:
-            raise ValueError(
-                f"QoI label mismatch in {context}: "
-                f"expected {labels}, got {block.labels}."
-            )
-        if block.n_values != n_values:
-            raise ValueError(
-                f"QoI value-count mismatch in {context}: "
-                f"expected {n_values}, got {block.n_values}."
-            )
-
-    return labels
-
-
-def stack_qoi_blocks(blocks: Sequence[QoI]) -> np.ndarray:
-    """Stack QoI blocks without relabeling or padding."""
-    if not blocks:
-        return np.empty(0, dtype=float)
-
-    _validate_qoi_schema(blocks, context="stacked QoI blocks")
-    return np.concatenate([block.values for block in blocks])
-
-
-def collect_qoi_dataset(
-    ref_blocks: Sequence[QoI],
-    train_blocks: Sequence[Sequence[QoI]],
-    *,
-    qoi_metadata: Mapping[str, Any] | None = None,
-) -> tuple[np.ndarray, list[np.ndarray], dict[str, Any]]:
-    """Collect reference and training arrays for one QoI with a fixed schema."""
-    labels = _validate_qoi_schema(ref_blocks, context="reference QoI blocks")
-    reference = ref_blocks[0] if ref_blocks else None
-
-    outputs_ref = stack_qoi_blocks(ref_blocks)
-    outputs = []
-    for i, blocks in enumerate(train_blocks):
-        if reference is not None and blocks:
-            expected = [reference, *blocks]
-            _validate_qoi_schema(
-                expected,
-                context=f"training QoI blocks for sample {i}"
-            )
-        outputs.append(stack_qoi_blocks(blocks))
-
-    metadata = dict(qoi_metadata or {})
-
-    settings_kwargs = {}
-    metadata_out = dict(metadata)
-    first = reference
-    if first is not None:
-        settings_kwargs = dict(first.settings_kwargs)
-        metadata_out = dict(first.metadata) | metadata_out
-        metadata_out["values_per_label"] = first.values_per_label
-        if labels is not None:
-            metadata_out["labels"] = list(labels)
-
-    return outputs_ref, outputs, {
-        "settings_kwargs": settings_kwargs,
-        "metadata": metadata_out,
-    }

@@ -100,7 +100,11 @@ def modify_topology(
     constraint_charge = specs.constraint_charge if implicit else None
     params_dict = specs.parameter_dict(params, explicit_only=implicit)
 
-    top_modifier = TopologyModifier(fn_topol, specs.mol_resname, specs.implicit_atoms)
+    top_modifier = TopologyModifier(
+        fn_topol,
+        specs.mol_resname,
+        specs.implicit_atoms,
+    )
     top_modifier.apply_parameters(params_dict, constraint_charge=constraint_charge)
 
     if fn_out:
@@ -156,7 +160,8 @@ def main(fn_config: PathLike) -> None:
                 run_env = None
                 if bias.kind == "colvars" and bias.input_file is not None:
                     fn_bias_local = run_dir / Path(bias.input_file).name
-                    shutil.copy2(bias.input_file, fn_bias_local)
+                    if Path(bias.input_file).resolve() != fn_bias_local.resolve():
+                        shutil.copy2(bias.input_file, fn_bias_local)
                     fn_prod_mdp = run_dir / f"md-{sample_id}-{i:03d}-colvars.mdp"
                     write_mdp_with_colvars(prod, fn_bias_local, fn_prod_mdp)
                 elif bias.kind == "plumed" and bias.input_file is not None:
@@ -201,8 +206,18 @@ def main(fn_config: PathLike) -> None:
                     )
 
                     subprocess.run(
-                        build_command(gmx_cmd, 'mdrun', '-s', fn_tpr_em, '-deffnm', deffnm_em),
-                        cwd=run_dir, stdout=log, stderr=log, check=True
+                        build_command(
+                            gmx_cmd,
+                            'mdrun',
+                            '-s',
+                            fn_tpr_em,
+                            '-deffnm',
+                            deffnm_em,
+                        ),
+                        cwd=run_dir,
+                        stdout=log,
+                        stderr=log,
+                        check=True,
                     )
                     fn_coord_prod = deffnm_em.with_suffix(".gro")
                 else:

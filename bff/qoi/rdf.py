@@ -50,6 +50,7 @@ def compute_rdf(
 
 def compute_all_rdfs(
     universe: mda.Universe,
+    *,
     mol_resname: str,
     solvent_sel: str = "resname SOL HOH WAT and name O*",
     r_range: Tuple[float, float] = (0, 10),
@@ -103,5 +104,5 @@ def compute_all_rdfs(
         values=values,
         labels=atomtypes,
         values_per_label=int(n_bins),
-        settings_kwargs=metadata,
+        settings=metadata,
     )

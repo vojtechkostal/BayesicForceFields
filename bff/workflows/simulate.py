@@ -1,3 +1,5 @@
+"""Workflow entry point for sampled training-set simulations."""
+
 from .configs import SimulateConfig
 from .runsims import (
     build_parameter_samples,

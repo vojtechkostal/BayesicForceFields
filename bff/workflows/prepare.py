@@ -138,7 +138,8 @@ def run_md(
 
     if bias is not None and bias.kind == "colvars" and bias.input_file is not None:
         fn_bias_local = Path(fn_mdp_path.parent) / Path(bias.input_file).name
-        shutil.copy2(bias.input_file, fn_bias_local)
+        if Path(bias.input_file).resolve() != fn_bias_local.resolve():
+            shutil.copy2(bias.input_file, fn_bias_local)
         fn_mdp_run = Path(f"{name}-colvars.mdp").resolve()
         run_cwd = fn_mdp_run.parent
         write_mdp_with_colvars(fn_mdp_path, fn_bias_local, fn_mdp_run)
@@ -387,11 +388,16 @@ def write_window_coordinates(
         writer.write(universe.atoms)
 
 
+def window_run_name(window_index: int) -> str:
+    """Return the canonical filename stem for the prepared production run."""
+    return f"{window_name(window_index)}-prod"
+
+
 def prepare_equilibrated_topology(
     *,
     topol_index: int,
     fn_topol: Path,
-    fn_mol: Path,
+    templates: dict[str, Path],
     box: list[float] | None,
     fn_mdp_em: Path,
     fn_mdp_npt: Path,
@@ -406,7 +412,12 @@ def prepare_equilibrated_topology(
     fn_coord_box = equilibration_dir / f"{topology_label}-box.gro"
 
     logger.info("Creating box: in progress...", overwrite=True, level=2)
-    universe, topol = create_box(fn_topol, fn_mol, fn_out=fn_coord_box, box=box)
+    universe, topol = create_box(
+        fn_topol,
+        templates,
+        fn_out=fn_coord_box,
+        box=box,
+    )
     logger.info("Creating box: Done.", level=2)
 
     fn_topol_processed = fn_coord_box.with_suffix(".top")
@@ -477,7 +488,9 @@ def save_training_artifacts(
     *,
     window_index: int,
     training_dir: Path,
-    fn_mdp_nvt: Path,
+    fn_mdp_em: Path,
+    fn_mdp_npt: Path,
+    fn_mdp_prod: Path,
     fn_coord: Path,
     fn_ndx: Path,
     fn_topol: Path,
@@ -486,21 +499,25 @@ def save_training_artifacts(
 ) -> None:
     """Save all training artifacts produced for one window."""
     window_label = window_name(window_index)
+    asset_dir = training_dir / window_label
+    asset_dir.mkdir(parents=True, exist_ok=True)
     for src, dst in [
-        (fn_mdp_nvt, training_dir / f"{window_label}.mdp"),
-        (fn_coord, training_dir / f"{window_label}.gro"),
-        (fn_ndx, training_dir / f"{window_label}.ndx"),
-        (fn_topol, training_dir / f"{window_label}.top"),
+        (fn_mdp_em, asset_dir / f"{window_label}.em.mdp"),
+        (fn_mdp_npt, asset_dir / f"{window_label}.npt.mdp"),
+        (fn_mdp_prod, asset_dir / f"{window_label}.mdp"),
+        (fn_coord, asset_dir / f"{window_label}.gro"),
+        (fn_ndx, asset_dir / f"{window_label}.ndx"),
+        (fn_topol, asset_dir / f"{window_label}.top"),
     ]:
         shutil.copy2(src, dst)
 
     for suffix in ("bias.colvars.dat", "bias.plumed.dat"):
-        stale_file = training_dir / f"{window_label}.{suffix}"
+        stale_file = asset_dir / f"{window_label}.{suffix}"
         if stale_file.exists():
             stale_file.unlink()
 
     if fn_bias_input is not None and bias.input_filename is not None:
-        fn_bias_train = training_dir / f"{window_label}.{bias.input_filename}"
+        fn_bias_train = asset_dir / f"{window_label}.{bias.input_filename}"
         shutil.copy2(fn_bias_input, fn_bias_train)
 
 
@@ -638,7 +655,6 @@ def main(fn_config: PathLike) -> None:
         reference_md_dir,
         reference_sp_dir,
     ) = setup_directories(config.project_dir)
-    shutil.copy2(config.systems[0].fn_mdp_em, training_dir / "em.mdp")
 
     equilibrated_topologies: Dict[str, EquilibratedTopology] = {}
 
@@ -656,7 +672,7 @@ def main(fn_config: PathLike) -> None:
             equilibrated_topologies[topology_key] = prepare_equilibrated_topology(
                 topol_index=topol_index,
                 fn_topol=system.fn_topol,
-                fn_mol=system.fn_mol,
+                templates=system.templates,
                 box=system.box,
                 fn_mdp_em=system.fn_mdp_em,
                 fn_mdp_npt=system.fn_mdp_npt,
@@ -670,8 +686,8 @@ def main(fn_config: PathLike) -> None:
         topology_state = equilibrated_topologies[topology_key]
 
         window_label = window_name(i)
-        fn_mdp_nvt = system.fn_mdp_nvt
-        fn_nvt_local = equilibration_dir / f"{window_label}.mdp"
+        fn_mdp_prod = system.fn_mdp_prod
+        fn_prod_local = equilibration_dir / f"{window_label}.mdp"
         fn_ndx = equilibration_dir / f"{window_label}.ndx"
         fn_coord = equilibration_dir / f"{window_label}.gro"
         fn_bias_local = (
@@ -699,34 +715,42 @@ def main(fn_config: PathLike) -> None:
             target_distances=target_distances,
         )
         make_ndx(topology_state.universe, None, fn_out=fn_ndx)
-        shutil.copy2(fn_mdp_nvt, fn_nvt_local)
+        shutil.copy2(fn_mdp_prod, fn_prod_local)
 
-        deffnm_nvt = equilibration_dir / f"{window_label}-nvt"
-        logger.info("NVT equilibration: in progress...", overwrite=True, level=2)
-        fn_nvt_run = run_md(
-            deffnm_nvt,
-            fn_nvt_local,
+        deffnm_prod = equilibration_dir / window_run_name(i)
+        logger.info(
+            "Production preparation run: in progress...",
+            overwrite=True,
+            level=2,
+        )
+        fn_prod_run = run_md(
+            deffnm_prod,
+            fn_prod_local,
             fn_topol_local,
             fn_coord,
             fn_ndx,
             bias=bias_run,
             gmx_cmd=config.gmx_cmd,
-            n_steps=system.nsteps_nvt,
+            n_steps=system.nsteps_prod,
             maxwarn=topology_state.maxwarn,
             fn_log=fn_gmx_log,
         )
-        logger.info("NVT equilibration: Done.", level=2)
+        logger.info("Production preparation run: Done.", level=2)
 
+        logger.info("Training MD assets: in progress...", overwrite=True, level=2)
         save_training_artifacts(
             window_index=i,
             training_dir=training_dir,
-            fn_mdp_nvt=fn_nvt_run,
+            fn_mdp_em=system.fn_mdp_em,
+            fn_mdp_npt=system.fn_mdp_npt,
+            fn_mdp_prod=system.fn_mdp_prod,
             fn_coord=fn_coord,
             fn_ndx=fn_ndx,
             fn_topol=fn_topol_local,
             fn_bias_input=fn_bias_input,
             bias=system.bias,
         )
+        logger.info("Training MD assets: Done.", level=2)
         write_reference_md_assets(
             reference_md_dir=reference_md_dir,
             window_index=i,
@@ -735,7 +759,7 @@ def main(fn_config: PathLike) -> None:
             mult=system.mult,
             box=topology_state.box,
             fn_topol_processed=topology_state.fn_topol_processed,
-            fn_coord_nvt=deffnm_nvt.with_suffix(".gro"),
+            fn_coord_nvt=deffnm_prod.with_suffix(".gro"),
             bias=system.bias,
             logger=logger,
         )
@@ -747,8 +771,8 @@ def main(fn_config: PathLike) -> None:
             mult=system.mult,
             box=topology_state.box,
             fn_topol_processed=topology_state.fn_topol_processed,
-            fn_coord_nvt=deffnm_nvt.with_suffix(".gro"),
-            fn_trj_nvt=deffnm_nvt.with_suffix(".xtc"),
+            fn_coord_nvt=deffnm_prod.with_suffix(".gro"),
+            fn_trj_nvt=deffnm_prod.with_suffix(".xtc"),
             n_snapshots=config.n_single_point_snapshots,
             logger=logger,
         )

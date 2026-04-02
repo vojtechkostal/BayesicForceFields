@@ -1,30 +1,22 @@
 import importlib
 import importlib.util
-import inspect
 import hashlib
 import sys
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Callable, Mapping, TypeAlias
+from typing import Any, Callable, Mapping, Sequence
 
 from .data import QoI
 from .hbonds import compute_all_hbonds
 from .rdf import compute_all_rdfs
 
 
-FIXED_SIGNATURE = ("universe", "start", "stop", "step")
-FIXED_SIGNATURE_SET = set(FIXED_SIGNATURE)
-
-
-def _is_builtin_spec(spec: str) -> bool:
-    return spec.startswith("builtin:")
-
-
 def _split_routine_spec(spec: str) -> tuple[str, str]:
     if ":" not in spec:
         raise ValueError(
-            "Analysis routine must be a builtin name or 'module:function'."
+            "Imported analysis routines must be specified as "
+            "'module:function' or 'path/to/file.py:function'."
         )
     return spec.split(":", maxsplit=1)
 
@@ -71,41 +63,10 @@ def _import_module(module_name: str) -> Any:
 
 
 @lru_cache(maxsize=None)
-def _signature_info(
-    fn: Callable[..., Any],
-) -> tuple[bool, frozenset[str], dict[str, Any]]:
-    sig = inspect.signature(fn)
-    params = sig.parameters
-    accepts_var_kwargs = any(
-        param.kind is inspect.Parameter.VAR_KEYWORD
-        for param in params.values()
-    )
-    defaults = {
-        name: param.default
-        for name, param in params.items()
-        if param.default is not inspect.Parameter.empty
-    }
-    return accepts_var_kwargs, frozenset(params), defaults
-
-
-def _default_kwargs(
-    fn: Callable[..., Any],
-    ignored: set[str],
-) -> dict[str, Any]:
-    """Extract callable defaults while omitting ignored parameters."""
-    _, _, defaults = _signature_info(fn)
-    return {
-        name: value
-        for name, value in defaults.items()
-        if name not in ignored
-    }
-
-
-@lru_cache(maxsize=None)
 def _load_routine(spec: str) -> Callable[..., Any]:
     """Resolve a builtin or import-string routine specification."""
-    if _is_builtin_spec(spec):
-        return _builtin_callable(spec.split(":", maxsplit=1)[1])
+    if ":" not in spec:
+        return _builtin_callable(spec)
 
     module_name, attr_name = _split_routine_spec(spec)
     module = _import_module(module_name)
@@ -118,122 +79,6 @@ def _load_routine(spec: str) -> Callable[..., Any]:
     if not callable(fn):
         raise ValueError(f"Resolved object {spec!r} is not callable.")
     return fn
-
-
-def _load_callable(spec: str | Callable[..., Any]) -> Callable[..., Any]:
-    """Resolve a callable while keeping string-based imports cacheable."""
-    if callable(spec):
-        return spec
-    if not isinstance(spec, str):
-        raise ValueError(f"Invalid analysis routine specification: {spec!r}")
-    return _load_routine(spec)
-
-
-def _validate_signature(fn: Callable[..., Any], name: str) -> None:
-    """Validate that a routine accepts the fixed trajectory-analysis signature.
-
-    Parameters
-    ----------
-    fn
-        Callable to validate.
-    name
-        Human-readable routine name used in error messages.
-
-    Raises
-    ------
-    ValueError
-        If the routine is missing one or more required fixed arguments.
-
-    Notes
-    -----
-    The fixed signature is the minimal contract required for all analysis
-    routines, including custom ones. Builtins may accept additional workflow
-    context arguments, but those are not required for user-defined routines.
-    """
-    accepts_var_kwargs, supported, _ = _signature_info(fn)
-    missing = [
-        arg
-        for arg in FIXED_SIGNATURE
-        if arg not in supported and not accepts_var_kwargs
-    ]
-    if missing:
-        missing_text = ", ".join(repr(arg) for arg in missing)
-        raise ValueError(
-            f"Analysis routine {name!r} must accept the fixed arguments "
-            f"{', '.join(FIXED_SIGNATURE)}. Missing: {missing_text}."
-        )
-
-
-def _validate_kwargs(
-    fn: Callable[..., Any],
-    values: Mapping[str, Any],
-    *,
-    ignored: set[str],
-    name: str,
-) -> dict[str, Any]:
-    """Validate keyword arguments against an underlying callable signature.
-
-    Parameters
-    ----------
-    fn
-        Callable whose accepted keyword arguments should be respected.
-    values
-        User-supplied keyword arguments.
-    ignored
-        Parameter names that are intentionally supplied elsewhere and should
-        be excluded from validation.
-    name
-        Human-readable section name for error reporting.
-
-    Returns
-    -------
-    dict
-        Validated keyword arguments.
-    """
-    accepts_var_kwargs, supported, _ = _signature_info(fn)
-    if accepts_var_kwargs:
-        return dict(values)
-
-    allowed = set(supported) - ignored
-    unknown = set(values) - allowed
-    if unknown:
-        unknown_text = ", ".join(sorted(unknown))
-        supported_text = ", ".join(sorted(allowed))
-        raise ValueError(
-            f"Unsupported option(s) in {name}: {unknown_text}. "
-            f"Supported options are: {supported_text}."
-        )
-    return dict(values)
-
-
-def _call_with_supported_kwargs(
-    fn: Callable[..., Any],
-    **kwargs: Any,
-) -> Any:
-    """Call a function with only the keyword arguments it accepts.
-
-    Parameters
-    ----------
-    fn
-        Callable to invoke.
-    **kwargs
-        Candidate keyword arguments.
-
-    Returns
-    -------
-    Any
-        Callable return value.
-    """
-    accepts_var_kwargs, supported, _ = _signature_info(fn)
-    if accepts_var_kwargs:
-        return fn(**kwargs)
-
-    supported_kwargs = {
-        name: value
-        for name, value in kwargs.items()
-        if name in supported
-    }
-    return fn(**supported_kwargs)
 
 
 BUILTIN_ROUTINES: dict[str, Callable[..., QoI]] = {
@@ -250,25 +95,17 @@ class AnalysisRoutineConfig:
     ----------
     routine
         Builtin selector or importable routine specification.
-    kwargs
+    options
         Keyword arguments forwarded to the analysis routine.
     """
-    routine: str | Callable[..., Any]
-    kwargs: dict[str, Any] = field(default_factory=dict)
+    routine: str
+    options: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
-class SystemAnalysisConfig:
-    """Analysis routine list for one trajectory position within a sample."""
+class AnalysisRuntimeConfig:
+    """Runtime settings for the QoI analysis workflow."""
 
-    routines: tuple[AnalysisRoutineConfig, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class AnalysisRoutinesConfig:
-    """Normalized analysis-routines configuration for the full workflow."""
-
-    systems: tuple[SystemAnalysisConfig, ...]
     in_memory: bool = False
     gc_collect: bool = False
     maxtasksperchild: int = 100
@@ -291,7 +128,10 @@ def _normalize_qoi_mapping(result: Mapping[str, Any]) -> dict[str, QoI]:
     return normalized
 
 
-RuntimeRoutine: TypeAlias = tuple[Callable[..., Any], dict[str, Any]]
+@dataclass(frozen=True, slots=True)
+class RuntimeRoutine:
+    fn: Callable[..., Any]
+    options: dict[str, Any] = field(default_factory=dict)
 
 
 def _normalize_routine_config(
@@ -299,30 +139,30 @@ def _normalize_routine_config(
     *,
     base_dir: Path | None = None,
 ) -> AnalysisRoutineConfig:
-    """Validate one routine entry from the ``analysis`` configuration.
-
-    Parameters
-    ----------
-    config
-        Raw routine mapping loaded from YAML.
-
-    Returns
-    -------
-    AnalysisRoutineConfig
-        Normalized routine configuration object.
-    """
+    """Validate one routine entry from the QoI configuration."""
     if not isinstance(config, Mapping):
-        raise ValueError("Each analysis routine specification must be a mapping.")
-
+        raise ValueError(
+            "Each analysis routine specification must be a mapping with a "
+            "'routine' field."
+        )
     if "routine" not in config:
         raise ValueError("Each analysis routine must define 'routine'.")
     routine = config["routine"]
-    kwargs = config.get("kwargs", {})
+    if not isinstance(routine, str):
+        raise ValueError("Analysis routine 'routine' must be a string.")
+    if "kwargs" in config:
+        raise ValueError(
+            "Routine options must be provided as flat keys. "
+            "Nested 'kwargs' are no longer supported."
+        )
+    extra_options = {
+        key: value
+        for key, value in config.items()
+        if key != "routine"
+    }
+    options = dict(extra_options)
 
-    if not isinstance(kwargs, Mapping):
-        raise ValueError("Routine 'kwargs' must be a mapping.")
-
-    if isinstance(routine, str) and ":" in routine and not _is_builtin_spec(routine):
+    if ":" in routine:
         module_name, attr_name = _split_routine_spec(routine)
         if module_name.endswith(".py") or "/" in module_name:
             if base_dir is None:
@@ -331,66 +171,46 @@ def _normalize_routine_config(
                 module_path = (base_dir / module_name).resolve()
             routine = f"{module_path}:{attr_name}"
 
-    if isinstance(routine, str) and _is_builtin_spec(routine):
-        fn = _builtin_callable(routine.split(":", maxsplit=1)[1])
-        kwargs = _default_kwargs(fn, FIXED_SIGNATURE_SET) | _validate_kwargs(
-            fn,
-            kwargs,
-            ignored=FIXED_SIGNATURE_SET,
-            name="analysis routine kwargs",
-        )
-
     return AnalysisRoutineConfig(
         routine=routine,
-        kwargs=dict(kwargs),
+        options=options,
     )
 
 
-def normalize_analysis_config(
-    config: Mapping[str, Any],
+def normalize_routine_list(
+    routines: Sequence[Mapping[str, Any]],
     *,
-    n_systems: int | None = None,
     base_dir: Path | None = None,
-) -> AnalysisRoutinesConfig:
-    """Validate and normalize the full ``analysis`` workflow configuration."""
+) -> tuple[AnalysisRoutineConfig, ...]:
+    if not isinstance(routines, Sequence) or isinstance(routines, (str, bytes)):
+        raise ValueError("Analysis routines must be provided as a non-empty list.")
+    if not routines:
+        raise ValueError("Analysis routines must be provided as a non-empty list.")
+    return tuple(
+        _normalize_routine_config(routine, base_dir=base_dir)
+        for routine in routines
+    )
+
+
+def normalize_analysis_runtime_config(
+    config: Mapping[str, Any] | None,
+) -> AnalysisRuntimeConfig:
+    """Validate and normalize the runtime-only QoI ``run`` section."""
+    if config is None:
+        config = {}
     if not isinstance(config, Mapping):
-        raise ValueError("'analysis' must be a mapping.")
-    if "systems" not in config:
-        raise ValueError("Missing required configuration section: 'analysis.systems'.")
-
-    systems_raw = config["systems"]
-    if not isinstance(systems_raw, list) or not systems_raw:
-        raise ValueError("'analysis.systems' must be a non-empty list.")
-    if n_systems is not None and len(systems_raw) != n_systems:
+        raise ValueError("'run' must be a mapping.")
+    if "routines" in config or "systems" in config:
         raise ValueError(
-            f"'analysis.systems' must contain exactly {n_systems} entries, "
-            f"got {len(systems_raw)}."
-        )
-
-    systems: list[SystemAnalysisConfig] = []
-    for i, system in enumerate(systems_raw):
-        if not isinstance(system, Mapping):
-            raise ValueError(f"analysis.systems[{i}] must be a mapping.")
-        routines_raw = system.get("routines")
-        if not isinstance(routines_raw, list) or not routines_raw:
-            raise ValueError(
-                f"analysis.systems[{i}].routines must be a non-empty list."
-            )
-        systems.append(
-            SystemAnalysisConfig(
-                routines=tuple(
-                    _normalize_routine_config(routine, base_dir=base_dir)
-                    for routine in routines_raw
-                )
-            )
+            "'run' only accepts runtime settings. "
+            "Define routines under each entry in 'refset.systems'."
         )
 
     maxtasksperchild = int(config.get("maxtasksperchild", 100))
     if maxtasksperchild <= 0:
-        raise ValueError("'analysis.maxtasksperchild' must be a positive integer.")
+        raise ValueError("'run.maxtasksperchild' must be a positive integer.")
 
-    return AnalysisRoutinesConfig(
-        systems=tuple(systems),
+    return AnalysisRuntimeConfig(
         in_memory=bool(config.get("in_memory", False)),
         gc_collect=bool(config.get("gc_collect", False)),
         maxtasksperchild=maxtasksperchild,
@@ -398,7 +218,7 @@ def normalize_analysis_config(
 
 
 def run_analysis_routines(
-    routines: tuple[RuntimeRoutine, ...],
+    routines: Sequence[RuntimeRoutine],
     *,
     universe: Any,
     start: int,
@@ -407,14 +227,13 @@ def run_analysis_routines(
 ) -> dict[str, QoI]:
     """Run all configured routines for one trajectory and merge QoI outputs."""
     result: dict[str, QoI] = {}
-    for fn, kwargs in routines:
-        qoi_result = _call_with_supported_kwargs(
-            fn,
+    for routine in routines:
+        qoi_result = routine.fn(
             universe=universe,
             start=start,
             stop=stop,
             step=step,
-            **kwargs,
+            **routine.options,
         )
         if isinstance(qoi_result, QoI):
             qoi_mapping = {qoi_result.name: qoi_result}
@@ -436,20 +255,18 @@ def run_analysis_routines(
 
 
 def build_analysis_routines(
-    config: AnalysisRoutinesConfig,
+    systems: Sequence[Sequence[AnalysisRoutineConfig]],
 ) -> list[tuple[RuntimeRoutine, ...]]:
     """Build runtime analysis routines for all trajectory positions."""
     routines_by_system: list[tuple[RuntimeRoutine, ...]] = []
-    for system in config.systems:
+    for system in systems:
         runtime_routines: list[RuntimeRoutine] = []
-        for routine in system.routines:
-            fn = _load_callable(routine.routine)
-            name = (
-                routine.routine
-                if isinstance(routine.routine, str)
-                else getattr(routine.routine, "__name__", "routine")
+        for routine in system:
+            runtime_routines.append(
+                RuntimeRoutine(
+                    fn=_load_routine(routine.routine),
+                    options=dict(routine.options),
+                )
             )
-            _validate_signature(fn, str(name))
-            runtime_routines.append((fn, dict(routine.kwargs)))
         routines_by_system.append(tuple(runtime_routines))
     return routines_by_system

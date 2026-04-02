@@ -1,7 +1,7 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
-from typing import Callable, Mapping, Optional, Sequence, Union
+from typing import Callable, Mapping, Optional, Union, Sequence
 
 import numpy as np
 import torch
@@ -35,31 +35,81 @@ class InferenceProblem:
     """Complete Bayesian learning problem for force-field parameter inference."""
 
     models: dict[str, LGPCommittee]
-    observations: dict[str, np.ndarray]
     constraint: Optional[Callable] = None
+    observations: dict[str, np.ndarray | torch.Tensor] = field(
+        init=False,
+        repr=False,
+    )
 
     def __post_init__(self) -> None:
         if not self.models:
             raise ValueError("InferenceProblem requires at least one surrogate model.")
 
-        model_names = set(self.models)
-        observation_names = set(self.observations)
-        missing = model_names - observation_names
-        extra = observation_names - model_names
-        if missing:
+        empty_models = [qoi for qoi, model in self.models.items() if not model.lgps]
+        if empty_models:
             raise ValueError(
-                "Missing reference observations for QoI(s): "
-                + ", ".join(sorted(missing))
+                "Surrogate models without committee members: "
+                + ", ".join(sorted(empty_models))
             )
-        if extra:
+
+        object.__setattr__(
+            self,
+            "observations",
+            {
+                qoi: np.asarray(model.reference_values, dtype=float)
+                for qoi, model in self.models.items()
+            },
+        )
+
+        inconsistent_inputs = []
+        for qoi, model in self.models.items():
+            input_shapes = {
+                tuple(int(dim) for dim in lgp.X_train.shape)
+                for lgp in model.lgps
+            }
+            if len(input_shapes) != 1:
+                inconsistent_inputs.append(qoi)
+        if inconsistent_inputs:
             raise ValueError(
-                "Unused reference observations provided for QoI(s): "
-                + ", ".join(sorted(extra))
+                "Surrogate committees with inconsistent training input shapes: "
+                + ", ".join(sorted(inconsistent_inputs))
+            )
+
+        model_input_shapes = {
+            qoi: tuple(int(dim) for dim in model.lgps[0].X_train.shape)
+            for qoi, model in self.models.items()
+        }
+        if len(set(model_input_shapes.values())) != 1:
+            shape_summary = ", ".join(
+                f"{qoi}={shape}"
+                for qoi, shape in sorted(model_input_shapes.items())
+            )
+            raise ValueError(
+                "All surrogate models must expect the same training input shape. "
+                f"Found: {shape_summary}"
             )
 
         n_params = {model.n_params for model in self.models.values()}
         if len(n_params) != 1:
             raise ValueError("All surrogate models must have the same input dimension.")
+
+        if self.constraint is not None and self.constraint.n_params != self.n_params:
+            raise ValueError(
+                "The selected surrogate models and the charge constraint disagree "
+                f"on the number of explicit parameters: models expect "
+                f"{self.n_params}, constraint defines {self.constraint.n_params}."
+            )
+
+        invalid = [
+            qoi
+            for qoi, model in self.models.items()
+            if model.reference_values.size != model.y_size
+        ]
+        if invalid:
+            raise ValueError(
+                "Models with incompatible reference output size: "
+                + ", ".join(sorted(invalid))
+            )
 
     @property
     def qoi_names(self) -> list[str]:
@@ -99,33 +149,13 @@ class InferenceProblem:
         return len(self.nuisance_names)
 
     @classmethod
-    def from_datasets(
+    def from_models(
         cls,
         models: Mapping[str, LGPCommittee],
-        datasets: Sequence[QoIDataset],
         *,
-        qoi: Optional[Sequence[str]] = None,
         constraint: Optional[Callable] = None,
     ) -> "InferenceProblem":
-        qoi_selected = list(qoi) if qoi else list(models)
-        missing = set(qoi_selected) - set(models)
-        if missing:
-            raise ValueError(
-                "Requested QoI(s) not found in trained models: "
-                + ", ".join(repr(name) for name in sorted(missing))
-            )
-
-        observations = {
-            dataset.name: dataset.outputs_ref
-            for dataset in datasets
-            if dataset.name in qoi_selected
-        }
-        selected_models = {name: models[name] for name in qoi_selected}
-        return cls(
-            models=selected_models,
-            observations=observations,
-            constraint=constraint,
-        )
+        return cls(models=dict(models), constraint=constraint)
 
     def build_priors(self, dist_type: str = "normal") -> Priors:
         return Priors.from_bounds(
@@ -141,14 +171,19 @@ class InferenceProblem:
         device: str,
         dtype: torch.dtype = torch.float32,
     ) -> "InferenceProblem":
-        return InferenceProblem(
+        problem = InferenceProblem(
             models=self.models,
-            observations={
+            constraint=self.constraint,
+        )
+        object.__setattr__(
+            problem,
+            "observations",
+            {
                 qoi: torch.as_tensor(values, device=device, dtype=dtype)
                 for qoi, values in self.observations.items()
             },
-            constraint=self.constraint,
         )
+        return problem
 
     def infer(
         self,
@@ -167,6 +202,7 @@ class InferenceProblem:
         logger: Optional[Logger] = None,
         rhat_tol: float = 1.01,
         ess_min: int = 100,
+        include_implicit_charge: bool = False,
     ) -> InferenceResults:
         """Run posterior sampling for this inference problem."""
         logger = logger or Logger("BFFLearn")
@@ -229,7 +265,13 @@ class InferenceProblem:
         )
 
         sampler.write_posterior(fn_posterior)
-        return InferenceResults.load(posterior=fn_posterior, priors=priors)
+        specs = getattr(self.constraint, "specs", None)
+        return InferenceResults.load(
+            posterior=fn_posterior,
+            priors=priors,
+            specs=specs,
+            include_implicit_charge=include_implicit_charge,
+        )
 
 
 def _resolve_mean(
@@ -238,8 +280,13 @@ def _resolve_mean(
 ) -> ArrayLike | float:
     """Resolve a configured surrogate mean specification."""
     if dataset.name == "rdf" and mean == "sigmoid":
-        n_bins = dataset.settings_kwargs.get("n_bins")
-        r_range = dataset.settings_kwargs.get("r_range")
+        n_bins = dataset.settings.get("n_bins")
+        r_range = dataset.settings.get("r_range")
+        if n_bins is None or r_range is None:
+            raise ValueError(
+                "RDF sigmoid mean requires shared RDF settings in the dataset. "
+                "Analyze with one consistent RDF routine definition per QoI."
+            )
         return rdf_sigmoid_mean(n_bins, r_range, dataset.outputs_ref)
     return mean
 
@@ -257,7 +304,8 @@ def fit_lgp_committee(
     test_fraction: float,
     n_hyper: int,
     committee: int,
-    observations: int,
+    n_observations: int,
+    reference_values: np.ndarray,
     nuisance: float | None,
     fn_out: PathLike | None,
     device: str,
@@ -328,7 +376,12 @@ def fit_lgp_committee(
         )
         logger.info(f"Committee: {i}/{committee}", level=2, overwrite=True)
 
-    lgp_committee = LGPCommittee(lgps, observations, nuisance)
+    lgp_committee = LGPCommittee(
+        lgps,
+        n_observations,
+        reference_values,
+        nuisance,
+    )
     lgp_committee.validate(X_test, y_test)
     logger.info(
         f"Committee: {committee} (100%) | MAPE = {lgp_committee.error:.2f}%",
@@ -380,7 +433,7 @@ def train_surrogates(
             )
 
         qoi = dataset.name
-        observations = _effective_observations(
+        n_observations = _effective_observations(
             dataset,
             observation_scales.get(qoi, 1.0),
         )
@@ -393,9 +446,18 @@ def train_surrogates(
 
         if reuse_models and fn_model is not None and fn_model.exists():
             models[qoi] = LGPCommittee.load(fn_model)
-            models[qoi].observations = observations
+            models[qoi].n_observations = n_observations
+            models[qoi].reference_values = np.asarray(
+                dataset.outputs_ref,
+                dtype=float,
+            ).reshape(-1)
+            if models[qoi].reference_values.size != models[qoi].y_size:
+                raise ValueError(
+                    f"Cached surrogate for {qoi!r} is incompatible with the "
+                    "current reference observation size."
+                )
             logger.info(
-                f"Using cached model. | obs = {observations} "
+                f"Using cached model. | obs = {n_observations} "
                 f"| MAPE = {models[qoi].error:.2f}",
                 level=2,
             )
@@ -409,14 +471,15 @@ def train_surrogates(
             test_fraction=test_fraction,
             n_hyper=n_hyper_max,
             committee=committee_size,
-            observations=observations,
+            n_observations=n_observations,
+            reference_values=dataset.outputs_ref,
             nuisance=dataset.nuisance,
             fn_out=fn_model,
             device=device,
             logger=logger,
             opt_kwargs=opt_kwargs,
         )
-        logger.info(f"Effective observations: {observations}", level=2)
+        logger.info(f"Effective observations: {n_observations}", level=2)
         logger.info("", level=0)
 
     return models

@@ -3,14 +3,22 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Optional, Sequence, Tuple, Union
 
 import numpy as np
-import torch
 from scipy.stats.qmc import LatinHypercube
 
 from ..io.utils import load_yaml, save_yaml
 
+try:
+    import torch
+except ModuleNotFoundError:
+    torch = None
+
 
 PathLike = Union[str, Path]
-ArrayLike = Union[np.ndarray, torch.Tensor]
+ArrayLike = Union[np.ndarray, Any]
+
+
+def _is_torch_tensor(values: object) -> bool:
+    return torch is not None and isinstance(values, torch.Tensor)
 
 
 @dataclass(frozen=True)
@@ -80,9 +88,6 @@ class Bounds:
 class Specs:
     """Force-field specification data."""
 
-    SCHEMA_VERSION = 1
-    KIND = "bff.forcefield_specs"
-
     source: InitVar[dict[str, Any] | PathLike]
 
     mol_resname: str = field(init=False)
@@ -99,23 +104,11 @@ class Specs:
         else:
             raise TypeError(f"Unsupported source type: {type(source)}")
 
-        required = {"bounds", "total_charge", "constraint_charge", "implicit_atoms"}
+        required = {"bounds", "implicit_atoms", "charge_target"}
         missing = required - set(data)
         if missing:
             missing_list = ", ".join(sorted(repr(key) for key in missing))
             raise ValueError(f"Missing required specs field(s): {missing_list}")
-
-        schema_version = data.get("schema_version")
-        if schema_version is not None and int(schema_version) != self.SCHEMA_VERSION:
-            raise ValueError(
-                f"Unsupported specs schema_version {schema_version!r}. "
-                f"Expected {self.SCHEMA_VERSION}."
-            )
-        kind = data.get("kind")
-        if kind is not None and str(kind) != self.KIND:
-            raise ValueError(
-                f"Unsupported specs kind {kind!r}. Expected {self.KIND!r}."
-            )
 
         implicit_atoms = data["implicit_atoms"]
         if isinstance(implicit_atoms, str):
@@ -123,8 +116,8 @@ class Specs:
 
         object.__setattr__(self, "mol_resname", str(data.get("mol_resname", "")))
         object.__setattr__(self, "bounds", Bounds(data["bounds"]))
-        object.__setattr__(self, "total_charge", float(data["total_charge"]))
-        object.__setattr__(self, "constraint_charge", float(data["constraint_charge"]))
+        object.__setattr__(self, "total_charge", float(data.get("total_charge", 0.0)))
+        object.__setattr__(self, "constraint_charge", float(data["charge_target"]))
         object.__setattr__(self, "implicit_atoms", tuple(implicit_atoms))
 
     @classmethod
@@ -133,15 +126,10 @@ class Specs:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "schema_version": self.SCHEMA_VERSION,
-            "kind": self.KIND,
             "mol_resname": self.mol_resname,
-            "n_params": self.bounds.n_params,
-            "parameter_names": list(self.parameter_names()),
-            "explicit_parameter_names": list(self.parameter_names(explicit_only=True)),
             "bounds": self.bounds.to_dict(),
             "total_charge": self.total_charge,
-            "constraint_charge": self.constraint_charge,
+            "charge_target": self.constraint_charge,
             "implicit_atoms": list(self.implicit_atoms),
         }
 
@@ -166,13 +154,13 @@ class Specs:
 
     def parameter_dict(
         self,
-        values: Sequence[float] | np.ndarray | torch.Tensor,
+        values: Sequence[float] | np.ndarray | Any,
         *,
         explicit_only: bool = False,
     ) -> dict[str, float]:
         array = (
             values.detach().cpu().numpy()
-            if isinstance(values, torch.Tensor)
+            if _is_torch_tensor(values)
             else np.asarray(values, dtype=float)
         ).reshape(-1)
         names = self.parameter_names(explicit_only=explicit_only)
@@ -193,6 +181,54 @@ class Specs:
     @property
     def constraint_matrix(self) -> np.ndarray:
         return self.explicit_charge_coefficients
+
+    def implicit_charge(
+        self,
+        values: Sequence[float] | np.ndarray | Any,
+    ) -> np.ndarray:
+        array = (
+            values.detach().cpu().numpy()
+            if _is_torch_tensor(values)
+            else np.asarray(values, dtype=float)
+        )
+        array = np.atleast_2d(array)
+        n_explicit = self.explicit_bounds.n_params
+        if array.shape[1] < n_explicit:
+            raise ValueError(
+                f"Expected at least {n_explicit} explicit parameter columns, "
+                f"got {array.shape[1]}."
+            )
+        explicit = array[:, :n_explicit]
+        explicit_charge = explicit @ self.constraint_matrix
+        return (self.constraint_charge - explicit_charge) / len(self.implicit_atoms)
+
+    def with_implicit_charge(
+        self,
+        values: Sequence[float] | np.ndarray | Any,
+    ) -> np.ndarray:
+        array = (
+            values.detach().cpu().numpy()
+            if _is_torch_tensor(values)
+            else np.asarray(values, dtype=float)
+        )
+        array = np.atleast_2d(array)
+        n_explicit = self.explicit_bounds.n_params
+        if array.shape[1] < n_explicit:
+            raise ValueError(
+                f"Expected at least {n_explicit} explicit parameter columns, "
+                f"got {array.shape[1]}."
+            )
+
+        implicit = self.implicit_charge(array)[:, None]
+        insert_at = self.implicit_param_index
+        return np.concatenate(
+            [
+                array[:, :insert_at],
+                implicit,
+                array[:, insert_at:],
+            ],
+            axis=1,
+        )
 
 
 @dataclass(frozen=True)
@@ -225,7 +261,7 @@ class ChargeConstraint:
 
     @staticmethod
     def _to_2d_array(values: ArrayLike) -> np.ndarray:
-        if isinstance(values, torch.Tensor):
+        if _is_torch_tensor(values):
             arr = values.detach().cpu().numpy()
         else:
             arr = np.asarray(values, dtype=float)

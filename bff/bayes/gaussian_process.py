@@ -146,7 +146,9 @@ class LGPCommittee:
     lgps : list of LocalGaussianProcess
         List of LGP models.
     n_observations : int
-        Number of observations used to train each LGP model.
+        Effective number of observations used in the likelihood term.
+    reference_values : np.ndarray
+        Reference observation vector matched by the surrogate outputs.
     nuisance : float, optional
         Nuisance parameter for model selection (default is None).
     stochastic : bool, optional
@@ -173,14 +175,21 @@ class LGPCommittee:
         self,
         lgps: list[LocalGaussianProcess],
         n_observations: int,
+        reference_values: np.ndarray,
         nuisance: float | None = None,
         stochastic: bool = False
     ) -> None:
         self.lgps = lgps
         self.error: float | None = None
-        self.observations = n_observations
+        self.n_observations = int(n_observations)
+        self.reference_values = np.asarray(reference_values, dtype=float).reshape(-1)
         self.nuisance = nuisance
         self.stochastic = stochastic
+
+        if self.reference_values.size != self.lgps[0].y_size:
+            raise ValueError(
+                "Reference observation size does not match surrogate output size."
+            )
 
     @property
     def size(self) -> int:
@@ -189,6 +198,10 @@ class LGPCommittee:
     @property
     def n_params(self) -> int:
         return self.lgps[0].n_params
+
+    @property
+    def y_size(self) -> int:
+        return self.lgps[0].y_size
 
     def predict(self, X: torch.Tensor) -> torch.Tensor:
         """
@@ -242,6 +255,7 @@ class LGPCommittee:
         committee = cls(
             lgps=lgps,
             n_observations=state["n_observations"],
+            reference_values=np.asarray(state["reference_values"], dtype=float),
             nuisance=state["nuisance"],
             stochastic=state["stochastic"],
         )
@@ -251,7 +265,8 @@ class LGPCommittee:
     def write(self, fn_out: PathLike) -> None:
 
         state = {
-            "n_observations": self.observations,
+            "n_observations": self.n_observations,
+            "reference_values": self.reference_values.tolist(),
             "nuisance": self.nuisance,
             "stochastic": self.stochastic,
             "error": self.error,
