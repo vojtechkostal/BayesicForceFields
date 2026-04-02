@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+message: "If you use BFF, please cite the repository and the associated paper."
+title: "Bayesic Force Fields"
+authors:
+  - family-names: Kostal
+    given-names: Vojtech
+url: "https://github.com/vojtechkostal/BayesicForceFields"
+repository-code: "https://github.com/vojtechkostal/BayesicForceFields"
+license: "GPL-3.0"
+preferred-citation:
+  type: article
+  title: "Bayesian Learning for Accurate and Robust Biomolecular Force Fields"
+  authors:
+    - family-names: Kostal
+      given-names: Vojtech
+    - family-names: Shanks
+      given-names: Brennon L.
+    - family-names: Jungwirth
+      given-names: Pavel
+    - family-names: Martinez-Seara
+      given-names: Hector
+  journal: "Journal of Chemical Theory and Computation"
+  year: 2026
+  volume: 22
+  issue: 5
+  start: 2652
+  end: 2663
+  doi: "10.1021/acs.jctc.5c02051"
+  url: "https://pubs.acs.org/doi/10.1021/acs.jctc.5c02051"

@@ -21,6 +21,9 @@ MkDocs on GitHub Pages.
 Published documentation:
 [vojtechkostal.github.io/BayesicForceFields](https://vojtechkostal.github.io/BayesicForceFields/)
 
+Associated publication:
+[Bayesian Learning for Accurate and Robust Biomolecular Force Fields](https://pubs.acs.org/doi/10.1021/acs.jctc.5c02051)
+
 ## Installation
 
 Create the development environment from the repository root:

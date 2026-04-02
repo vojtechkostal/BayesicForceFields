@@ -40,6 +40,7 @@ classifiers = [
 Documentation = "https://vojtechkostal.github.io/BayesicForceFields/"
 Homepage = "https://github.com/vojtechkostal/BayesicForceFields"
 Issues = "https://github.com/vojtechkostal/BayesicForceFields/issues"
+Publication = "https://pubs.acs.org/doi/10.1021/acs.jctc.5c02051"
 Releases = "https://github.com/vojtechkostal/BayesicForceFields/releases"
 Repository = "https://github.com/vojtechkostal/BayesicForceFields"
 

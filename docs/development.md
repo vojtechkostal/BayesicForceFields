@@ -55,23 +55,29 @@ The publishing workflow should:
 
 ## Versioning Strategy
 
+Associated publication:
+[Bayesian Learning for Accurate and Robust Biomolecular Force Fields](https://pubs.acs.org/doi/10.1021/acs.jctc.5c02051)
+
 For the paper snapshot you want to archive as `0.0.1`, the clean approach is:
 
 1. Identify the exact commit that produced the paper data.
 2. Set the package version on that commit to `0.0.1` if it is not already.
 3. Create an annotated tag such as `v0.0.1` on that exact commit.
-4. Create a GitHub release from the tag.
-5. Optionally create a long-lived branch such as `paper/v0.0.1` if you want a
-   stable branch name in addition to the tag.
+4. Create a GitHub release from the tag and include the paper DOI and URL in
+   the release notes.
+5. Switch the repository default branch to `develop`.
+6. Protect `main` against direct pushes so it becomes the frozen paper branch.
 
-After that, bump `main` immediately to the next development version, for
-example `0.1.0.dev0`, and continue development there.
-
-That keeps the paper version immutable and citable while allowing active
-development to move forward cleanly.
+That keeps `main` aligned with the publication snapshot while active
+development continues on `develop`.
 
 ## Notes On Main Branch Releases
 
-Do not keep `main` pretending to be the archived paper release once active
-development continues. Treat the paper release as a tagged historical snapshot,
-then bump `main` to a development version right away.
+If you want `main` itself to be the archived paper branch, freeze it after the
+paper tag and move day-to-day development to `develop`. The important GitHub
+steps are:
+
+- set `develop` as the default branch
+- protect `main`
+- create a release from the paper tag
+- keep the paper DOI in the release notes and repository citation metadata

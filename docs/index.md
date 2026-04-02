@@ -3,6 +3,9 @@
 Bayesic Force Fields (BFF) is a workflow-oriented toolkit for learning
 fixed-charge molecular force fields from trajectory-derived observables.
 
+Associated publication:
+[Bayesian Learning for Accurate and Robust Biomolecular Force Fields](https://pubs.acs.org/doi/10.1021/acs.jctc.5c02051)
+
 The public interface is intentionally small:
 
 - `bff prepare` stages equilibrated systems and reusable training assets.
