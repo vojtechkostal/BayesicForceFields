@@ -47,7 +47,7 @@ After the first `bff` run, reactivate the environment once:
 
 ```bash
 conda deactivate
-conda activate bbflearn
+conda activate bfflearn
 ```
 
 After that, `bff <TAB>` should offer:

@@ -12,8 +12,8 @@
 Create a small conda environment first:
 
 ```bash
-mamba create -n bbflearn python=3.10 pip
-mamba activate bbflearn
+mamba create -n bfflearn python=3.10 pip
+mamba activate bfflearn
 ```
 
 Install a matching PyTorch build for your machine before training or learning.
@@ -30,7 +30,7 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 Then install BFF from PyPI:
 
 ```bash
-pip install bbflearn
+pip install bfflearn
 ```
 
 PyTorch is intentionally not part of the default package dependencies because
@@ -43,7 +43,7 @@ the repository root:
 
 ```bash
 mamba env create -f environment.yaml
-mamba activate bbflearn
+mamba activate bfflearn
 ```
 
 That environment installs BFF in editable mode together with the `dev`, `docs`,
@@ -61,7 +61,7 @@ pip install -e ".[dev,docs,notebook]"
 If you already have a Python environment and a working PyTorch install:
 
 ```bash
-pip install bbflearn
+pip install bfflearn
 ```
 
 ## Local Docs

@@ -163,7 +163,7 @@ def version() -> None:
     from importlib import metadata
 
     try:
-        version_str = metadata.version("bbflearn")
+        version_str = metadata.version("bfflearn")
     except metadata.PackageNotFoundError:
         from . import __version__
 

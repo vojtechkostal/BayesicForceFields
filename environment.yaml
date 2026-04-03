@@ -1,4 +1,4 @@
-name: bbflearn
+name: bfflearn
 channels:
   - conda-forge
 dependencies:

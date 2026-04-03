@@ -49,8 +49,8 @@ Preprint:
 Recommended user installation:
 
 ```bash
-mamba create -n bbflearn python=3.10 pip
-mamba activate bbflearn
+mamba create -n bfflearn python=3.10 pip
+mamba activate bfflearn
 ```
 
 Install a matching PyTorch build for your machine before training or learning.
@@ -67,7 +67,7 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 Then install BFF from PyPI:
 
 ```bash
-pip install bbflearn
+pip install bfflearn
 ```
 
 External tools are still required for full workflows:
@@ -85,7 +85,7 @@ For development work on the repository itself, use:
 
 ```bash
 mamba env create -f environment.yaml
-mamba activate bbflearn
+mamba activate bfflearn
 ```
 
 If you prefer to start from an existing environment instead:
@@ -167,7 +167,7 @@ run, reactivate the environment once:
 
 ```bash
 conda deactivate
-conda activate bbflearn
+conda activate bfflearn
 ```
 
 After that, `bff <TAB>` should offer the public workflow commands.
