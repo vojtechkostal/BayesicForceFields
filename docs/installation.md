@@ -33,6 +33,16 @@ Then install BFF from PyPI:
 pip install bfflearn
 ```
 
+If you need the exact code used for the published paper, install the archived
+paper snapshot from Git tag `v0.0.1` instead of the current PyPI release:
+
+```bash
+pip install "BayesicForceFields @ git+https://github.com/vojtechkostal/BayesicForceFields.git@v0.0.1"
+```
+
+That tag is the reference point for exact reproduction of the published paper
+data. The current `bfflearn` package is the post-paper refactored workflow.
+
 PyTorch is intentionally not part of the default package dependencies because
 the correct CPU or CUDA build depends on the target hardware and driver stack.
 

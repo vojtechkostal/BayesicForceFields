@@ -9,6 +9,10 @@ Associated publication:
 Preprint:
 [arXiv:2511.05398](https://arxiv.org/abs/2511.05398)
 
+For exact reproduction of the published paper data, use the archived Git tag
+`v0.0.1`. The current `bfflearn` release line documents and ships the
+post-paper refactored workflow.
+
 The public interface is intentionally small:
 
 - `bff prepare` stages equilibrated systems and reusable training assets.

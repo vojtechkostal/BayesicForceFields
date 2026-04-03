@@ -70,6 +70,16 @@ Then install BFF from PyPI:
 pip install bfflearn
 ```
 
+If you want the exact code used for the paper, install the archived paper
+snapshot from tag `v0.0.1` instead of the current PyPI release:
+
+```bash
+pip install "BayesicForceFields @ git+https://github.com/vojtechkostal/BayesicForceFields.git@v0.0.1"
+```
+
+Use `v0.0.1` for exact reproduction of the published paper data. The current
+`bfflearn` release line is the post-paper refactored workflow.
+
 External tools are still required for full workflows:
 
 - [Gromacs](https://www.gromacs.org) for `prepare`, `simulate`, and `validate`
