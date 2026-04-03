@@ -1,25 +1,8 @@
-name: bff
+name: bbflearn
 channels:
   - conda-forge
 dependencies:
-  - python>=3.9
+  - python>=3.10
   - pip
-  - ipython
-  - ipykernel
-  - ipywidgets
-  - jupyterlab
-  - notebook
-  - numpy
-  - scipy
-  - matplotlib
-  - pyyaml
-  - mdanalysis
-  - typer
-  - gmxtop
-  - pytest
-  - ruff
-  - mkdocs
-  - mkdocs-material
-  - pymdown-extensions
-  - build
-  - twine
+  - pip:
+      - -e .[dev,docs,notebook]

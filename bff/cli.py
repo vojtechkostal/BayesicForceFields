@@ -37,7 +37,7 @@ if [ -n "${{BASH_VERSION-}}" ]; then
             cword=$COMP_CWORD
         fi
 
-        local commands="{ " ".join(WORKFLOW_COMMANDS) }"
+        local commands="{" ".join(WORKFLOW_COMMANDS)}"
         if [[ $COMP_CWORD -eq 1 ]]; then
             COMPREPLY=($(compgen -W "$commands" -- "$cur"))
             return 0
@@ -60,7 +60,7 @@ elif [ -n "${{ZSH_VERSION-}}" ]; then
 
     _bff_completion() {{
         local -a commands
-        commands=({ " ".join(WORKFLOW_COMMANDS) })
+        commands=({" ".join(WORKFLOW_COMMANDS)})
 
         if (( CURRENT == 2 )); then
             compadd -- "${{commands[@]}}"
@@ -164,7 +164,7 @@ def version() -> None:
     from importlib import metadata
 
     try:
-        version_str = metadata.version("BayesicForceFields")
+        version_str = metadata.version("bbflearn")
     except metadata.PackageNotFoundError:
         from . import __version__
 

@@ -1,15 +1,15 @@
 [project]
-name = "BayesicForceFields"
+name = "bbflearn"
 version = "0.1.0.dev0"
 description = "Bayesian workflows for fixed-charge molecular force fields"
 authors = [
   { name="Vojtech Kostal", email="vojtakostal8@gmail.com" }
 ]
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = { file = "LICENSE" }
 dependencies = [
-  "gmxtop",
+  "gmxtopology",
   "matplotlib",
   "MDAnalysis",
   "numpy",
@@ -29,9 +29,10 @@ classifiers = [
   "Intended Audience :: Science/Research",
   "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Topic :: Scientific/Engineering :: Chemistry",
   "Topic :: Scientific/Engineering :: Physics",
 ]
@@ -41,6 +42,7 @@ Documentation = "https://vojtechkostal.github.io/BayesicForceFields/"
 Homepage = "https://github.com/vojtechkostal/BayesicForceFields"
 Issues = "https://github.com/vojtechkostal/BayesicForceFields/issues"
 Publication = "https://pubs.acs.org/doi/10.1021/acs.jctc.5c02051"
+Preprint = "https://arxiv.org/abs/2511.05398"
 Releases = "https://github.com/vojtechkostal/BayesicForceFields/releases"
 Repository = "https://github.com/vojtechkostal/BayesicForceFields"
 
@@ -82,7 +84,7 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 88
-target-version = "py39"
+target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]

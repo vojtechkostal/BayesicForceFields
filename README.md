@@ -2,11 +2,14 @@
 
 [![Docs](https://img.shields.io/badge/docs-latest-brightgreen)](https://vojtechkostal.github.io/BayesicForceFields/)
 [![Paper](https://img.shields.io/badge/paper-JCTC%202026-blue)](https://pubs.acs.org/doi/10.1021/acs.jctc.5c02051)
+[![Preprint](https://img.shields.io/badge/preprint-arXiv%202511.05398-b31b1b)](https://arxiv.org/abs/2511.05398)
+[![Release](https://img.shields.io/github/v/tag/vojtechkostal/BayesicForceFields?label=release)](https://github.com/vojtechkostal/BayesicForceFields/releases)
+[![License](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 
 Bayesic Force Fields (BFF) is a workflow-oriented Python package for learning
 fixed-charge molecular force-field parameters from molecular dynamics
 observables. It combines system preparation, sampled MD campaigns, QoI
-analysis, surrogate training, posterior inference, and validation in one
+analysis, surrogate training and posterior inference in one
 toolchain.
 
 The public CLI is centered around six workflows:
@@ -24,35 +27,72 @@ MkDocs on GitHub Pages.
 Published documentation:
 [vojtechkostal.github.io/BayesicForceFields](https://vojtechkostal.github.io/BayesicForceFields/)
 
-Associated publication:
+## How to Cite
+
+If you use BFF, please cite:
+
+```text
+Kostal, V.; Shanks, B. L.; Jungwirth, P.; Martinez-Seara, H.
+Bayesian Learning for Accurate and Robust Biomolecular Force Fields.
+J. Chem. Theory Comput. 2026, 22 (5), 2652-2663.
+https://doi.org/10.1021/acs.jctc.5c02051
+```
+
+Paper:
 [Bayesian Learning for Accurate and Robust Biomolecular Force Fields](https://pubs.acs.org/doi/10.1021/acs.jctc.5c02051)
+
+Preprint:
+[arXiv:2511.05398](https://arxiv.org/abs/2511.05398)
 
 ## Installation
 
-Create the development environment from the repository root:
+Recommended user installation:
 
 ```bash
-conda env create -f environment.yaml
-conda activate bff
-pip install -e . --no-deps
+mamba create -n bbflearn python=3.10 pip
+mamba activate bbflearn
 ```
 
-If you prefer `pip`, the package also exposes optional extras:
+Install a matching PyTorch build for your machine before training or learning.
+The recommended way is to use the selector on the official PyTorch install
+page:
+https://pytorch.org/get-started/locally/
+
+Example for Linux with CUDA 12.6:
 
 ```bash
-pip install -e ".[dev,docs,notebook]"
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+```
+
+Then install BFF from PyPI:
+
+```bash
+pip install bbflearn
 ```
 
 External tools are still required for full workflows:
 
-- `gmx` for `prepare`, `simulate`, and `validate`
-- CP2K for staged reference calculations
-- PLUMED only for PLUMED-biased systems
-- PyTorch installed separately for `train`, `learn`, and posterior notebooks
+- [Gromacs](https://www.gromacs.org) for `prepare`, `simulate`, and `validate`
+- [CP2K](https://www.cp2k.org) for staged reference calculations
+- [PLUMED](https://www.plumed.org) only for PLUMED-biased systems
+- [PyTorch](https://pytorch.org) installed separately for `train`, `learn`, and posterior notebooks
 
 PyTorch is not installed by default because the appropriate CPU or CUDA build
 depends on the target machine. Install the matching PyTorch build first, then
 install BFF.
+
+For development work on the repository itself, use:
+
+```bash
+mamba env create -f environment.yaml
+mamba activate bbflearn
+```
+
+If you prefer to start from an existing environment instead:
+
+```bash
+pip install -e ".[dev,docs,notebook]"
+```
 
 ## Quick Start
 
@@ -127,7 +167,7 @@ run, reactivate the environment once:
 
 ```bash
 conda deactivate
-conda activate bff
+conda activate bbflearn
 ```
 
 After that, `bff <TAB>` should offer the public workflow commands.

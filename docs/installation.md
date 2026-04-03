@@ -2,49 +2,66 @@
 
 ## Requirements
 
-- Python 3.9 or newer
+- Python 3.10 or newer
 - GROMACS available as `gmx` for `prepare`, `simulate`, and `validate`
 - CP2K only if you want to run the staged reference inputs
 - PLUMED only for PLUMED-biased systems
 
-## Conda Environment
+## Recommended User Install
 
-The repository ships an environment file for development, notebooks, docs, and
-packaging:
+Create a small conda environment first:
 
 ```bash
-conda env create -f environment.yaml
-conda activate bff
+mamba create -n bbflearn python=3.10 pip
+mamba activate bbflearn
 ```
 
 Install a matching PyTorch build for your machine before training or learning.
-Then install BFF itself:
+Use the official PyTorch selector for the exact command:
+
+https://pytorch.org/get-started/locally/
+
+Example for Linux with CUDA 12.6:
 
 ```bash
-pip install -e . --no-deps
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
 ```
 
-The environment includes the core runtime dependencies and common developer
-tools such as `pytest`, `ruff`, `mkdocs`, and Jupyter.
+Then install BFF from PyPI:
 
-PyTorch is intentionally not part of the default environment file because the
-correct CPU or CUDA build depends on the target hardware and driver stack.
+```bash
+pip install bbflearn
+```
 
-## Pip Installation
+PyTorch is intentionally not part of the default package dependencies because
+the correct CPU or CUDA build depends on the target hardware and driver stack.
 
-Editable installation with extras:
+## Repository Environment
+
+For work on the repository itself, create the shared project environment from
+the repository root:
+
+```bash
+mamba env create -f environment.yaml
+mamba activate bbflearn
+```
+
+That environment installs BFF in editable mode together with the `dev`, `docs`,
+and `notebook` extras, but still leaves PyTorch to you so you can choose the
+correct CPU or CUDA build.
+
+If you prefer to start from an existing environment:
 
 ```bash
 pip install -e ".[dev,docs,notebook]"
 ```
 
-Install PyTorch separately before using `bff train`, `bff learn`, or the
-posterior notebooks.
+## Direct Pip Installation
 
-Core runtime installation:
+If you already have a Python environment and a working PyTorch install:
 
 ```bash
-pip install .
+pip install bbflearn
 ```
 
 ## Local Docs

@@ -7,6 +7,19 @@
 - worked example: `examples/acetate/`
 - GitHub Actions: `.github/workflows/`
 
+## Repository Environment
+
+From the repository root:
+
+```bash
+mamba env create -f environment.yaml
+mamba activate bbflearn
+```
+
+That shared environment installs the package in editable mode together with the
+developer, notebook, and docs extras. Install PyTorch separately afterward if
+you want to run `bff train`, `bff learn`, or the posterior notebooks.
+
 ## Local Quality Checks
 
 Suggested checks from the repository root:
@@ -40,7 +53,7 @@ Recommended repository workflows:
 
 The clean GitHub-to-PyPI setup is:
 
-1. Create a PyPI project for `BayesicForceFields`.
+1. Create a PyPI project for `bbflearn`.
 2. In PyPI, add a trusted publisher for this repository and the
    `.github/workflows/publish.yml` workflow.
 3. In GitHub, keep the publishing workflow protected by tags or release
