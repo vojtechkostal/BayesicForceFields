@@ -8,7 +8,6 @@ from ..domain.specs import ChargeConstraint
 from ..io.logs import Logger
 from .configs import LearnConfig
 
-
 PathLike = Union[str, Path]
 
 

@@ -6,11 +6,10 @@ import numpy as np
 import torch
 from scipy.stats import gaussian_kde
 
-from .priors import Priors
 from ..domain.specs import Specs
 from ..io.utils import save_yaml
 from ..mcmc.convergence import integrated_autocorr_time
-
+from .priors import Priors
 
 PathLike = Union[str, Path]
 

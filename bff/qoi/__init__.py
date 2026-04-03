@@ -1,8 +1,4 @@
-from . import hbonds
-from . import rdf
-from . import routines
-from . import analysis
-from . import data
+from . import analysis, data, hbonds, rdf, routines
 
 __all__ = [
     "data",

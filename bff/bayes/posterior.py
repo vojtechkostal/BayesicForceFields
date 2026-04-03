@@ -1,7 +1,8 @@
-import torch
-import numpy as np
+from typing import Callable, List
 
-from typing import List, Callable
+import numpy as np
+import torch
+
 from .priors import Priors, log_prior
 from .utils import check_tensor
 

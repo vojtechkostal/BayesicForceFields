@@ -1,5 +1,3 @@
-from . import convergence
-from . import proposal
-from . import sampler
+from . import convergence, proposal, sampler
 
 __all__ = ["convergence", "proposal", "sampler"]

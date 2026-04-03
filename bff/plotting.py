@@ -11,7 +11,6 @@ from scipy.stats import gaussian_kde
 from .bayes.results import InferenceResults
 from .domain.specs import Specs
 
-
 PathLike = Union[str, Path]
 ArrayLike = Union[np.ndarray, torch.Tensor]
 

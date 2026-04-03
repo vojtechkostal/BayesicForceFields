@@ -4,8 +4,8 @@ import MDAnalysis as mda
 import numpy as np
 from scipy.ndimage import gaussian_filter
 
-from .data import QoI
 from ..tools import compute_distances, get_unitcell
+from .data import QoI
 
 
 def compute_rdf(

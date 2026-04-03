@@ -1,5 +1,5 @@
-import multiprocessing as mp
 import gc
+import multiprocessing as mp
 import warnings
 from functools import partial
 from pathlib import Path
@@ -8,13 +8,12 @@ from typing import Any, Iterable, Sequence
 import MDAnalysis as mda
 
 from ..domain.trainset import TrajectorySet
-from .data import QoI
 from ..io.logs import Logger
 from ..io.progress import iter_progress
-from ..topology import prepare_universe
 from ..tools import _normalized_dimensions
+from ..topology import prepare_universe
+from .data import QoI
 from .routines import RuntimeRoutine, run_analysis_routines
-
 
 PathLike = str | Path
 

@@ -1,40 +1,42 @@
 import argparse
 import os
-import subprocess
 import shutil
+import subprocess
 import warnings
 from dataclasses import dataclass
-import numpy as np
-from typing import Union, Dict, List, Optional, Sequence
+from pathlib import Path
+from typing import Dict, List, Optional, Sequence, Union
 
 import MDAnalysis as mda
+import numpy as np
+from gmxtopology import Topology
+from MDAnalysis import transformations as trans
 from MDAnalysis.analysis.distances import distance_array
 from MDAnalysis.selections.gromacs import SelectionWriter
-from MDAnalysis import transformations as trans
 
-from pathlib import Path
-
-from gmxtopology import Topology
 from ..domain.bias import BiasSpec
-from ..io.commands import build_command
-from ..topology import create_box
 from ..io.colvars import (
     resolve_distance_bias_metadata as resolve_colvars_distance_bias_metadata,
+)
+from ..io.colvars import (
     write_mdp_with_colvars,
 )
+from ..io.commands import build_command
 from ..io.cp2k import (
     make_cp2k_input,
     make_cp2k_single_point_input,
     write_cp2k_md_slurm_script,
     write_cp2k_single_point_slurm_script,
 )
+from ..io.logs import Logger
 from ..io.plumed import (
     ensure_plumed_kernel,
+)
+from ..io.plumed import (
     resolve_distance_bias_metadata as resolve_plumed_distance_bias_metadata,
 )
-from ..io.logs import Logger
+from ..topology import create_box
 from .configs import PrepareConfig
-
 
 PathLike = Union[str, Path]
 
@@ -723,7 +725,7 @@ def main(fn_config: PathLike) -> None:
             overwrite=True,
             level=2,
         )
-        fn_prod_run = run_md(
+        run_md(
             deffnm_prod,
             fn_prod_local,
             fn_topol_local,

@@ -13,7 +13,6 @@ from ..qoi.routines import (
     normalize_routine_list,
 )
 
-
 PathLike = Union[str, Path]
 SchedulerName = Literal["local", "slurm"]
 

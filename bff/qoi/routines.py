@@ -1,6 +1,6 @@
+import hashlib
 import importlib
 import importlib.util
-import hashlib
 import sys
 from dataclasses import dataclass, field
 from functools import lru_cache

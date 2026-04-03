@@ -1,7 +1,6 @@
 import time
 from typing import Any, Iterable, Iterator, TypeVar
 
-
 T = TypeVar("T")
 
 

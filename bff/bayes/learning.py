@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
-from typing import Callable, Mapping, Optional, Union, Sequence
+from typing import Callable, Mapping, Optional, Sequence, Union
 
 import numpy as np
 import torch
@@ -24,7 +24,6 @@ from .utils import (
     laplace_approximation,
     train_test_split,
 )
-
 
 PathLike = Union[str, Path]
 ArrayLike = Union[np.ndarray, torch.Tensor]

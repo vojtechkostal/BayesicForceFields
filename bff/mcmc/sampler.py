@@ -1,17 +1,17 @@
-import torch
 import time
-
-from pathlib import Path
-from typing import Any, Optional, Callable, Tuple
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Callable, Optional, Tuple
 
-from .proposal import Proposal
+import torch
+
 from .convergence import (
     ConvergenceInfo,
     integrated_autocorr_time,
     rank_normalize,
     rank_normalized_split_rhat,
 )
+from .proposal import Proposal
 
 
 @dataclass

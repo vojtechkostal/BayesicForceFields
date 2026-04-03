@@ -1,5 +1,5 @@
-import shutil
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -14,9 +14,8 @@ from ..io.logs import Logger
 from ..io.schedulers import Slurm
 from ..io.utils import compress_results, load_yaml, save_yaml
 from ..topology import TopologyModifier
-from .md import modify_topology
 from .configs import SimulateConfig, SimulationCampaignConfig, SimulationSystemConfig
-
+from .md import modify_topology
 
 PathLike = str | Path
 

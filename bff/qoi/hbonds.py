@@ -1,10 +1,11 @@
-import numpy as np
-import MDAnalysis as mda
-from MDAnalysis.lib.distances import capped_distance, calc_angles
 from typing import Dict
 
-from .data import QoI
+import MDAnalysis as mda
+import numpy as np
+from MDAnalysis.lib.distances import calc_angles, capped_distance
+
 from ..tools import get_unitcell
+from .data import QoI
 
 __all__ = ["compute_all_hbonds"]
 

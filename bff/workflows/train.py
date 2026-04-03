@@ -8,7 +8,6 @@ from ..io.logs import Logger
 from ..qoi.data import QoIDataset
 from .configs import TrainConfig
 
-
 PathLike = Union[str, Path]
 
 

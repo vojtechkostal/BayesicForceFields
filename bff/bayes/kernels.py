@@ -1,7 +1,8 @@
-import torch
-from .utils import check_tensor, with_manual_sqdist_flag
-
 from typing import Union
+
+import torch
+
+from .utils import check_tensor, with_manual_sqdist_flag
 
 
 @with_manual_sqdist_flag

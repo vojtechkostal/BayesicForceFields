@@ -1,5 +1,6 @@
 """Workflow entry point for sampled training-set simulations."""
 
+from ..io.logs import Logger
 from .configs import SimulateConfig
 from .runsims import (
     build_parameter_samples,
@@ -7,7 +8,6 @@ from .runsims import (
     run_campaign,
     stage_campaign,
 )
-from ..io.logs import Logger
 
 
 def main(fn_config: str) -> None:

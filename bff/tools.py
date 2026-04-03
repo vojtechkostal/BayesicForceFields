@@ -1,11 +1,11 @@
-import numpy as np
-import MDAnalysis as mda
 import inspect
 from typing import Callable
+
+import MDAnalysis as mda
+import numpy as np
+from MDAnalysis.guesser.tables import masses as MDA_MASSES
 from scipy.constants import atomic_mass
 from scipy.spatial.transform import Rotation as R
-
-from MDAnalysis.guesser.tables import masses as MDA_MASSES
 
 MASSES = np.array(list(MDA_MASSES.values()))
 ELEMENTS = list(MDA_MASSES.keys())

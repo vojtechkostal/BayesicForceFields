@@ -7,7 +7,6 @@ import numpy as np
 from ..io.utils import extract_train_dir, prepare_path
 from .specs import Specs
 
-
 PathLike = Union[str, Path]
 
 

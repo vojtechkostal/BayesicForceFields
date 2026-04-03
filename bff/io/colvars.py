@@ -1,11 +1,10 @@
+import re
 from dataclasses import dataclass
 from pathlib import Path
-import re
 
 import MDAnalysis as mda
 
 from .mdp import patch_mdp
-
 
 PathLike = str | Path
 

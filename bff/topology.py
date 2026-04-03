@@ -1,17 +1,16 @@
+import warnings
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-import warnings
 
 import MDAnalysis as mda
 import numpy as np
+from gmxtopology import MoleculeType, Topology
 from MDAnalysis.guesser.tables import masses as MDA_MASSES
 from MDAnalysis.lib.distances import distance_array
-from gmxtopology import Topology, MoleculeType
 
 from .data import IONS, WATER_3SITE, WATER_4SITE, WATERS
-from .tools import random_placement, guess_box
-
+from .tools import guess_box, random_placement
 
 # 1) MDAnalysis DeprecationWarning from ITPParser (elements guessing transition)
 warnings.filterwarnings(

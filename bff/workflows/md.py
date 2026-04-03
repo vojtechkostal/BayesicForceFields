@@ -1,22 +1,20 @@
 import argparse
 import os
-import subprocess
 import shutil
+import subprocess
+from pathlib import Path
 from typing import Union
 
 import numpy as np
 
-from pathlib import Path
-
+from ..domain.specs import Specs
 from ..io.colvars import write_mdp_with_colvars
 from ..io.commands import build_command
 from ..io.mdp import get_n_frames_target
 from ..io.plumed import ensure_plumed_kernel
-from ..domain.specs import Specs
 from ..io.utils import save_yaml
 from ..topology import TopologyModifier
 from .configs import MDJobConfig
-
 
 PathLike = Union[str, Path]
 

@@ -6,7 +6,6 @@ import numpy as np
 import torch
 from torch.distributions import Distribution, Normal, Uniform
 
-
 ArrayLike = Union[np.ndarray, torch.Tensor]
 PathLike = Union[str, Path]
 

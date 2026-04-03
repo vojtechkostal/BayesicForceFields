@@ -6,7 +6,6 @@ from typing import Callable
 
 import typer
 
-
 app = typer.Typer(
     help="BayesicForceFields: Bayesian optimization of molecular force fields.",
     no_args_is_help=True,

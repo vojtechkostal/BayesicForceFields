@@ -1,8 +1,8 @@
-import torch
-
 from pathlib import Path
-from torch.autograd.functional import hessian
 from typing import Callable, Sequence, Tuple, Union
+
+import torch
+from torch.autograd.functional import hessian
 
 PathLike = Union[str, Path]
 

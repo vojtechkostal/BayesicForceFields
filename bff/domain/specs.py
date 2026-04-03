@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field, InitVar
+from dataclasses import InitVar, dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Mapping, Optional, Sequence, Tuple, Union
 
