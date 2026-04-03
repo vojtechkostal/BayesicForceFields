@@ -13,37 +13,37 @@ reference:
   n_single_point_snapshots: 1000
 
 systems:
-  - topology: ./topol.top
+  - topology: ../common/topol.top
     templates:
-      ACE: ./ace.gro
+      ACE: ../common/ace.gro
     mdp:
-      em: ../../../../data/mdp/em.mdp
-      npt: ../../../../data/mdp/npt.mdp
-      prod: ../../../../data/mdp/nvt.mdp
+      em: ../common/mdp/em.mdp
+      npt: ../common/mdp/npt.mdp
+      prod: ../common/mdp/nvt.mdp
     charge: -1
     multiplicity: 1
     box: [15.7107, 15.7107, 15.7107, 90, 90, 90]
 
-  - topology: ./topol-ions.top
+  - topology: ../common/topol-ions.top
     templates:
-      ACE: ./ace.gro
+      ACE: ../common/ace.gro
     mdp:
-      em: ../../../../data/mdp/em.mdp
-      npt: ../../../../data/mdp/npt.mdp
-      prod: ../../../../data/mdp/nvt.mdp
+      em: ../common/mdp/em.mdp
+      npt: ../common/mdp/npt.mdp
+      prod: ../common/mdp/nvt.mdp
     charge: 1
     multiplicity: 1
     box: [15.7480, 15.7480, 15.7480, 90, 90, 90]
     bias:
       plumed_file: ./plumed-001.dat
 
-  - topology: ./topol-ions.top
+  - topology: ../common/topol-ions.top
     templates:
-      ACE: ./ace.gro
+      ACE: ../common/ace.gro
     mdp:
-      em: ../../../../data/mdp/em.mdp
-      npt: ../../../../data/mdp/npt.mdp
-      prod: ../../../../data/mdp/nvt.mdp
+      em: ../common/mdp/em.mdp
+      npt: ../common/mdp/npt.mdp
+      prod: ../common/mdp/nvt.mdp
     charge: 1
     multiplicity: 1
     box: [15.7480, 15.7480, 15.7480, 90, 90, 90]

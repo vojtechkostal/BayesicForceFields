@@ -1,0 +1,12 @@
+#include "./ff/defaults.itp"
+#include "./ff/ace-atomtypes.itp"
+#include "./ff/water-atomtypes.itp"
+#include "./ff/ace.itp"
+#include "./ff/water.itp"
+
+[ system ]
+Aqueous acetate
+
+[ molecules ]
+ACE        1
+SOL      128

@@ -32,11 +32,14 @@ site/
 examples/acetate/**
 !examples/acetate/**/
 !examples/acetate/**/*.ipynb
+!examples/acetate/**/*.md
 !examples/acetate/**/config.yaml
 !examples/acetate/**/config-*.yaml
 !examples/acetate/**/*.py
-!examples/acetate/**/ff/
-!examples/acetate/**/ff/**
+!examples/acetate/01-prepare/common/**
+!examples/acetate/01-prepare/colvars/*.dat
+!examples/acetate/01-prepare/plumed/*.dat
+examples/acetate/01-prepare/common/mdp/mdout.mdp
 
 # Ignore nested trainset directories under the training-trajectories example
 examples/acetate/03-training-trjs/*/

@@ -38,6 +38,8 @@ bff validate config.yaml
 
 - prepare stage overview:
   [01-prepare/README.md][acetate-prepare-readme]
+- shared prepare assets:
+  `01-prepare/common/`
 - Colvars prepare config:
   [01-prepare/colvars/config.yaml][acetate-prepare-colvars]
 - PLUMED prepare config:
@@ -64,6 +66,8 @@ bff validate config.yaml
 ## Notes
 
 - The walkthrough uses the Colvars preparation variant by default.
+- Shared topologies, force-field files, template coordinates, and MDP inputs
+  live in `01-prepare/common/`.
 - Prepared training assets live under
   `01-prepare/colvars/ace-colvars/training/window-XXX/`.
 - The QoI step demonstrates both builtin routines and a custom routine loaded
