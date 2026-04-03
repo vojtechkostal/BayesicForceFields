@@ -33,11 +33,15 @@ Then install BFF from PyPI:
 pip install bfflearn
 ```
 
-If you need the exact code used for the published paper, install the archived
-paper snapshot from Git tag `v0.0.1` instead of the current PyPI release:
+If you need the exact code used for the published paper, do not install
+`v0.0.1` through a direct `pip` Git URL. That archived tag predates the
+packaging cleanup. Instead, clone the repository, check out the archived tag,
+and follow the `README.md` and `environment.yaml` included in that snapshot:
 
 ```bash
-pip install "BayesicForceFields @ git+https://github.com/vojtechkostal/BayesicForceFields.git@v0.0.1"
+git clone https://github.com/vojtechkostal/BayesicForceFields.git
+cd BayesicForceFields
+git checkout v0.0.1
 ```
 
 That tag is the reference point for exact reproduction of the published paper
