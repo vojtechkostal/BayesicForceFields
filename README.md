@@ -21,6 +21,12 @@ The public CLI is centered around six workflows:
 - `bff learn`
 - `bff validate`
 
+Examples can be fetched on demand with:
+
+```bash
+bff examples
+```
+
 Documentation lives under [docs/](docs/) and is intended to be published with
 MkDocs on GitHub Pages.
 
@@ -144,6 +150,13 @@ Two notebooks are included in the example:
   sample export.
 - [07-visualize/visualize.ipynb](examples/acetate/07-visualize/visualize.ipynb)
   focuses on plotting and inspection only.
+
+If you installed BFF from PyPI and want the example tree locally, run:
+
+```bash
+bff examples
+cd examples/acetate
+```
 
 ## Repository Layout
 

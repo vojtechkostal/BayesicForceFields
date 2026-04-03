@@ -20,6 +20,7 @@ WORKFLOW_COMMANDS = (
     "train",
     "learn",
     "validate",
+    "examples",
 )
 
 _COMPLETION_ACTIVATE = f"""# Managed automatically by Bayesic Force Fields.
@@ -170,6 +171,45 @@ def version() -> None:
         version_str = __version__
 
     typer.echo(f"BayesicForceFields version: {version_str}")
+
+
+@app.command()
+def examples(
+    output_dir: Path = typer.Option(
+        Path("examples"),
+        "--output-dir",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        resolve_path=False,
+        help="Directory to write the example tree into.",
+    ),
+    ref: str | None = typer.Option(
+        None,
+        "--ref",
+        help="Git ref to download examples from. Defaults to the installed tag.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Replace the output directory if it already exists.",
+    ),
+) -> None:
+    """
+    Download or copy all repository examples.
+    """
+    from bff.workflows.examples import fetch_examples
+
+    try:
+        examples_dir, source = fetch_examples(output_dir, ref=ref, force=force)
+    except FileExistsError as exc:
+        raise typer.BadParameter(str(exc), param_hint="output_dir") from exc
+    except RuntimeError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(f"Examples written to: {examples_dir}")
+    typer.echo(f"Source: {source}")
 
 
 @app.command()

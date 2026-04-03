@@ -17,6 +17,8 @@ The CLI entry point is implemented in
   Run posterior inference from selected trained surrogate models.
 - `bff validate CONFIG.yaml`
   Rerun selected parameter samples for validation.
+- `bff examples`
+  Copy or download the repository example tree.
 - `bff version`
   Print the installed package version.
 
