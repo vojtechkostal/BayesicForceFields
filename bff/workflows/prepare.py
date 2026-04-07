@@ -468,8 +468,9 @@ def prepare_equilibrated_topology(
         fn_log=fn_gmx_log,
     )
     universe = mda.Universe(
-        deffnm_npt.with_suffix(".gro"),
+        fn_topol_processed,
         deffnm_npt.with_suffix(".xtc"),
+        topology_format="ITP",
         to_guess=("elements", "masses"),
     )
     universe.trajectory.add_transformations(trans.unwrap(universe.atoms))
