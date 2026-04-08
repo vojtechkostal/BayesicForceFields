@@ -316,7 +316,8 @@ def write_cp2k_md_slurm_script(
 #SBATCH --job-name=cp2k-md
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=8
-#SBATCH --time=24:00:00
+#SBATCH --mem=1G
+#SBATCH --time=01:00:00
 #SBATCH --output=slurm-%j.out
 
 set -euo pipefail
@@ -368,19 +369,27 @@ def write_cp2k_snapshot_run_script(
 #SBATCH --job-name=cp2k-snapshot
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=8
-#SBATCH --time=24:00:00
+#SBATCH --mem=1G
+#SBATCH --time=04:00:00
 #SBATCH --output=slurm-%j.out
 
 set -euo pipefail
 
 CP2K_CMD="${CP2K_CMD:-cp2k.psmp}"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RUN_DIR="$(pwd)"
 
-if [[ -f "${SCRIPT_DIR}/setup-env.sh" ]]; then
+if [[ -f setup-env.sh ]]; then
   # Optional user/site-specific environment setup.
-  source "${SCRIPT_DIR}/setup-env.sh"
+  source setup-env.sh
 fi
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
+
+for input in pos.xyz single-point.inp md.inp; do
+  if [[ ! -f "${input}" ]]; then
+    echo "Missing ${input} in ${RUN_DIR}" >&2
+    exit 1
+  fi
+done
 
 if [[ ! -f .single-point.done ]]; then
   echo "Running single-point calculation"
@@ -423,9 +432,13 @@ for xyz in "${{snapshot_dir}}"/snapshot-*.xyz; do
   mkdir -p "${{run_dir}}"
   cp "${{main_dir}}/single-point.inp" "${{run_dir}}/single-point.inp"
   cp "${{main_dir}}/md.inp" "${{run_dir}}/md.inp"
+  cp "${{main_dir}}/run.sh" "${{run_dir}}/run.sh"
   cp "${{xyz}}" "${{run_dir}}/pos.xyz"
+  if [[ -f "${{main_dir}}/setup-env.sh" ]]; then
+    cp "${{main_dir}}/setup-env.sh" "${{run_dir}}/setup-env.sh"
+  fi
   echo "Submitting ${{stem}}"
-  sbatch --chdir="${{run_dir}}" "${{main_dir}}/run.sh"
+  sbatch --chdir="${{run_dir}}" "${{run_dir}}/run.sh"
 done
 """
     Path(fn_out).write_text(script)
