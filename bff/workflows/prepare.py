@@ -25,8 +25,10 @@ from ..io.commands import build_command
 from ..io.cp2k import (
     make_cp2k_input,
     make_cp2k_single_point_input,
+    make_cp2k_short_md_input,
     write_cp2k_md_slurm_script,
-    write_cp2k_single_point_slurm_script,
+    write_cp2k_snapshot_run_script,
+    write_cp2k_snapshot_submit_script,
 )
 from ..io.logs import Logger
 from ..io.plumed import (
@@ -39,6 +41,8 @@ from ..topology import create_box
 from .configs import PrepareConfig
 
 PathLike = Union[str, Path]
+CP2K_EQUILIBRATION_STEPS = 10000
+CP2K_SNAPSHOT_MD_STEPS = 100
 
 
 @dataclass(slots=True)
@@ -69,25 +73,21 @@ def check_gmx_available(gmx_cmd: str = 'gmx') -> None:
         )
 
 
-def setup_directories(main_dir: PathLike = Path('./')) -> tuple[Path, Path, Path, Path]:
+def setup_directories(main_dir: PathLike = Path('./')) -> tuple[Path, Path, Path]:
     """Create required directories for the preparation workflow."""
     main_dir = Path(main_dir).resolve()
     equilibration_dir = main_dir / "equilibration"
     training_dir = main_dir / "training"
     reference_dir = main_dir / "reference"
-    reference_md_dir = reference_dir / "md"
-    reference_sp_dir = reference_dir / "single-points"
 
     for directory in [
         equilibration_dir,
         training_dir,
         reference_dir,
-        reference_md_dir,
-        reference_sp_dir,
     ]:
         directory.mkdir(parents=True, exist_ok=True)
 
-    return equilibration_dir, training_dir, reference_md_dir, reference_sp_dir
+    return equilibration_dir, training_dir, reference_dir
 
 
 def make_ndx(universe: mda.Universe, selections: List[str], fn_out: str) -> None:
@@ -524,65 +524,9 @@ def save_training_artifacts(
         shutil.copy2(fn_bias_input, fn_bias_train)
 
 
-def write_reference_md_assets(
+def write_reference_assets(
     *,
-    reference_md_dir: Path,
-    window_index: int,
-    project_name: str,
-    charge: int,
-    mult: int,
-    box: np.ndarray,
-    fn_topol_processed: Path,
-    fn_coord_nvt: Path,
-    bias: BiasSpec,
-    logger: Logger,
-) -> None:
-    """Write CP2K MD assets for one simulation window."""
-    logger.info("Reference MD assets: in progress...", overwrite=True, level=2)
-    window_dir = reference_md_dir / window_name(window_index)
-    window_dir.mkdir(parents=True, exist_ok=True)
-
-    strip_topol(
-        fn_topol_processed,
-        fn_coord_nvt,
-        window_dir / "system.top",
-        window_dir / "system.gro",
-        window_dir / "system.xyz",
-    )
-    fn_plumed = None
-    stale_plumed = window_dir / "plumed.dat"
-    if stale_plumed.exists():
-        stale_plumed.unlink()
-    if bias.kind == "plumed" and bias.input_file is not None:
-        fn_plumed = window_dir / "plumed.dat"
-        shutil.copy2(bias.input_file, fn_plumed)
-
-    for cp2k_specs in [
-        {"eq": True, "restart": False, "fn": "md-eq-start.inp"},
-        {"eq": True, "restart": True, "fn": "md-eq-restart.inp"},
-        {"eq": False, "restart": True, "fn": "md-prod.inp"},
-    ]:
-        make_cp2k_input(
-            project_name,
-            charge,
-            mult,
-            box[:3].astype(float).tolist(),
-            window_dir / "system.xyz",
-            cp2k_specs["eq"],
-            cp2k_specs["restart"],
-            window_dir / cp2k_specs["fn"],
-            plumed_input_file=fn_plumed,
-        )
-
-    fn_submit = window_dir / "submit-slurm.sh"
-    write_cp2k_md_slurm_script(fn_submit, uses_plumed=fn_plumed is not None)
-    fn_submit.chmod(0o755)
-    logger.info("Reference MD assets: Done.", level=2)
-
-
-def write_reference_single_point_assets(
-    *,
-    reference_sp_dir: Path,
+    reference_dir: Path,
     window_index: int,
     project_name: str,
     charge: int,
@@ -591,20 +535,88 @@ def write_reference_single_point_assets(
     fn_topol_processed: Path,
     fn_coord_nvt: Path,
     fn_trj_nvt: Path,
+    bias: BiasSpec,
     n_snapshots: int,
     logger: Logger,
 ) -> None:
-    """Write CP2K single-point assets for one simulation window."""
-    logger.info(
-        "Reference single-point assets: in progress...",
-        overwrite=True,
-        level=2,
-    )
-    window_dir = reference_sp_dir / window_name(window_index)
+    """Write the full CP2K reference tree for one simulation window."""
+    logger.info("Reference assets: in progress...", overwrite=True, level=2)
+    window_dir = reference_dir / window_name(window_index)
+    md_dir = window_dir / "md"
     snapshots_dir = window_dir / "snapshots"
-    runs_dir = window_dir / "runs"
-    window_dir.mkdir(parents=True, exist_ok=True)
-    runs_dir.mkdir(exist_ok=True)
+    snapshot_xyz_dir = snapshots_dir / "xyz"
+    snapshot_runs_dir = snapshots_dir / "runs"
+
+    for directory in [window_dir, md_dir, snapshot_xyz_dir, snapshot_runs_dir]:
+        directory.mkdir(parents=True, exist_ok=True)
+
+    fn_system_top = window_dir / "system.top"
+    fn_system_gro = window_dir / "system.gro"
+    fn_system_xyz = window_dir / "system.xyz"
+    strip_topol(
+        fn_topol_processed,
+        fn_coord_nvt,
+        fn_system_top,
+        fn_system_gro,
+        fn_system_xyz,
+    )
+
+    fn_md_pos = md_dir / "pos.xyz"
+    shutil.copy2(fn_system_xyz, fn_md_pos)
+
+    fn_plumed = None
+    stale_plumed = md_dir / "plumed.dat"
+    if stale_plumed.exists():
+        stale_plumed.unlink()
+    if bias.kind == "plumed" and bias.input_file is not None:
+        fn_plumed = md_dir / "plumed.dat"
+        shutil.copy2(bias.input_file, fn_plumed)
+
+    stale_snapshot_pos = snapshots_dir / "pos.xyz"
+    if stale_snapshot_pos.exists():
+        stale_snapshot_pos.unlink()
+
+    cp2k_inputs = [
+        {
+            "equilibration": True,
+            "restart": False,
+            "filename": "md-eq-start.inp",
+            "steps": CP2K_EQUILIBRATION_STEPS,
+        },
+        {
+            "equilibration": True,
+            "restart": True,
+            "filename": "md-eq-restart.inp",
+            "steps": CP2K_EQUILIBRATION_STEPS,
+        },
+        {
+            "equilibration": False,
+            "restart": True,
+            "filename": "md-prod.inp",
+            "steps": None,
+        },
+    ]
+    for cp2k_input in cp2k_inputs:
+        make_cp2k_input(
+            project_name,
+            charge,
+            mult,
+            box[:3].astype(float).tolist(),
+            fn_md_pos,
+            cp2k_input["equilibration"],
+            cp2k_input["restart"],
+            md_dir / cp2k_input["filename"],
+            plumed_input_file=fn_plumed,
+            steps=cp2k_input["steps"],
+        )
+
+    fn_md_submit = md_dir / "run.sh"
+    write_cp2k_md_slurm_script(
+        fn_md_submit,
+        uses_plumed=fn_plumed is not None,
+        project=project_name,
+    )
+    fn_md_submit.chmod(0o755)
 
     with warnings.catch_warnings():
         warnings.filterwarnings(
@@ -620,23 +632,37 @@ def write_reference_single_point_assets(
         universe.load_new(fn_trj_nvt, dt=1)
         snapshot_files = write_snapshot_xyz_files(
             universe,
-            snapshots_dir=snapshots_dir,
+            snapshots_dir=snapshot_xyz_dir,
             n_snapshots=n_snapshots,
         )
-        fn_template_xyz = window_dir / "snapshot.xyz"
-        shutil.copy2(snapshot_files[0], fn_template_xyz)
-        make_cp2k_single_point_input(
-            project_name,
-            charge,
-            mult,
-            box[:3].astype(float).tolist(),
-            fn_template_xyz,
-            window_dir / "single-point.inp",
-        )
-    fn_submit = window_dir / "submit-slurm.sh"
-    write_cp2k_single_point_slurm_script(fn_submit)
-    fn_submit.chmod(0o755)
-    logger.info("Reference single-point assets: Done.", level=2)
+
+    make_cp2k_single_point_input(
+        f"{project_name}-sp",
+        charge,
+        mult,
+        box[:3].astype(float).tolist(),
+        snapshot_files[0],
+        snapshots_dir / "single-point.inp",
+        coord_filename="pos.xyz",
+    )
+    make_cp2k_short_md_input(
+        f"{project_name}-md",
+        charge,
+        mult,
+        box[:3].astype(float).tolist(),
+        snapshot_files[0],
+        snapshots_dir / "md.inp",
+        steps=CP2K_SNAPSHOT_MD_STEPS,
+        coord_filename="pos.xyz",
+    )
+
+    fn_snapshot_run = snapshots_dir / "run.sh"
+    fn_snapshot_submit = snapshots_dir / "submit.sh"
+    write_cp2k_snapshot_run_script(fn_snapshot_run)
+    write_cp2k_snapshot_submit_script(fn_snapshot_submit)
+    fn_snapshot_run.chmod(0o755)
+    fn_snapshot_submit.chmod(0o755)
+    logger.info("Reference assets: Done.", level=2)
 
 
 def main(fn_config: PathLike) -> None:
@@ -655,8 +681,7 @@ def main(fn_config: PathLike) -> None:
     (
         equilibration_dir,
         training_dir,
-        reference_md_dir,
-        reference_sp_dir,
+        reference_dir,
     ) = setup_directories(config.project_dir)
 
     equilibrated_topologies: Dict[str, EquilibratedTopology] = {}
@@ -754,8 +779,8 @@ def main(fn_config: PathLike) -> None:
             bias=system.bias,
         )
         logger.info("Training MD assets: Done.", level=2)
-        write_reference_md_assets(
-            reference_md_dir=reference_md_dir,
+        write_reference_assets(
+            reference_dir=reference_dir,
             window_index=i,
             project_name=config.project_dir.name,
             charge=system.charge,
@@ -764,17 +789,6 @@ def main(fn_config: PathLike) -> None:
             fn_topol_processed=topology_state.fn_topol_processed,
             fn_coord_nvt=deffnm_prod.with_suffix(".gro"),
             bias=system.bias,
-            logger=logger,
-        )
-        write_reference_single_point_assets(
-            reference_sp_dir=reference_sp_dir,
-            window_index=i,
-            project_name=config.project_dir.name,
-            charge=system.charge,
-            mult=system.mult,
-            box=topology_state.box,
-            fn_topol_processed=topology_state.fn_topol_processed,
-            fn_coord_nvt=deffnm_prod.with_suffix(".gro"),
             fn_trj_nvt=deffnm_prod.with_suffix(".xtc"),
             n_snapshots=config.n_single_point_snapshots,
             logger=logger,

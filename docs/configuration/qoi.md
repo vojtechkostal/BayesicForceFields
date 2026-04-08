@@ -21,8 +21,8 @@ trainset:
 
 refset:
   systems:
-    - coordinates: ../01-prepare/colvars/ace-colvars/reference/md/window-000/system.gro
-      topology: ../01-prepare/colvars/ace-colvars/reference/md/window-000/system.top
+    - coordinates: ../01-prepare/colvars/ace-colvars/reference/window-000/system.gro
+      topology: ../01-prepare/colvars/ace-colvars/reference/window-000/system.top
       trajectory: ../02-reference-trjs/pos-000.xtc
       routines:
         - routine: rdf

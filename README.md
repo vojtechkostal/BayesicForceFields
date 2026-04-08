@@ -158,6 +158,13 @@ bff examples
 cd examples/acetate
 ```
 
+Prepared CP2K snapshot folders can be collected into `train.extxyz` and
+`valid.extxyz` with:
+
+```bash
+bff cp2k-collect
+```
+
 ## Repository Layout
 
 - [bff/](bff/) contains the package code.

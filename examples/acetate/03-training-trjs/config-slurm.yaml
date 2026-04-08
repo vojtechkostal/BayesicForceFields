@@ -27,10 +27,12 @@ slurm:
     time: 00:40:00
     partition: a36_96
   setup:
-    - source /uochb/soft/a/spack/20221129-git/share/spack/setup-env.sh
-    - spack load gromacs@2022.4 ~mpi
-    - export WORKDIR=/dev/shm/$USER/$SLURM_JOB_ID
-    - mkdir -p $WORKDIR
-    - cd $WORKDIR
+    - '# Optional: add your site-specific GROMACS setup command here'
+    - export SUBMIT_DIR="${SLURM_SUBMIT_DIR:-$PWD}"
+    - export WORKDIR="${SLURM_TMPDIR:-${TMPDIR:-}}"
+    - export WORKDIR="${WORKDIR:-$SUBMIT_DIR/work-${SLURM_JOB_ID:-local}}"
+    - mkdir -p "$WORKDIR"
+    - cd "$WORKDIR"
   teardown:
-    - rm -rf $WORKDIR
+    - cd "$SUBMIT_DIR"
+    - rm -rf "$WORKDIR"

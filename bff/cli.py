@@ -21,6 +21,7 @@ WORKFLOW_COMMANDS = (
     "learn",
     "validate",
     "examples",
+    "cp2k-collect",
 )
 
 _COMPLETION_ACTIVATE = f"""# Managed automatically by Bayesic Force Fields.
@@ -210,6 +211,69 @@ def examples(
 
     typer.echo(f"Examples written to: {examples_dir}")
     typer.echo(f"Source: {source}")
+
+
+@app.command(name="cp2k-collect")
+def cp2k_collect(
+    runs: Path = typer.Option(
+        Path("runs"),
+        "--runs",
+        file_okay=False,
+        dir_okay=True,
+        resolve_path=False,
+        help="Directory containing per-snapshot CP2K run directories.",
+    ),
+    train: Path = typer.Option(
+        Path("train.extxyz"),
+        "--train",
+        dir_okay=False,
+        resolve_path=False,
+        help="Output training extxyz file.",
+    ),
+    valid: Path = typer.Option(
+        Path("valid.extxyz"),
+        "--valid",
+        dir_okay=False,
+        resolve_path=False,
+        help="Output validation extxyz file.",
+    ),
+    train_fraction: float = typer.Option(
+        0.8,
+        "--train-fraction",
+        min=0.0,
+        max=1.0,
+        help="Fraction of collected frames written to the training split.",
+    ),
+    seed: int = typer.Option(
+        2026,
+        "--seed",
+        help="Seed for the deterministic shuffled train/validation split.",
+    ),
+    topology: str = typer.Option(
+        "pos.xyz",
+        "--topology",
+        help="Per-run topology file used when CP2K outputs DCD files.",
+    ),
+) -> None:
+    """
+    Collect CP2K snapshot runs into train/validation extxyz files.
+    """
+    from bff.io.cp2k_collect import collect_outputs
+
+    try:
+        n_train, n_valid = collect_outputs(
+            runs=runs,
+            train=train,
+            valid=valid,
+            train_fraction=train_fraction,
+            seed=seed,
+            topology_name=topology,
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="cp2k-collect") from exc
+
+    typer.echo(f"Wrote {n_train} training frames to {train}")
+    typer.echo(f"Wrote {n_valid} validation frames to {valid}")
 
 
 @app.command()

@@ -12,8 +12,7 @@ Source code:
 
 - equilibrated GROMACS systems
 - reusable training assets under `training/window-XXX/`
-- CP2K reference MD assets
-- CP2K single-point assets
+- CP2K reference assets under `reference/window-XXX/`
 
 ## Minimal Example
 
@@ -62,7 +61,8 @@ systems:
 - `defaults.nsteps.prod`
   Default production-preparation run length for systems that do not override it.
 - `reference.n_single_point_snapshots`
-  Number of evenly spaced snapshots staged for CP2K single-point jobs.
+  Number of evenly spaced snapshots staged for CP2K single-point and short-MD
+  reference jobs.
 - `systems`
   Non-empty list of prepared systems.
 
@@ -109,6 +109,27 @@ Each such directory contains one prepared system with:
 - optional bias file
 
 Those directories are consumed directly by both `simulate` and `validate`.
+
+The reference tree is window-centered:
+
+- `PROJECT/reference/window-XXX/system.gro`
+- `PROJECT/reference/window-XXX/system.top`
+- `PROJECT/reference/window-XXX/system.xyz`
+- `PROJECT/reference/window-XXX/md/`
+  CP2K direct-MD inputs and `run.sh`.
+- `PROJECT/reference/window-XXX/snapshots/`
+  Decorrelated XYZ snapshots, `single-point.inp`, a 100-step `md.inp`,
+  `run.sh`, and `submit.sh`. Use `bff cp2k-collect` from this directory to
+  read the final short-MD positions, forces, and potential energies from
+  `runs/` and write an 80/20 deterministic shuffled `train.extxyz` /
+  `valid.extxyz` split.
+  CP2K XYZ outputs are read directly. If you switch the CP2K output format to
+  DCD, run `bff cp2k-collect --topology pos.xyz` or point `--topology` at another
+  per-run topology file.
+
+Generated CP2K Slurm scripts are intentionally machine-agnostic. They use
+`CP2K_CMD=cp2k.psmp` by default and source an optional local `setup-env.sh`
+file if you need cluster-specific modules, Spack loads, or environment exports.
 
 [prepare-configs]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/bff/workflows/configs.py
 [prepare-workflow]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/bff/workflows/prepare.py

@@ -19,6 +19,8 @@ The CLI entry point is implemented in
   Rerun selected parameter samples for validation.
 - `bff examples`
   Copy or download the repository example tree.
+- `bff cp2k-collect`
+  Collect CP2K snapshot runs into `train.extxyz` and `valid.extxyz`.
 - `bff version`
   Print the installed package version.
 
@@ -60,3 +62,5 @@ After that, `bff <TAB>` should offer:
 - `train`
 - `learn`
 - `validate`
+- `examples`
+- `cp2k-collect`

@@ -10,8 +10,8 @@ refset:
   stop: -1
   step: 1
   systems:
-    - coordinates: ../01-prepare/colvars/ace-colvars/reference/md/window-000/system.gro
-      topology: ../01-prepare/colvars/ace-colvars/reference/md/window-000/system.top
+    - coordinates: ../01-prepare/colvars/ace-colvars/reference/window-000/system.gro
+      topology: ../01-prepare/colvars/ace-colvars/reference/window-000/system.top
       trajectory: ../02-reference-trjs/pos-000.xtc
       routines:
         - routine: rdf
@@ -20,8 +20,8 @@ refset:
           smooth: false
         - routine: hb
           mol_resname: ACE
-    - coordinates: ../01-prepare/colvars/ace-colvars/reference/md/window-001/system.gro
-      topology: ../01-prepare/colvars/ace-colvars/reference/md/window-001/system.top
+    - coordinates: ../01-prepare/colvars/ace-colvars/reference/window-001/system.gro
+      topology: ../01-prepare/colvars/ace-colvars/reference/window-001/system.top
       trajectory: ../02-reference-trjs/pos-001.xtc
       routines:
         - routine: rdf
@@ -33,8 +33,8 @@ refset:
         - routine: ./restraint.py:distance_distribution
           atom_pair: [C2, CAL]
           r_range: [2.0, 5.0]
-    - coordinates: ../01-prepare/colvars/ace-colvars/reference/md/window-002/system.gro
-      topology: ../01-prepare/colvars/ace-colvars/reference/md/window-002/system.top
+    - coordinates: ../01-prepare/colvars/ace-colvars/reference/window-002/system.gro
+      topology: ../01-prepare/colvars/ace-colvars/reference/window-002/system.top
       trajectory: ../02-reference-trjs/pos-002.xtc
       routines:
         - routine: rdf

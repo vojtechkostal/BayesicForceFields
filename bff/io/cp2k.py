@@ -152,6 +152,7 @@ def build_cp2k_tree(
     multiplicity: int,
     unitcell: list[float],
     fn_pos: str | Path,
+    coord_filename: str | None = None,
 ) -> dict[str, Any]:
     """Build the common CP2K input tree for one structure."""
     fn_pos = Path(fn_pos)
@@ -160,7 +161,7 @@ def build_cp2k_tree(
 
     tree["global"]["project_name"] = project
     tree["force_eval"]["subsys"]["topology"] = {
-        "coord_file_name": fn_pos.name,
+        "coord_file_name": coord_filename or fn_pos.name,
         "coord_file_format": "XYZ",
     }
     tree["force_eval"]["subsys"]["cell"] = {
@@ -191,6 +192,9 @@ def make_cp2k_input(
     restart: bool,
     fn_out: str | Path,
     plumed_input_file: str | Path | None = None,
+    steps: int | None = None,
+    coord_filename: str | None = None,
+    xyz_output: bool = False,
 ) -> None:
     """Generate a CP2K input file for one simulation window.
 
@@ -221,9 +225,14 @@ def make_cp2k_input(
         multiplicity=multiplicity,
         unitcell=unitcell,
         fn_pos=fn_pos,
+        coord_filename=coord_filename,
     )
     configure_cp2k_restart(tree, project=project, restart=restart)
     configure_cp2k_ensemble(tree, equilibration=equilibration)
+    if steps is not None:
+        tree["motion"]["md"]["steps"] = int(steps)
+    if xyz_output:
+        configure_cp2k_xyz_output(tree)
     if plumed_input_file is not None:
         configure_cp2k_plumed(tree, plumed_input_file=plumed_input_file)
 
@@ -238,6 +247,7 @@ def make_cp2k_single_point_input(
     unitcell: list[float],
     fn_pos: str | Path,
     fn_out: str | Path,
+    coord_filename: str | None = None,
 ) -> None:
     """Generate a CP2K single-point input file."""
     tree = build_cp2k_tree(
@@ -246,6 +256,7 @@ def make_cp2k_single_point_input(
         multiplicity=multiplicity,
         unitcell=unitcell,
         fn_pos=fn_pos,
+        coord_filename=coord_filename,
     )
     configure_cp2k_single_point(tree)
     tree["global"]["print_level"] = "MEDIUM"
@@ -254,19 +265,52 @@ def make_cp2k_single_point_input(
         handle.write("\n".join(format_cp2k_input(tree)) + "\n")
 
 
+def configure_cp2k_xyz_output(tree: dict[str, Any]) -> None:
+    """Ask CP2K MD to write XYZ positions, forces, and energies every step."""
+    print_section = tree["motion"].setdefault("print", {})
+    for key in ("trajectory", "forces"):
+        print_section.setdefault(key, {})["format"] = "XYZ"
+        print_section[key]["each"] = {"md": 1}
+    print_section["energy"] = {"each": {"md": 1}}
+
+
+def make_cp2k_short_md_input(
+    project: str,
+    charge: int,
+    multiplicity: int,
+    unitcell: list[float],
+    fn_pos: str | Path,
+    fn_out: str | Path,
+    *,
+    steps: int = 100,
+    coord_filename: str = "pos.xyz",
+) -> None:
+    """Generate a short CP2K MD input for one snapshot."""
+    make_cp2k_input(
+        project,
+        charge,
+        multiplicity,
+        unitcell,
+        fn_pos,
+        equilibration=False,
+        restart=False,
+        fn_out=fn_out,
+        steps=steps,
+        coord_filename=coord_filename,
+        xyz_output=True,
+    )
+
+
 def write_cp2k_md_slurm_script(
     fn_out: str | Path,
     *,
     uses_plumed: bool = False,
+    project: str = "project",
 ) -> None:
     """Write a restart-aware Slurm script for CP2K MD."""
     plumed_block = ""
     if uses_plumed:
-        plumed_block = """
-if [ -f plumed.dat ]; then
-  echo "Using PLUMED input: plumed.dat"
-fi
-"""
+        plumed_block = 'echo "Using PLUMED input: plumed.dat"\n'
 
     script = f"""#!/bin/bash
 #SBATCH --job-name=cp2k-md
@@ -278,31 +322,50 @@ fi
 set -euo pipefail
 
 CP2K_CMD="${{CP2K_CMD:-cp2k.psmp}}"
+CP2K_PROJECT="${{CP2K_PROJECT:-{project}}}"
+SCRIPT_DIR="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)"
+cd "${{SCRIPT_DIR}}"
+
+if [[ -f setup-env.sh ]]; then
+  # Optional user/site-specific environment setup.
+  source setup-env.sh
+fi
+export OMP_NUM_THREADS="${{OMP_NUM_THREADS:-1}}"
 {plumed_block}
 
-if [ ! -f .md-eq-start.done ]; then
-  ${{CP2K_CMD}} -i md-eq-start.inp -o md-eq-start.out
-  touch .md-eq-start.done
+if [[ ! -f .eq.done ]]; then
+  restart_file="${{CP2K_PROJECT}}-1.restart"
+  wfn_file="${{CP2K_PROJECT}}-RESTART.wfn"
+  if [[ -f "${{restart_file}}" || -f "${{wfn_file}}" ]]; then
+    eq_input="md-eq-restart.inp"
+  else
+    eq_input="md-eq-start.inp"
+  fi
+
+  echo "Running equilibration: ${{eq_input}}"
+  srun "${{CP2K_CMD}}" -i "${{eq_input}}" -o "${{eq_input%.inp}}.out"
+  touch .eq.done
+else
+  echo "Skipping equilibration; found .eq.done."
 fi
 
-if [ ! -f .md-eq-restart.done ]; then
-  ${{CP2K_CMD}} -i md-eq-restart.inp -o md-eq-restart.out
-  touch .md-eq-restart.done
+if [[ ! -f .prod.done ]]; then
+  echo "Running production: md-prod.inp"
+  srun "${{CP2K_CMD}}" -i md-prod.inp -o md-prod.out
+  touch .prod.done
+else
+  echo "Skipping production; found .prod.done."
 fi
-
-${{CP2K_CMD}} -i md-prod.inp -o md-prod.out
 """
     Path(fn_out).write_text(script)
 
 
-def write_cp2k_single_point_slurm_script(
+def write_cp2k_snapshot_run_script(
     fn_out: str | Path,
-    *,
-    snapshots_dirname: str = "snapshots",
 ) -> None:
-    """Write a Slurm script for batched CP2K single-point evaluations."""
-    script = f"""#!/bin/bash
-#SBATCH --job-name=cp2k-sp
+    """Write the per-snapshot Slurm script for CP2K reference jobs."""
+    script = """#!/bin/bash
+#SBATCH --job-name=cp2k-snapshot
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=8
 #SBATCH --time=24:00:00
@@ -310,21 +373,59 @@ def write_cp2k_single_point_slurm_script(
 
 set -euo pipefail
 
-CP2K_CMD="${{CP2K_CMD:-cp2k.psmp}}"
-SNAPSHOT_DIR="{snapshots_dirname}"
-INPUT_TEMPLATE="single-point.inp"
+CP2K_CMD="${CP2K_CMD:-cp2k.psmp}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-for xyz in "${{SNAPSHOT_DIR}}"/snapshot-*.xyz; do
-  [ -e "${{xyz}}" ] || continue
-  stem=$(basename "${{xyz}}" .xyz)
-  run_dir="runs/${{stem}}"
+if [[ -f "${SCRIPT_DIR}/setup-env.sh" ]]; then
+  # Optional user/site-specific environment setup.
+  source "${SCRIPT_DIR}/setup-env.sh"
+fi
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
+
+if [[ ! -f .single-point.done ]]; then
+  echo "Running single-point calculation"
+  srun "${CP2K_CMD}" -i single-point.inp -o single-point.out
+  touch .single-point.done
+else
+  echo "Skipping single-point calculation; found .single-point.done."
+fi
+
+if [[ ! -f .md.done ]]; then
+  echo "Running short MD"
+  srun "${CP2K_CMD}" -i md.inp -o md.out
+  touch .md.done
+else
+  echo "Skipping short MD; found .md.done."
+fi
+"""
+    Path(fn_out).write_text(script)
+
+
+def write_cp2k_snapshot_submit_script(
+    fn_out: str | Path,
+    *,
+    snapshots_dirname: str = "xyz",
+) -> None:
+    """Write the submission helper for all prepared CP2K snapshots."""
+    script = f"""#!/usr/bin/env bash
+set -euo pipefail
+
+main_dir="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)"
+cd "${{main_dir}}"
+snapshot_dir="${{1:-{snapshots_dirname}}}"
+mkdir -p runs
+
+for xyz in "${{snapshot_dir}}"/snapshot-*.xyz; do
+  [[ -e "${{xyz}}" ]] || continue
+  stem="$(basename "${{xyz}}" .xyz)"
+  run_dir="${{main_dir}}/runs/${{stem}}"
+
   mkdir -p "${{run_dir}}"
-  cp "${{INPUT_TEMPLATE}}" "${{run_dir}}/single-point.inp"
-  cp "${{xyz}}" "${{run_dir}}/snapshot.xyz"
-  (
-    cd "${{run_dir}}"
-    ${{CP2K_CMD}} -i single-point.inp -o single-point.out
-  )
+  cp "${{main_dir}}/single-point.inp" "${{run_dir}}/single-point.inp"
+  cp "${{main_dir}}/md.inp" "${{run_dir}}/md.inp"
+  cp "${{xyz}}" "${{run_dir}}/pos.xyz"
+  echo "Submitting ${{stem}}"
+  sbatch --chdir="${{run_dir}}" "${{main_dir}}/run.sh"
 done
 """
     Path(fn_out).write_text(script)
