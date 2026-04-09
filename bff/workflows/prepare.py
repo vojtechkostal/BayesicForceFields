@@ -9,32 +9,33 @@ from typing import Dict, List, Optional, Sequence, Union
 
 import MDAnalysis as mda
 import numpy as np
-from gmxtopology import Topology
 from MDAnalysis import transformations as trans
 from MDAnalysis.analysis.distances import distance_array
 from MDAnalysis.selections.gromacs import SelectionWriter
+from gmxtopology import Topology
 
 from ..domain.bias import BiasSpec
 from ..io.colvars import (
     resolve_distance_bias_metadata as resolve_colvars_distance_bias_metadata,
-)
-from ..io.colvars import (
     write_mdp_with_colvars,
 )
 from ..io.commands import build_command
 from ..io.cp2k import (
+    get_cp2k_elements,
+    get_cp2k_single_atom_directory_name,
     make_cp2k_input,
-    make_cp2k_single_point_input,
+    make_cp2k_isolated_atom_input,
     make_cp2k_short_md_input,
+    make_cp2k_single_point_input,
     write_cp2k_md_slurm_script,
+    write_cp2k_single_atom_run_script,
+    write_cp2k_single_atom_submit_script,
     write_cp2k_snapshot_run_script,
     write_cp2k_snapshot_submit_script,
 )
 from ..io.logs import Logger
 from ..io.plumed import (
     ensure_plumed_kernel,
-)
-from ..io.plumed import (
     resolve_distance_bias_metadata as resolve_plumed_distance_bias_metadata,
 )
 from ..topology import create_box
@@ -321,9 +322,9 @@ def resolve_bias_window_definition(
     return (), ()
 
 
-def window_name(window_index: int) -> str:
-    """Return the canonical zero-padded window name."""
-    return f"window-{window_index:03d}"
+def system_name(system_index: int) -> str:
+    """Return the canonical zero-padded prepared-system name."""
+    return f"system-{system_index:03d}"
 
 
 def topology_name(topology_index: int) -> str:
@@ -390,9 +391,9 @@ def write_window_coordinates(
         writer.write(universe.atoms)
 
 
-def window_run_name(window_index: int) -> str:
+def system_run_name(system_index: int) -> str:
     """Return the canonical filename stem for the prepared production run."""
-    return f"{window_name(window_index)}-prod"
+    return f"{system_name(system_index)}-prod"
 
 
 def prepare_equilibrated_topology(
@@ -501,26 +502,26 @@ def save_training_artifacts(
     bias: BiasSpec,
 ) -> None:
     """Save all training artifacts produced for one window."""
-    window_label = window_name(window_index)
-    asset_dir = training_dir / window_label
+    system_label = system_name(window_index)
+    asset_dir = training_dir / system_label
     asset_dir.mkdir(parents=True, exist_ok=True)
     for src, dst in [
-        (fn_mdp_em, asset_dir / f"{window_label}.em.mdp"),
-        (fn_mdp_npt, asset_dir / f"{window_label}.npt.mdp"),
-        (fn_mdp_prod, asset_dir / f"{window_label}.mdp"),
-        (fn_coord, asset_dir / f"{window_label}.gro"),
-        (fn_ndx, asset_dir / f"{window_label}.ndx"),
-        (fn_topol, asset_dir / f"{window_label}.top"),
+        (fn_mdp_em, asset_dir / f"{system_label}.em.mdp"),
+        (fn_mdp_npt, asset_dir / f"{system_label}.npt.mdp"),
+        (fn_mdp_prod, asset_dir / f"{system_label}.mdp"),
+        (fn_coord, asset_dir / f"{system_label}.gro"),
+        (fn_ndx, asset_dir / f"{system_label}.ndx"),
+        (fn_topol, asset_dir / f"{system_label}.top"),
     ]:
         shutil.copy2(src, dst)
 
     for suffix in ("bias.colvars.dat", "bias.plumed.dat"):
-        stale_file = asset_dir / f"{window_label}.{suffix}"
+        stale_file = asset_dir / f"{system_label}.{suffix}"
         if stale_file.exists():
             stale_file.unlink()
 
     if fn_bias_input is not None and bias.input_filename is not None:
-        fn_bias_train = asset_dir / f"{window_label}.{bias.input_filename}"
+        fn_bias_train = asset_dir / f"{system_label}.{bias.input_filename}"
         shutil.copy2(fn_bias_input, fn_bias_train)
 
 
@@ -541,13 +542,20 @@ def write_reference_assets(
 ) -> None:
     """Write the full CP2K reference tree for one simulation window."""
     logger.info("Reference assets: in progress...", overwrite=True, level=2)
-    window_dir = reference_dir / window_name(window_index)
+    window_dir = reference_dir / system_name(window_index)
     md_dir = window_dir / "md"
     snapshots_dir = window_dir / "snapshots"
+    single_atoms_dir = window_dir / "single-atoms"
     snapshot_xyz_dir = snapshots_dir / "xyz"
     snapshot_runs_dir = snapshots_dir / "runs"
 
-    for directory in [window_dir, md_dir, snapshot_xyz_dir, snapshot_runs_dir]:
+    for directory in [
+        window_dir,
+        md_dir,
+        single_atoms_dir,
+        snapshot_xyz_dir,
+        snapshot_runs_dir,
+    ]:
         directory.mkdir(parents=True, exist_ok=True)
 
     fn_system_top = window_dir / "system.top"
@@ -560,9 +568,22 @@ def write_reference_assets(
         fn_system_gro,
         fn_system_xyz,
     )
+    single_atom_elements = get_cp2k_elements(fn_system_xyz)
 
     fn_md_pos = md_dir / "pos.xyz"
     shutil.copy2(fn_system_xyz, fn_md_pos)
+
+    for element in single_atom_elements:
+        atom_dir = single_atoms_dir / get_cp2k_single_atom_directory_name(element)
+        atom_dir.mkdir(parents=True, exist_ok=True)
+        make_cp2k_isolated_atom_input(element, atom_dir / "input.inp")
+
+    fn_single_atom_run = single_atoms_dir / "run.sh"
+    write_cp2k_single_atom_run_script(fn_single_atom_run)
+    fn_single_atom_run.chmod(0o755)
+    fn_single_atom_submit = single_atoms_dir / "submit.sh"
+    write_cp2k_single_atom_submit_script(fn_single_atom_submit)
+    fn_single_atom_submit.chmod(0o755)
 
     fn_plumed = None
     stale_plumed = md_dir / "plumed.dat"
@@ -713,17 +734,17 @@ def main(fn_config: PathLike) -> None:
 
         topology_state = equilibrated_topologies[topology_key]
 
-        window_label = window_name(i)
+        system_label = system_name(i)
         fn_mdp_prod = system.fn_mdp_prod
-        fn_prod_local = equilibration_dir / f"{window_label}.mdp"
-        fn_ndx = equilibration_dir / f"{window_label}.ndx"
-        fn_coord = equilibration_dir / f"{window_label}.gro"
+        fn_prod_local = equilibration_dir / f"{system_label}.mdp"
+        fn_ndx = equilibration_dir / f"{system_label}.ndx"
+        fn_coord = equilibration_dir / f"{system_label}.gro"
         fn_bias_local = (
             None
             if system.bias.input_filename is None
-            else equilibration_dir / f"{window_label}.{system.bias.input_filename}"
+            else equilibration_dir / f"{system_label}.{system.bias.input_filename}"
         )
-        fn_topol_local = equilibration_dir / f"{window_label}.top"
+        fn_topol_local = equilibration_dir / f"{system_label}.top"
         fn_topol_local.write_text(topology_state.fn_topol_processed.read_text())
         fn_bias_input = None if fn_bias_local is None else prepare_bias_file(
             system.bias,
@@ -745,7 +766,7 @@ def main(fn_config: PathLike) -> None:
         make_ndx(topology_state.universe, None, fn_out=fn_ndx)
         shutil.copy2(fn_mdp_prod, fn_prod_local)
 
-        deffnm_prod = equilibration_dir / window_run_name(i)
+        deffnm_prod = equilibration_dir / system_run_name(i)
         logger.info(
             "Production preparation run: in progress...",
             overwrite=True,

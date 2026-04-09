@@ -25,10 +25,50 @@ CP2K_KIND_DEFAULTS = {
     'c': {'basis_set': 'TZV2P-GTH-q4', 'potential': 'GTH-PBE-q4'},
     'p': {'basis_set': 'TZV2P-GTH-q5', 'potential': 'GTH-PBE-q5'},
     'n': {'basis_set': 'TZV2P-GTH-q5', 'potential': 'GTH-PBE-q5'},
+    'f': {'basis_set': 'TZV2P-GTH-q7', 'potential': 'GTH-PBE-q7'},
     'na': {'basis_set': 'TZV2P-GTH-q9', 'potential': 'GTH-PBE-q9'},
+    'k': {'basis_set': 'TZV2P-MOLOPT-SR-GTH-q9', 'potential': 'GTH-PBE-q9'},
     'ca': {'basis_set': 'TZV2P-MOLOPT-PBE-GTH-q10', 'potential': 'GTH-PBE-q10'},
     'cl': {'basis_set': 'TZV2P-GTH-q7', 'potential': 'GTH-PBE-q7'},
     's': {'basis_set': 'TZV2P-GTH-q6', 'potential': 'GTH-PBE-q6'},
+}
+
+CP2K_SINGLE_ATOM_DIRECTORY_NAMES = {
+    'h': 'hydrogen',
+    'c': 'carbon',
+    'n': 'nitrogen',
+    'o': 'oxygen',
+    'f': 'fluorine',
+    'na': 'sodium',
+    'mg': 'magnesium',
+    'p': 'phosphorus',
+    's': 'sulfur',
+    'cl': 'chlorine',
+    'k': 'potassium',
+    'ca': 'calcium',
+    'li': 'lithium',
+    'rb': 'rubidium',
+    'br': 'bromine',
+    'i': 'iodine',
+}
+
+CP2K_SINGLE_ATOM_MULTIPLICITIES = {
+    'h': 2,
+    'c': 3,
+    'n': 4,
+    'o': 3,
+    'f': 2,
+    'na': 2,
+    'mg': 1,
+    'p': 4,
+    's': 3,
+    'cl': 2,
+    'k': 2,
+    'ca': 1,
+    'li': 2,
+    'rb': 2,
+    'br': 2,
+    'i': 2,
 }
 
 CP2K_INPUT_TEMPLATE = {

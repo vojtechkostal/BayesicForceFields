@@ -77,7 +77,7 @@ The example reflects the streamlined package APIs:
 - prepare systems define residue `templates`, per-system `mdp` files, and
   optional bias files.
 - prepared training assets are written into one directory per system under
-  `training/window-XXX/`.
+  `training/system-XXX/`.
 - simulate and validate configs point to those prepared asset directories with
   `systems[].assets` and system-specific `n_steps`.
 - the QoI workflow uses `trainset`, `refset`, `run`, and `output`.

@@ -11,8 +11,8 @@ Source code:
 `bff prepare` stages everything needed for downstream workflows:
 
 - equilibrated GROMACS systems
-- reusable training assets under `training/window-XXX/`
-- CP2K reference assets under `reference/window-XXX/`
+- reusable training assets under `training/system-XXX/`
+- CP2K reference assets under `reference/system-XXX/`
 
 ## Minimal Example
 
@@ -96,33 +96,39 @@ systems:
 
 The most important output for downstream BFF workflows is:
 
-- `PROJECT/training/window-XXX/`
+- `PROJECT/training/system-XXX/`
 
 Each such directory contains one prepared system with:
 
-- `window-XXX.top`
-- `window-XXX.gro`
-- `window-XXX.ndx`
-- `window-XXX.em.mdp`
-- `window-XXX.npt.mdp`
-- `window-XXX.mdp`
+- `system-XXX.top`
+- `system-XXX.gro`
+- `system-XXX.ndx`
+- `system-XXX.em.mdp`
+- `system-XXX.npt.mdp`
+- `system-XXX.mdp`
 - optional bias file
 
 Those directories are consumed directly by both `simulate` and `validate`.
 
-The reference tree is window-centered:
+The reference tree is system-centered:
 
-- `PROJECT/reference/window-XXX/system.gro`
-- `PROJECT/reference/window-XXX/system.top`
-- `PROJECT/reference/window-XXX/system.xyz`
-- `PROJECT/reference/window-XXX/md/`
+- `PROJECT/reference/system-XXX/system.gro`
+- `PROJECT/reference/system-XXX/system.top`
+- `PROJECT/reference/system-XXX/system.xyz`
+- `PROJECT/reference/system-XXX/md/`
   CP2K direct-MD inputs and `run.sh`.
-- `PROJECT/reference/window-XXX/snapshots/`
+- `PROJECT/reference/system-XXX/single-atoms/`
+  One isolated-atom CP2K `input.inp` and centered `pos.xyz` per
+  unique element in the prepared system plus shared top-level `run.sh` and
+  `submit.sh` helpers. These jobs use a
+  neutral atom in a nonperiodic `10 Å` cubic box with the same revPBE-based
+  CP2K setup as the staged MD inputs.
+- `PROJECT/reference/system-XXX/snapshots/`
   Decorrelated XYZ snapshots, `single-point.inp`, a 100-step `md.inp`,
   `run.sh`, and `submit.sh`. Use `bff cp2k-collect` from this directory to
   read the final short-MD positions, forces, and potential energies from
   `runs/` and write an 80/20 deterministic shuffled `train.extxyz` /
-  `valid.extxyz` split.
+  `valid.extxyz` split in `eV` / `eV/Å`.
   CP2K XYZ outputs are read directly. If you switch the CP2K output format to
   DCD, run `bff cp2k-collect --topology pos.xyz` or point `--topology` at another
   per-run topology file.

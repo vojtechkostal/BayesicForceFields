@@ -7,10 +7,10 @@ gromacs:
 defaults:
   nsteps:
     npt: 0
-    prod: 100000
+    prod: 10000
 
 reference:
-  n_single_point_snapshots: 1000
+  n_single_point_snapshots: 5
 
 systems:
   - topology: ../common/topol.top

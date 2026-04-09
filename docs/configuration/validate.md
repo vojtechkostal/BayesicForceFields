@@ -21,9 +21,9 @@ trainset_dir: ./validation-trainset
 parameters: ../06-learn/posterior-samples.yaml
 specs: ../03-training-trjs/trainset/specs.yaml
 systems:
-  - assets: ../01-prepare/colvars/ace-colvars/training/window-000
+  - assets: ../01-prepare/colvars/ace-colvars/training/system-000
     n_steps: 1000
-  - assets: ../01-prepare/colvars/ace-colvars/training/window-001
+  - assets: ../01-prepare/colvars/ace-colvars/training/system-001
     n_steps: 1000
 gmx_cmd: gmx
 job_scheduler: local
@@ -57,7 +57,7 @@ job_scheduler: local
 ## `systems[]` Keys
 
 - `assets`
-  Directory created by `bff prepare`, for example `training/window-001`.
+  Directory created by `bff prepare`, for example `training/system-001`.
 - `n_steps`
   Production MD length for this validation run.
 

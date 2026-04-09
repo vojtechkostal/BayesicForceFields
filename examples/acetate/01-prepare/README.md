@@ -14,14 +14,15 @@ example:
 Both variants produce the same downstream kind of assets:
 
 - equilibrated GROMACS systems
-- `training/window-XXX/` prepared assets for `bff simulate`
-- staged CP2K reference inputs under `reference/window-XXX/`
+- `training/system-XXX/` prepared assets for `bff simulate`
+- staged CP2K reference inputs under `reference/system-XXX/`
 
-Each reference window contains a direct-MD `md/` folder and a `snapshots/`
-folder. The snapshot folder contains decorrelated XYZ snapshots, CP2K
+Each reference system contains a direct-MD `md/` folder and a `snapshots/`
+folder plus a `single-atoms/` folder for isolated elemental reference
+energies with shared `run.sh` and `submit.sh` helpers. The snapshot folder contains decorrelated XYZ snapshots, CP2K
 `single-point.inp` and 100-step `md.inp` templates, and Slurm helpers. Run
 `bff cp2k-collect` in that folder to assemble a deterministic shuffled
-`train.extxyz` and `valid.extxyz` split.
+`train.extxyz` and `valid.extxyz` split in `eV` / `eV/Å`.
 
 The full stage is self-contained in the exported example tree and does not
 depend on repository-level `data/` paths.

@@ -69,7 +69,7 @@ bff validate config.yaml
 - Shared topologies, force-field files, template coordinates, and MDP inputs
   live in `01-prepare/common/`.
 - Prepared training assets live under
-  `01-prepare/colvars/ace-colvars/training/window-XXX/`.
+  `01-prepare/colvars/ace-colvars/training/system-XXX/`.
 - The QoI step demonstrates both builtin routines and a custom routine loaded
   from `./restraint.py:distance_distribution`.
 - The learn stage writes posterior chains in `06-learn/` and the interactive

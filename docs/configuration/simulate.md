@@ -17,9 +17,9 @@ the corresponding GROMACS training campaign.
 mol_resname: ACE
 trainset_dir: ./trainset
 systems:
-  - assets: ../01-prepare/colvars/ace-colvars/training/window-000
+  - assets: ../01-prepare/colvars/ace-colvars/training/system-000
     n_steps: 1000
-  - assets: ../01-prepare/colvars/ace-colvars/training/window-001
+  - assets: ../01-prepare/colvars/ace-colvars/training/system-001
     n_steps: 1000
 bounds:
   charge C2: [0.0, 1.0]
@@ -66,7 +66,7 @@ job_scheduler: local
 
 - `assets`
   Directory created by `bff prepare`, for example
-  `training/window-000`.
+  `training/system-000`.
 - `n_steps`
   Production MD length for this prepared system within the sampled campaign.
 

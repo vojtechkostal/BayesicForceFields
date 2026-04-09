@@ -5,7 +5,13 @@ from typing import Any
 import MDAnalysis as mda
 import numpy as np
 
-from ..data import CATIONS, CP2K_INPUT_TEMPLATE, CP2K_KIND_DEFAULTS
+from ..data import (
+    CATIONS,
+    CP2K_INPUT_TEMPLATE,
+    CP2K_KIND_DEFAULTS,
+    CP2K_SINGLE_ATOM_DIRECTORY_NAMES,
+    CP2K_SINGLE_ATOM_MULTIPLICITIES,
+)
 
 
 def format_cp2k_input(data: dict[str, Any], indent: int = 0) -> list[str]:
@@ -61,12 +67,43 @@ def get_cp2k_elements(fn_pos: str | Path) -> np.ndarray:
     return elements[np.argsort(index)]
 
 
+def get_cp2k_kind_defaults(element: str) -> dict[str, str]:
+    """Return CP2K KIND defaults for one element or raise a clear error."""
+    element_key = element.lower()
+    if element_key not in CP2K_KIND_DEFAULTS:
+        raise ValueError(
+            f"No CP2K KIND defaults defined for element '{element}'. "
+            "Extend bff.data.CP2K_KIND_DEFAULTS before preparing CP2K inputs."
+        )
+    return CP2K_KIND_DEFAULTS[element_key]
+
+
 def build_cp2k_kinds(elements: np.ndarray) -> dict[str, dict[str, str]]:
     """Build CP2K KIND sections for the elements present in a system."""
     return {
-        f"kind {element.capitalize()}": CP2K_KIND_DEFAULTS[element.lower()]
+        f"kind {element.capitalize()}": get_cp2k_kind_defaults(element)
         for element in elements
     }
+
+
+def get_cp2k_single_atom_directory_name(element: str) -> str:
+    """Return the directory name used for one isolated-atom reference job."""
+    element_key = element.lower()
+    if element_key not in CP2K_SINGLE_ATOM_DIRECTORY_NAMES:
+        raise ValueError(
+            f"No isolated-atom directory name defined for element '{element}'."
+        )
+    return CP2K_SINGLE_ATOM_DIRECTORY_NAMES[element_key]
+
+
+def get_cp2k_single_atom_multiplicity(element: str) -> int:
+    """Return the neutral isolated-atom spin multiplicity."""
+    element_key = element.lower()
+    if element_key not in CP2K_SINGLE_ATOM_MULTIPLICITIES:
+        raise ValueError(
+            f"No isolated-atom multiplicity defined for element '{element}'."
+        )
+    return CP2K_SINGLE_ATOM_MULTIPLICITIES[element_key]
 
 
 def build_cp2k_d3_exclusions(elements: np.ndarray) -> list[list[int]]:
@@ -143,6 +180,39 @@ def configure_cp2k_single_point(tree: dict[str, Any]) -> None:
     """Configure a CP2K input tree for single-point energy/forces."""
     tree["global"]["run_type"] = "ENERGY_FORCE"
     tree.pop("motion", None)
+
+
+def configure_cp2k_isolated_atom(
+    tree: dict[str, Any],
+    *,
+    box_length: float,
+) -> None:
+    """Configure a CP2K input tree for an isolated-atom energy calculation."""
+    tree["global"]["run_type"] = "ENERGY"
+    tree["global"]["print_level"] = "LOW"
+    tree["global"]["preferred_fft_library"] = "FFTW"
+    tree["global"].pop("walltime", None)
+    tree.pop("motion", None)
+
+    dft = tree["force_eval"]["dft"]
+    dft["poisson"] = {"periodic": "NONE", "psolver": "MT"}
+    dft["scf"]["scf_guess"] = "ATOMIC"
+    dft["scf"]["max_scf"] = 100
+    dft["scf"]["eps_scf"] = 1.0e-6
+    dft["scf"]["ot"] = {
+        "preconditioner": "FULL_SINGLE_INVERSE",
+        "minimizer": "DIIS",
+        "energy_gap": 0.05,
+    }
+    dft["scf"]["outer_scf"] = {"max_scf": 20, "eps_scf": 1.0e-6}
+    dft["qs"].pop("extrapolation_order", None)
+    dft["qs"].pop("extrapolation", None)
+    dft["xc"].pop("vdw_potential", None)
+
+    tree["force_eval"]["subsys"]["cell"] = {
+        "ABC": f"[angstrom] {box_length} {box_length} {box_length}",
+        "periodic": "NONE",
+    }
 
 
 def build_cp2k_tree(
@@ -265,13 +335,57 @@ def make_cp2k_single_point_input(
         handle.write("\n".join(format_cp2k_input(tree)) + "\n")
 
 
+def write_cp2k_single_atom_xyz(
+    element: str,
+    fn_out: str | Path,
+    *,
+    box_length: float = 10.0,
+) -> None:
+    """Write a centered one-atom XYZ file for isolated vacuum calculations."""
+    center = float(box_length) / 2.0
+    symbol = element.capitalize()
+    xyz = (
+        "1\n"
+        f"{symbol} isolated in vacuum\n"
+        f"{symbol} {center:.6f} {center:.6f} {center:.6f}\n"
+    )
+    Path(fn_out).write_text(xyz)
+
+
+def make_cp2k_isolated_atom_input(
+    element: str,
+    fn_out: str | Path,
+    *,
+    box_length: float = 10.0,
+    coord_filename: str = "pos.xyz",
+) -> None:
+    """Generate a vacuum single-atom CP2K input with neutral multiplicity."""
+    symbol = element.capitalize()
+    multiplicity = get_cp2k_single_atom_multiplicity(symbol)
+    fn_out = Path(fn_out)
+    fn_pos = fn_out.with_name(coord_filename)
+
+    write_cp2k_single_atom_xyz(symbol, fn_pos, box_length=box_length)
+    tree = build_cp2k_tree(
+        project=f"{symbol}_vacuum",
+        charge=0,
+        multiplicity=multiplicity,
+        unitcell=[box_length, box_length, box_length],
+        fn_pos=fn_pos,
+        coord_filename=coord_filename,
+    )
+    configure_cp2k_isolated_atom(tree, box_length=box_length)
+
+    with open(fn_out, "w") as handle:
+        handle.write("\n".join(format_cp2k_input(tree)) + "\n")
+
+
 def configure_cp2k_xyz_output(tree: dict[str, Any]) -> None:
-    """Ask CP2K MD to write XYZ positions, forces, and energies every step."""
+    """Ask CP2K MD to write XYZ positions and forces every step."""
     print_section = tree["motion"].setdefault("print", {})
     for key in ("trajectory", "forces"):
         print_section.setdefault(key, {})["format"] = "XYZ"
         print_section[key]["each"] = {"md": 1}
-    print_section["energy"] = {"each": {"md": 1}}
 
 
 def make_cp2k_short_md_input(
@@ -316,16 +430,14 @@ def write_cp2k_md_slurm_script(
 #SBATCH --job-name=cp2k-md
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=8
-#SBATCH --mem=1G
-#SBATCH --time=01:00:00
+#SBATCH --mem=10G
+#SBATCH --time=04:00:00
 #SBATCH --output=slurm-%j.out
 
 set -euo pipefail
 
 CP2K_CMD="${{CP2K_CMD:-cp2k.psmp}}"
 CP2K_PROJECT="${{CP2K_PROJECT:-{project}}}"
-SCRIPT_DIR="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)"
-cd "${{SCRIPT_DIR}}"
 
 if [[ -f setup-env.sh ]]; then
   # Optional user/site-specific environment setup.
@@ -369,43 +481,24 @@ def write_cp2k_snapshot_run_script(
 #SBATCH --job-name=cp2k-snapshot
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=8
-#SBATCH --mem=1G
+#SBATCH --mem=10G
 #SBATCH --time=04:00:00
 #SBATCH --output=slurm-%j.out
 
 set -euo pipefail
 
 CP2K_CMD="${CP2K_CMD:-cp2k.psmp}"
-RUN_DIR="$(pwd)"
 
 if [[ -f setup-env.sh ]]; then
-  # Optional user/site-specific environment setup.
   source setup-env.sh
 fi
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 
-for input in pos.xyz single-point.inp md.inp; do
-  if [[ ! -f "${input}" ]]; then
-    echo "Missing ${input} in ${RUN_DIR}" >&2
-    exit 1
-  fi
-done
+echo "Running short MD in $(pwd)"
+srun "${CP2K_CMD}" -i md.inp -o md.out
 
-if [[ ! -f .single-point.done ]]; then
-  echo "Running single-point calculation"
-  srun "${CP2K_CMD}" -i single-point.inp -o single-point.out
-  touch .single-point.done
-else
-  echo "Skipping single-point calculation; found .single-point.done."
-fi
-
-if [[ ! -f .md.done ]]; then
-  echo "Running short MD"
-  srun "${CP2K_CMD}" -i md.inp -o md.out
-  touch .md.done
-else
-  echo "Skipping short MD; found .md.done."
-fi
+# The single-point input is staged for optional manual use:
+# srun "${CP2K_CMD}" -i single-point.inp -o single-point.out
 """
     Path(fn_out).write_text(script)
 
@@ -418,27 +511,68 @@ def write_cp2k_snapshot_submit_script(
     """Write the submission helper for all prepared CP2K snapshots."""
     script = f"""#!/usr/bin/env bash
 set -euo pipefail
-
-main_dir="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)"
-cd "${{main_dir}}"
 snapshot_dir="${{1:-{snapshots_dirname}}}"
 mkdir -p runs
 
 for xyz in "${{snapshot_dir}}"/snapshot-*.xyz; do
   [[ -e "${{xyz}}" ]] || continue
   stem="$(basename "${{xyz}}" .xyz)"
-  run_dir="${{main_dir}}/runs/${{stem}}"
+  run_dir="runs/${{stem}}"
 
   mkdir -p "${{run_dir}}"
-  cp "${{main_dir}}/single-point.inp" "${{run_dir}}/single-point.inp"
-  cp "${{main_dir}}/md.inp" "${{run_dir}}/md.inp"
-  cp "${{main_dir}}/run.sh" "${{run_dir}}/run.sh"
+  cp single-point.inp md.inp run.sh "${{run_dir}}"/
   cp "${{xyz}}" "${{run_dir}}/pos.xyz"
-  if [[ -f "${{main_dir}}/setup-env.sh" ]]; then
-    cp "${{main_dir}}/setup-env.sh" "${{run_dir}}/setup-env.sh"
+  if [[ -f setup-env.sh ]]; then
+    cp setup-env.sh "${{run_dir}}"/
   fi
   echo "Submitting ${{stem}}"
   sbatch --chdir="${{run_dir}}" "${{run_dir}}/run.sh"
+done
+"""
+    Path(fn_out).write_text(script)
+
+
+def write_cp2k_single_atom_run_script(
+    fn_out: str | Path,
+) -> None:
+    """Write the Slurm script for one isolated-atom CP2K job."""
+    script = """#!/bin/bash
+#SBATCH --job-name=cp2k-atom
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=8
+#SBATCH --mem=10G
+#SBATCH --time=04:00:00
+#SBATCH --output=slurm-%j.out
+
+set -euo pipefail
+
+CP2K_CMD="${CP2K_CMD:-cp2k.psmp}"
+
+if [[ -f setup-env.sh ]]; then
+  source setup-env.sh
+elif [[ -f ../setup-env.sh ]]; then
+  source ../setup-env.sh
+fi
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
+
+echo "Running isolated-atom single point in $(pwd)"
+srun "${CP2K_CMD}" -i input.inp -o out.log
+grep "Total FORCE_EVAL" out.log | awk '{gsub(/\\.$/, "", $NF); printf "%.12f\\n", $NF * 27.211386245988}' > energy.dat
+"""
+    Path(fn_out).write_text(script)
+
+
+def write_cp2k_single_atom_submit_script(
+    fn_out: str | Path,
+) -> None:
+    """Write the submission helper for isolated-atom CP2K jobs."""
+    script = """#!/usr/bin/env bash
+set -euo pipefail
+
+for run_dir in */; do
+  [[ -d "${run_dir}" ]] || continue
+  echo "Submitting ${run_dir%/}"
+  sbatch --chdir="${run_dir}" run.sh
 done
 """
     Path(fn_out).write_text(script)

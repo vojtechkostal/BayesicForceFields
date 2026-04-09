@@ -9,6 +9,10 @@ from pathlib import Path
 
 import MDAnalysis as mda
 
+HARTREE_TO_EV = 27.211386245988
+BOHR_TO_ANGSTROM = 0.529177210903
+HARTREE_PER_BOHR_TO_EV_PER_ANGSTROM = HARTREE_TO_EV / BOHR_TO_ANGSTROM
+
 POSITION_PATTERNS = ("*-pos-*.xyz", "*-pos-*.dcd")
 FORCE_PATTERNS = ("*-frc-*.xyz", "*-frc-*.dcd", "*-force-*.xyz", "*-force-*.dcd")
 
@@ -45,6 +49,19 @@ def last_potential_energy(run_dir: Path) -> float:
     raise FileNotFoundError(f"No readable CP2K .ener file in {run_dir}")
 
 
+def hartree_to_ev(energy: float) -> float:
+    """Convert energy from Hartree to eV."""
+    return float(energy) * HARTREE_TO_EV
+
+
+def hartree_bohr_to_ev_angstrom(forces: list[list[float]]) -> list[list[float]]:
+    """Convert force vectors from Hartree/Bohr to eV/Angstrom."""
+    return [
+        [float(component) * HARTREE_PER_BOHR_TO_EV_PER_ANGSTROM for component in force]
+        for force in forces
+    ]
+
+
 def first_existing(patterns: tuple[str, ...], run_dir: Path) -> Path:
     """Return the last matching file for the first glob pattern with matches."""
     for pattern in patterns:
@@ -70,8 +87,8 @@ def collect_frame(run_dir: Path, topology_name: str = "pos.xyz"):
         "source": run_dir.name,
         "atoms": atoms,
         "positions": positions,
-        "forces": forces,
-        "energy": last_potential_energy(run_dir),
+        "forces": hartree_bohr_to_ev_angstrom(forces),
+        "energy": hartree_to_ev(last_potential_energy(run_dir)),
     }
 
 

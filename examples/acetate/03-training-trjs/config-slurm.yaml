@@ -1,7 +1,7 @@
 mol_resname: ACE
 trainset_dir: ./trainset
 systems:
-  - assets: ../01-prepare/colvars/ace-colvars/training/window-000
+  - assets: ../01-prepare/colvars/ace-colvars/training/system-000
     n_steps: 55000
 bounds:
   charge C2: [0.0, 1.0]
