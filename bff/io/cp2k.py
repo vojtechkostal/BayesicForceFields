@@ -536,6 +536,11 @@ def write_cp2k_single_atom_run_script(
     fn_out: str | Path,
 ) -> None:
     """Write the Slurm script for one isolated-atom CP2K job."""
+    energy_command = (
+        'grep "Total FORCE_EVAL" out.log | '
+        """awk '{gsub(/\\.$/, "", $NF); """
+        """printf "%.12f\\n", $NF * 27.211386245988}' > energy.dat"""
+    )
     script = """#!/bin/bash
 #SBATCH --job-name=cp2k-atom
 #SBATCH --nodes=1
@@ -557,7 +562,7 @@ export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 
 echo "Running isolated-atom single point in $(pwd)"
 srun "${CP2K_CMD}" -i input.inp -o out.log
-grep "Total FORCE_EVAL" out.log | awk '{gsub(/\\.$/, "", $NF); printf "%.12f\\n", $NF * 27.211386245988}' > energy.dat
+""" + energy_command + """
 """
     Path(fn_out).write_text(script)
 

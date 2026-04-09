@@ -9,14 +9,16 @@ from typing import Dict, List, Optional, Sequence, Union
 
 import MDAnalysis as mda
 import numpy as np
+from gmxtopology import Topology
 from MDAnalysis import transformations as trans
 from MDAnalysis.analysis.distances import distance_array
 from MDAnalysis.selections.gromacs import SelectionWriter
-from gmxtopology import Topology
 
 from ..domain.bias import BiasSpec
 from ..io.colvars import (
     resolve_distance_bias_metadata as resolve_colvars_distance_bias_metadata,
+)
+from ..io.colvars import (
     write_mdp_with_colvars,
 )
 from ..io.commands import build_command
@@ -36,6 +38,8 @@ from ..io.cp2k import (
 from ..io.logs import Logger
 from ..io.plumed import (
     ensure_plumed_kernel,
+)
+from ..io.plumed import (
     resolve_distance_bias_metadata as resolve_plumed_distance_bias_metadata,
 )
 from ..topology import create_box
