@@ -50,6 +50,69 @@ CP2K_EQUILIBRATION_STEPS = 10000
 CP2K_SNAPSHOT_MD_STEPS = 100
 
 
+def _cell_vectors_from_dimensions(dimensions: np.ndarray | Sequence[float]) -> np.ndarray:
+    """Convert MDAnalysis box dimensions to a 3x3 lattice matrix."""
+    a, b, c, alpha, beta, gamma = np.asarray(dimensions, dtype=float)[:6]
+    alpha = np.deg2rad(alpha)
+    beta = np.deg2rad(beta)
+    gamma = np.deg2rad(gamma)
+
+    sin_gamma = np.sin(gamma)
+    if np.isclose(sin_gamma, 0.0):
+        raise ValueError("Cannot build lattice vectors for a degenerate unit cell.")
+
+    ax, ay, az = a, 0.0, 0.0
+    bx, by, bz = b * np.cos(gamma), b * sin_gamma, 0.0
+    cx = c * np.cos(beta)
+    cy = c * (np.cos(alpha) - np.cos(beta) * np.cos(gamma)) / sin_gamma
+    cz_sq = c**2 - cx**2 - cy**2
+    cz = np.sqrt(max(cz_sq, 0.0))
+    return np.array(
+        [
+            [ax, ay, az],
+            [bx, by, bz],
+            [cx, cy, cz],
+        ],
+        dtype=float,
+    )
+
+
+def _atom_symbols(atoms: mda.AtomGroup) -> list[str]:
+    """Return element-like symbols for XYZ output."""
+    if hasattr(atoms, "elements"):
+        elements = [str(element) for element in atoms.elements]
+        if all(element for element in elements):
+            return elements
+    return [str(name) for name in atoms.names]
+
+
+def write_extxyz_frame(
+    atoms: mda.AtomGroup,
+    fn_out: PathLike,
+    *,
+    dimensions: np.ndarray | Sequence[float],
+    properties: str = "species:S:1:pos:R:3",
+) -> None:
+    """Write one frame in extended XYZ format including the lattice."""
+    lattice = _cell_vectors_from_dimensions(dimensions).reshape(-1)
+    comment = (
+        f"Lattice=\"{' '.join(f'{value:.12g}' for value in lattice)}\" "
+        f"Properties={properties} pbc=\"T T T\""
+    )
+    positions = np.asarray(atoms.positions, dtype=float)
+
+    with Path(fn_out).open("w", encoding="utf-8") as handle:
+        handle.write(f"{len(atoms)}\n")
+        handle.write(comment + "\n")
+        for symbol, position in zip(_atom_symbols(atoms), positions, strict=True):
+            handle.write(
+                symbol
+                + " "
+                + " ".join(f"{value:.12g}" for value in position)
+                + "\n"
+            )
+
+
 @dataclass(slots=True)
 class EquilibratedTopology:
     """Shared topology state reused across simulation windows."""
@@ -263,8 +326,13 @@ def strip_topol(
 
     # Remove virtual sites from coordinates
     atoms = u.select_atoms('not mass -1 to 0.5')
+    ts = u.trajectory[-1]
     for fn_out in fn_out_coords:
-        atoms.write(fn_out, frames=u.trajectory[[-1]])
+        fn_out = Path(fn_out)
+        if fn_out.suffix.lower() == ".xyz":
+            write_extxyz_frame(atoms, fn_out, dimensions=ts.dimensions)
+        else:
+            atoms.write(fn_out, frames=u.trajectory[[-1]])
 
 
 def prepare_bias_file(
@@ -358,13 +426,8 @@ def write_snapshot_xyz_files(
 
     for output_index, frame_index in enumerate(indices):
         fn_snapshot = snapshots_dir / f"snapshot-{output_index:04d}.xyz"
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore",
-                message=r".*Reader has no dt information, set to 1.0 ps.*",
-                category=UserWarning,
-            )
-            atoms.write(fn_snapshot, frames=universe.trajectory[[frame_index]])
+        ts = universe.trajectory[frame_index]
+        write_extxyz_frame(atoms, fn_snapshot, dimensions=ts.dimensions)
         written.append(fn_snapshot)
 
     return written
@@ -418,21 +481,31 @@ def prepare_equilibrated_topology(
     topology_label = topology_name(topol_index)
     fn_coord_box = equilibration_dir / f"{topology_label}-box.gro"
 
-    logger.info("Creating box: in progress...", overwrite=True, level=2)
+    logger.status("Creating box", "in progress...", overwrite=True, level=2)
     universe, topol = create_box(
         fn_topol,
         templates,
         fn_out=fn_coord_box,
         box=box,
     )
-    logger.info("Creating box: Done.", level=2)
+    logger.done("Creating box", level=2)
 
     fn_topol_processed = fn_coord_box.with_suffix(".top")
     topol.write(fn_topol_processed, overwrite=True)
     maxwarn = determine_maxwarn(topol)
+    logger.warn_if(
+        maxwarn > 0,
+        "Non-neutral topology detected; GROMACS preprocessing will use -maxwarn 1.",
+        level=2,
+    )
 
     deffnm_em = equilibration_dir / f"{topology_label}-em"
-    logger.info("Energy minimization: in progress...", overwrite=True, level=2)
+    logger.status(
+        "Energy minimization",
+        "in progress...",
+        overwrite=True,
+        level=2,
+    )
     run_md(
         deffnm_em,
         fn_mdp_em,
@@ -444,10 +517,13 @@ def prepare_equilibrated_topology(
         maxwarn=maxwarn,
         fn_log=fn_gmx_log,
     )
-    logger.info("Energy minimization: Done.", level=2)
+    logger.done("Energy minimization", level=2)
 
     if nsteps_npt <= 0:
-        logger.info("NpT equilibration: skipped (box defined)", level=2)
+        logger.warn(
+            "Skipping NpT equilibration because nsteps_npt <= 0; using the box from the constructed system.",
+            level=2,
+        )
         return EquilibratedTopology(
             fn_topol_processed=fn_topol_processed,
             fn_coord=deffnm_em.with_suffix(".gro"),
@@ -460,7 +536,7 @@ def prepare_equilibrated_topology(
         )
 
     deffnm_npt = equilibration_dir / f"{topology_label}-npt"
-    logger.info("NpT equilibration: in progress...", overwrite=True, level=2)
+    logger.status("NpT equilibration", "in progress...", overwrite=True, level=2)
     run_md(
         deffnm_npt,
         fn_mdp_npt,
@@ -481,7 +557,7 @@ def prepare_equilibrated_topology(
     universe.trajectory.add_transformations(trans.unwrap(universe.atoms))
     discard = int(universe.trajectory.n_frames * 0.2)
     box_avg = get_average_box(universe, start=discard)
-    logger.info("NpT equilibration: Done.", level=2)
+    logger.done("NpT equilibration", level=2)
 
     return EquilibratedTopology(
         fn_topol_processed=fn_topol_processed,
@@ -545,7 +621,7 @@ def write_reference_assets(
     logger: Logger,
 ) -> None:
     """Write the full CP2K reference tree for one simulation window."""
-    logger.info("Reference assets: in progress...", overwrite=True, level=2)
+    logger.status("Reference assets", "in progress...", overwrite=True, level=2)
     window_dir = reference_dir / system_name(window_index)
     md_dir = window_dir / "md"
     snapshots_dir = window_dir / "snapshots"
@@ -687,7 +763,7 @@ def write_reference_assets(
     write_cp2k_snapshot_submit_script(fn_snapshot_submit)
     fn_snapshot_run.chmod(0o755)
     fn_snapshot_submit.chmod(0o755)
-    logger.info("Reference assets: Done.", level=2)
+    logger.done("Reference assets", level=2)
 
 
 def main(fn_config: PathLike) -> None:
@@ -699,9 +775,27 @@ def main(fn_config: PathLike) -> None:
     fn_gmx_log = config.project_dir / "gmx.log"
     fn_gmx_log.parent.mkdir(parents=True, exist_ok=True)
 
-    logger = Logger("prepare", str(config.fn_log) if config.fn_log else None)
-    logger.info("", level=0)
-    logger.info(f"=== Preparing project: {config.project_dir.name} ===\n", level=0)
+    logger = Logger(
+        "prepare",
+        str(config.fn_log) if config.fn_log else None,
+        mode="w",
+    )
+    logger.section(f"Prepare: {config.project_dir.name}")
+    logger.kv("Config", Path(fn_config).resolve())
+    logger.kv("Project directory", config.project_dir.resolve())
+    logger.kv("Systems", len(config.systems))
+    logger.kv("GROMACS command", config.gmx_cmd)
+    logger.kv(
+        "Single-point snapshots per window",
+        config.n_single_point_snapshots,
+    )
+    logger.warn_if(
+        config.n_single_point_snapshots < 10,
+        "Very few CP2K reference snapshots are requested; train/valid splits may be noisy.",
+    )
+    if config.fn_log is not None:
+        logger.kv("Log file", config.fn_log.resolve())
+    logger.blank()
 
     (
         equilibration_dir,
@@ -713,7 +807,7 @@ def main(fn_config: PathLike) -> None:
 
     n_total = len(config.systems)
     for i, system in enumerate(config.systems):
-        logger.info(f"System: {i + 1}/{n_total}", level=1)
+        logger.info(f"System {i + 1}/{n_total}", level=1)
 
         topology_key = str(system.fn_topol)
         if topology_key not in equilibrated_topologies:
@@ -771,8 +865,9 @@ def main(fn_config: PathLike) -> None:
         shutil.copy2(fn_mdp_prod, fn_prod_local)
 
         deffnm_prod = equilibration_dir / system_run_name(i)
-        logger.info(
-            "Production preparation run: in progress...",
+        logger.status(
+            "Production preparation run",
+            "in progress...",
             overwrite=True,
             level=2,
         )
@@ -788,9 +883,9 @@ def main(fn_config: PathLike) -> None:
             maxwarn=topology_state.maxwarn,
             fn_log=fn_gmx_log,
         )
-        logger.info("Production preparation run: Done.", level=2)
+        logger.done("Production preparation run", level=2)
 
-        logger.info("Training MD assets: in progress...", overwrite=True, level=2)
+        logger.status("Training MD assets", "in progress...", overwrite=True, level=2)
         save_training_artifacts(
             window_index=i,
             training_dir=training_dir,
@@ -803,7 +898,7 @@ def main(fn_config: PathLike) -> None:
             fn_bias_input=fn_bias_input,
             bias=system.bias,
         )
-        logger.info("Training MD assets: Done.", level=2)
+        logger.done("Training MD assets", level=2)
         write_reference_assets(
             reference_dir=reference_dir,
             window_index=i,
@@ -818,7 +913,7 @@ def main(fn_config: PathLike) -> None:
             n_snapshots=config.n_single_point_snapshots,
             logger=logger,
         )
-        logger.info("", level=0)
+        logger.blank()
 
 
 if __name__ == "__main__":
