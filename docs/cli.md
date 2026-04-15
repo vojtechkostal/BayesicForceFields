@@ -21,6 +21,8 @@ The CLI entry point is implemented in
   Copy or download the repository example tree.
 - `bff cp2k-collect`
   Collect CP2K snapshot runs into `train.extxyz` and `valid.extxyz`.
+  `--box` accepts either 3 box lengths or 9 flattened lattice components and
+  applies the same box to every collected frame.
 - `bff version`
   Print the installed package version.
 

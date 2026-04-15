@@ -56,6 +56,31 @@ def read_lattice(path: Path | None) -> list[float] | None:
     return values
 
 
+def format_lattice(lattice: list[float] | np.ndarray) -> str:
+    """Format lattice values with 4 decimals and clean near-zero noise."""
+    values = np.asarray(lattice, dtype=float).reshape(-1).copy()
+    values[np.abs(values) < 5e-5] = 0.0
+    return " ".join(f"{value:.4f}" for value in values)
+
+
+def parse_box_override(raw: str | None) -> list[float] | None:
+    """Parse a box override from 3 lengths or 9 flattened vector components."""
+    if raw is None:
+        return None
+
+    tokens = [token for token in re.split(r"[\s,]+", raw.strip()) if token]
+    values = [float(token) for token in tokens]
+    if len(values) == 3:
+        ax, by, cz = values
+        return [ax, 0.0, 0.0, 0.0, by, 0.0, 0.0, 0.0, cz]
+    if len(values) == 9:
+        return values
+    raise ValueError(
+        "Box override must contain either 3 lengths or 9 flattened lattice "
+        "components."
+    )
+
+
 def last_potential_energy(run_dir: Path) -> float:
     """Read the last CP2K potential energy from a run directory."""
     for path in sorted(run_dir.glob("*.ener")):
@@ -123,10 +148,9 @@ def write_extxyz(frames: list[dict], path: Path) -> None:
             header = []
             lattice = frame.get("lattice")
             if lattice is not None:
-                lattice_arr = np.asarray(lattice, dtype=float).reshape(-1)
                 header.append(
                     "Lattice=\""
-                    + " ".join(f"{value:.12g}" for value in lattice_arr)
+                    + format_lattice(lattice)
                     + "\""
                 )
                 header.append('pbc="T T T"')
@@ -168,6 +192,7 @@ def collect_outputs(
     train_fraction: float = 0.8,
     seed: int = 2026,
     topology_name: str = "pos.xyz",
+    box_override: list[float] | None = None,
 ) -> tuple[int, int]:
     """Collect CP2K outputs and return train/validation frame counts."""
     if not 0 < train_fraction < 1:
@@ -180,7 +205,10 @@ def collect_outputs(
     frames = []
     for run_dir in sorted(p for p in runs_dir.iterdir() if p.is_dir()):
         try:
-            frames.append(collect_frame(run_dir, topology_name=topology_name))
+            frame = collect_frame(run_dir, topology_name=topology_name)
+            if box_override is not None:
+                frame["lattice"] = box_override
+            frames.append(frame)
         except (FileNotFoundError, ValueError) as exc:
             print(f"Skipping {run_dir}: {exc}")
 
@@ -206,7 +234,22 @@ def main() -> None:
         default="pos.xyz",
         help="Per-run topology file used when CP2K outputs DCD files.",
     )
+    parser.add_argument(
+        "--box",
+        default=None,
+        help=(
+            "Fixed box used for every collected frame. Provide either 3 box "
+            "lengths or 9 flattened lattice components, separated by spaces "
+            "or commas."
+        ),
+    )
     args = parser.parse_args()
+    box_override = parse_box_override(args.box)
+    if box_override is not None:
+        print(
+            "Warning: applying one fixed box to every collected frame. "
+            "This assumes the snapshots come from an NVT or otherwise fixed-cell ensemble."
+        )
 
     n_train, n_valid = collect_outputs(
         runs=Path(args.runs),
@@ -215,6 +258,7 @@ def main() -> None:
         train_fraction=args.train_fraction,
         seed=args.seed,
         topology_name=args.topology,
+        box_override=box_override,
     )
     print(f"Wrote {n_train} training frames to {args.train}")
     print(f"Wrote {n_valid} validation frames to {args.valid}")

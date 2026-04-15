@@ -254,13 +254,29 @@ def cp2k_collect(
         "--topology",
         help="Per-run topology file used when CP2K outputs DCD files.",
     ),
+    box: str | None = typer.Option(
+        None,
+        "--box",
+        help=(
+            "Fixed box used for every collected frame. Provide either 3 box "
+            "lengths or 9 flattened lattice components, separated by spaces "
+            "or commas."
+        ),
+    ),
 ) -> None:
     """
     Collect CP2K snapshot runs into train/validation extxyz files.
     """
-    from bff.io.cp2k_collect import collect_outputs
+    from bff.io.cp2k_collect import collect_outputs, parse_box_override
 
     try:
+        box_override = parse_box_override(box)
+        if box_override is not None:
+            typer.echo(
+                "Warning: applying one fixed box to every collected frame. "
+                "This assumes the snapshots come from an NVT or otherwise fixed-cell ensemble.",
+                err=True,
+            )
         n_train, n_valid = collect_outputs(
             runs=runs,
             train=train,
@@ -268,6 +284,7 @@ def cp2k_collect(
             train_fraction=train_fraction,
             seed=seed,
             topology_name=topology,
+            box_override=box_override,
         )
     except (FileNotFoundError, ValueError) as exc:
         raise typer.BadParameter(str(exc), param_hint="cp2k-collect") from exc

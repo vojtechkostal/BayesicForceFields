@@ -131,7 +131,10 @@ The reference tree is system-centered:
   `valid.extxyz` split in `eV` / `eV/Å`.
   CP2K XYZ outputs are read directly. If you switch the CP2K output format to
   DCD, run `bff cp2k-collect --topology pos.xyz` or point `--topology` at another
-  per-run topology file.
+  per-run topology file. You can also force one fixed lattice for every
+  collected frame with `bff cp2k-collect --box "a_x a_y a_z b_x b_y b_z c_x c_y c_z"`.
+  That override assumes the snapshots come from an NVT or otherwise fixed-cell
+  ensemble.
 
 Generated CP2K Slurm scripts are intentionally machine-agnostic. They use
 `CP2K_CMD=cp2k.psmp` by default and source an optional local `setup-env.sh`

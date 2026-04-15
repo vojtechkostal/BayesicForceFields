@@ -86,6 +86,13 @@ def _atom_symbols(atoms: mda.AtomGroup) -> list[str]:
     return [str(name) for name in atoms.names]
 
 
+def _format_lattice(lattice: np.ndarray | Sequence[float]) -> str:
+    """Format lattice values with 4 decimals and clean near-zero noise."""
+    values = np.asarray(lattice, dtype=float).reshape(-1).copy()
+    values[np.abs(values) < 5e-5] = 0.0
+    return " ".join(f"{value:.4f}" for value in values)
+
+
 def write_extxyz_frame(
     atoms: mda.AtomGroup,
     fn_out: PathLike,
@@ -96,7 +103,7 @@ def write_extxyz_frame(
     """Write one frame in extended XYZ format including the lattice."""
     lattice = _cell_vectors_from_dimensions(dimensions).reshape(-1)
     comment = (
-        f"Lattice=\"{' '.join(f'{value:.12g}' for value in lattice)}\" "
+        f"Lattice=\"{_format_lattice(lattice)}\" "
         f"Properties={properties} pbc=\"T T T\""
     )
     positions = np.asarray(atoms.positions, dtype=float)

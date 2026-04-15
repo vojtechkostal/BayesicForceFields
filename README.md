@@ -165,6 +165,15 @@ Prepared CP2K snapshot folders can be collected into `train.extxyz` and
 bff cp2k-collect
 ```
 
+To force one fixed box for every collected frame, use:
+
+```bash
+bff cp2k-collect --box "24.0000 0.0000 0.0000 0.0000 24.0000 0.0000 0.0000 0.0000 24.0000"
+```
+
+That override applies the same lattice to every frame, so it should only be
+used for snapshots from an NVT or otherwise fixed-cell ensemble.
+
 ## Repository Layout
 
 - [bff/](bff/) contains the package code.
