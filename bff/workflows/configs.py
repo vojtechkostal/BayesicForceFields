@@ -83,7 +83,7 @@ def _load_prepared_simulation_system(
             f"Prepared system assets {training_assets} have invalid n_steps={n_steps}."
         )
 
-    topologies = sorted(training_assets.glob("window-*.top"))
+    topologies = sorted(training_assets.glob("*.top"))
     if len(topologies) != 1:
         raise ValueError(
             f"{training_assets} must contain exactly one prepared system, "
@@ -91,14 +91,14 @@ def _load_prepared_simulation_system(
         )
 
     fn_topol = topologies[0]
-    window_label = fn_topol.stem
-    fn_coordinates = training_assets / f"{window_label}.gro"
-    fn_mdp_em = training_assets / f"{window_label}.em.mdp"
-    fn_mdp_prod = training_assets / f"{window_label}.mdp"
-    fn_ndx = training_assets / f"{window_label}.ndx"
+    system_label = fn_topol.stem
+    fn_coordinates = training_assets / f"{system_label}.gro"
+    fn_mdp_em = training_assets / f"{system_label}.em.mdp"
+    fn_mdp_prod = training_assets / f"{system_label}.mdp"
+    fn_ndx = training_assets / f"{system_label}.ndx"
     fn_bias = None
     for suffix in ("bias.colvars.dat", "bias.plumed.dat"):
-        candidate = training_assets / f"{window_label}.{suffix}"
+        candidate = training_assets / f"{system_label}.{suffix}"
         if candidate.exists():
             fn_bias = candidate
             break
@@ -111,7 +111,7 @@ def _load_prepared_simulation_system(
     ]:
         if not path.exists():
             raise FileNotFoundError(
-                f"Prepared {kind} file not found for {window_label}: {path}"
+                f"Prepared {kind} file not found for {system_label}: {path}"
             )
 
     return SimulationSystemConfig(
@@ -209,6 +209,12 @@ def _load_campaign_common(
             config["trainset_dir"],
             must_exist=False,
             kind="trainset directory",
+        ),
+        log=_resolve_path(
+            base_dir,
+            config.get("log", "./out.log"),
+            must_exist=False,
+            kind="log file",
         ),
         gmx_cmd=str(config["gmx_cmd"]),
         job_scheduler=scheduler,
@@ -378,6 +384,7 @@ def _load_simulation_systems(
 class SimulationCampaignConfig:
     fn_config: Path
     trainset_dir: Path
+    log: Path
     gmx_cmd: str
     job_scheduler: SchedulerName
     systems: list[SimulationSystemConfig]

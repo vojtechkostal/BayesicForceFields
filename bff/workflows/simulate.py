@@ -17,7 +17,7 @@ def main(fn_config: str) -> None:
     resolved_specs, systems = stage_campaign(config, fn_specs=fn_specs)
     assert resolved_specs is not None
 
-    logger = Logger("simulate")
+    logger = Logger("simulate", str(config.log), mode="w")
     print_simulate_summary(config, resolved_specs, logger)
     run_campaign(
         config=config,

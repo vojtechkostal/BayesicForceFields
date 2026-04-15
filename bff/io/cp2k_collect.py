@@ -5,9 +5,11 @@ from __future__ import annotations
 
 import argparse
 import random
+import re
 from pathlib import Path
 
 import MDAnalysis as mda
+import numpy as np
 
 HARTREE_TO_EV = 27.211386245988
 BOHR_TO_ANGSTROM = 0.529177210903
@@ -15,6 +17,7 @@ HARTREE_PER_BOHR_TO_EV_PER_ANGSTROM = HARTREE_TO_EV / BOHR_TO_ANGSTROM
 
 POSITION_PATTERNS = ("*-pos-*.xyz", "*-pos-*.dcd")
 FORCE_PATTERNS = ("*-frc-*.xyz", "*-frc-*.dcd", "*-force-*.xyz", "*-force-*.dcd")
+LATTICE_RE = re.compile(r'Lattice="([^"]+)"')
 
 
 def read_last_frame(path: Path, topology: Path | None = None):
@@ -32,6 +35,25 @@ def read_last_frame(path: Path, topology: Path | None = None):
     atoms = [str(name) for name in universe.atoms.names]
     values = universe.atoms.positions.astype(float).tolist()
     return atoms, values
+
+
+def read_lattice(path: Path | None) -> list[float] | None:
+    """Read a flattened lattice from an extxyz comment line if present."""
+    if path is None or path.suffix.lower() != ".xyz" or not path.exists():
+        return None
+
+    with path.open(encoding="utf-8", errors="ignore") as handle:
+        next(handle, None)
+        comment = next(handle, "")
+
+    match = LATTICE_RE.search(comment)
+    if match is None:
+        return None
+
+    values = [float(value) for value in match.group(1).split()]
+    if len(values) != 9:
+        raise ValueError(f"Invalid Lattice field in {path}")
+    return values
 
 
 def last_potential_energy(run_dir: Path) -> float:
@@ -89,6 +111,7 @@ def collect_frame(run_dir: Path, topology_name: str = "pos.xyz"):
         "positions": positions,
         "forces": hartree_bohr_to_ev_angstrom(forces),
         "energy": hartree_to_ev(last_potential_energy(run_dir)),
+        "lattice": read_lattice(topology) or read_lattice(pos_path),
     }
 
 
@@ -97,11 +120,20 @@ def write_extxyz(frames: list[dict], path: Path) -> None:
     with path.open("w") as handle:
         for frame in frames:
             handle.write(f"{len(frame['atoms'])}\n")
-            handle.write(
-                "Properties=species:S:1:pos:R:3:forces:R:3 "
-                f"energy={frame['energy']:.16g} "
-                f"source=\"{frame['source']}\"\n"
-            )
+            header = []
+            lattice = frame.get("lattice")
+            if lattice is not None:
+                lattice_arr = np.asarray(lattice, dtype=float).reshape(-1)
+                header.append(
+                    "Lattice=\""
+                    + " ".join(f"{value:.12g}" for value in lattice_arr)
+                    + "\""
+                )
+                header.append('pbc="T T T"')
+            header.append("Properties=species:S:1:pos:R:3:forces:R:3")
+            header.append(f"energy={frame['energy']:.16g}")
+            header.append(f"source=\"{frame['source']}\"")
+            handle.write(" ".join(header) + "\n")
             for atom, position, force in zip(
                 frame["atoms"],
                 frame["positions"],

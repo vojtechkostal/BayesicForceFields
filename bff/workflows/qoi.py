@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 
 from ..domain.trainset import TrainSetInfo, TrajectorySet
@@ -199,7 +201,16 @@ def main(fn_config: str) -> None:
         fn_trj=tuple(system.fn_trj for system in ref_cfg.systems),
     )
 
-    logger.info("=== Quantities of Interest (QoI) Analysis ===\n", level=0)
+    logger.section("QoI Analysis")
+    logger.kv("Config", Path(fn_config).resolve())
+    logger.kv("Trainset", train_cfg.dir.resolve())
+    logger.kv("Reference systems", len(ref_cfg.systems))
+    logger.kv("Training samples", len(trainset.samples))
+    logger.warn_if(
+        output_cfg.write_raw,
+        "Raw QoI export is enabled and may create a large JSON file.",
+    )
+    logger.blank()
 
     qoi_ref = analyze_trajectory_sets(
         [reference_set],
@@ -215,7 +226,7 @@ def main(fn_config: str) -> None:
         gc_collect=run_cfg.gc_collect,
     )[0]
 
-    logger.info("", level=0)
+    logger.blank()
 
     qoi_train = analyze_trajectory_sets(
         trainset.samples,
@@ -232,19 +243,24 @@ def main(fn_config: str) -> None:
         maxtasksperchild=run_cfg.maxtasksperchild,
     )
 
-    logger.info("", level=0)
-    logger.info("Saving QoI data: in progress...", level=1, overwrite=True)
+    logger.blank()
+    logger.status("Saving QoI data", "in progress...", level=1, overwrite=True)
     _write_qoi_datasets(
         fn_out=output_cfg.path,
         inputs=trainset.inputs,
         qoi_train=qoi_train,
         qoi_ref=qoi_ref,
     )
-    logger.info("Saving QoI data: Done.", level=1, overwrite=True)
-    logger.info("", level=0)
+    logger.done("Saving QoI data", level=1, overwrite=True)
+    logger.blank()
 
     if output_cfg.write_raw:
-        logger.info("Saving raw QoI data: in progress...", level=1, overwrite=True)
+        logger.status(
+            "Saving raw QoI data",
+            "in progress...",
+            level=1,
+            overwrite=True,
+        )
         fn_out = _qoi_output_path(output_cfg.path, raw=True)
         raw_data = {
             "train": [
@@ -257,4 +273,4 @@ def main(fn_config: str) -> None:
             ],
         }
         save_json(raw_data, fn_out)
-        logger.info("Saving raw QoI data: Done.", level=1, overwrite=True)
+        logger.done("Saving raw QoI data", level=1, overwrite=True)

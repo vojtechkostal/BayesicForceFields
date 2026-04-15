@@ -204,9 +204,11 @@ class InferenceProblem:
         include_implicit_charge: bool = False,
     ) -> InferenceResults:
         """Run posterior sampling for this inference problem."""
-        logger = logger or Logger("BFFLearn")
-        logger.info("=== Posterior Inference ===", level=0)
-        logger.info("", level=0)
+        owns_logger = logger is None
+        logger = logger or Logger("learn")
+        if owns_logger:
+            logger.section("Posterior Inference")
+            logger.blank()
 
         priors = self.build_priors(dist_type=priors_disttype)
         n_walkers = 5 * len(priors) if n_walkers is None else n_walkers
@@ -313,7 +315,7 @@ def fit_lgp_committee(
 ) -> LGPCommittee:
     """Fit a committee of local Gaussian-process surrogates."""
     check_device(device)
-    logger = logger or Logger("LGP")
+    logger = logger or Logger("train")
     opt_kwargs = dict(opt_kwargs or {})
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_fraction)
@@ -356,7 +358,7 @@ def fit_lgp_committee(
     widths = hyper_samples[:, -2]
     sigmas = hyper_samples[:, -1]
 
-    logger.info(f"Committee: 0/{committee}", level=2, overwrite=True)
+    logger.status("Committee", f"0/{committee}", level=2, overwrite=True)
     lgps = []
     for i, (length, width, sigma) in enumerate(
         zip(lengths, widths, sigmas),
@@ -373,7 +375,7 @@ def fit_lgp_committee(
                 device,
             )
         )
-        logger.info(f"Committee: {i}/{committee}", level=2, overwrite=True)
+        logger.status("Committee", f"{i}/{committee}", level=2, overwrite=True)
 
     lgp_committee = LGPCommittee(
         lgps,
@@ -382,8 +384,9 @@ def fit_lgp_committee(
         nuisance,
     )
     lgp_committee.validate(X_test, y_test)
-    logger.info(
-        f"Committee: {committee} (100%) | MAPE = {lgp_committee.error:.2f}%",
+    logger.done(
+        "Committee",
+        detail=f"{committee}/{committee} (100%) | MAPE = {lgp_committee.error:.2f}%",
         level=2,
     )
 
@@ -416,13 +419,15 @@ def train_surrogates(
     **opt_kwargs,
 ) -> dict[str, LGPCommittee]:
     """Train or load QoI surrogate models."""
-    logger = logger or Logger("BFFLearn")
+    owns_logger = logger is None
+    logger = logger or Logger("train")
     y_means = dict(y_means or {})
     observation_scales = dict(observation_scales or {})
     model_paths = dict(model_paths or {})
 
-    logger.info("=== Optimizing LGP surrogates ===", level=0)
-    logger.info("", level=0)
+    if owns_logger:
+        logger.section("Surrogate Training")
+        logger.blank()
 
     models: dict[str, LGPCommittee] = {}
     for dataset in datasets:
@@ -436,7 +441,7 @@ def train_surrogates(
             dataset,
             observation_scales.get(qoi, 1.0),
         )
-        logger.info(f"QoI: {qoi}", level=1)
+        logger.info(f"QoI {qoi}", level=1)
 
         fn_model_raw = model_paths.get(qoi)
         fn_model = None if fn_model_raw is None else Path(fn_model_raw).resolve()
@@ -456,11 +461,11 @@ def train_surrogates(
                     "current reference observation size."
                 )
             logger.info(
-                f"Using cached model. | obs = {n_observations} "
+                f"Using cached surrogate model. | obs = {n_observations} "
                 f"| MAPE = {models[qoi].error:.2f}",
                 level=2,
             )
-            logger.info("", level=0)
+            logger.blank()
             continue
 
         models[qoi] = fit_lgp_committee(
@@ -478,7 +483,7 @@ def train_surrogates(
             logger=logger,
             opt_kwargs=opt_kwargs,
         )
-        logger.info(f"Effective observations: {n_observations}", level=2)
-        logger.info("", level=0)
+        logger.kv("Effective observations", n_observations, level=2)
+        logger.blank()
 
     return models

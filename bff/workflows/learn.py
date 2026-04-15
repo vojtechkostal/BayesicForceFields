@@ -48,7 +48,20 @@ def build_problem(
 
 def main(fn_config: PathLike) -> None:
     config = LearnConfig.load(fn_config)
-    logger = Logger("BFF", str(config.log), mode="w")
+    logger = Logger("learn", str(config.log), mode="w")
+    logger.section("Posterior Learning")
+    logger.kv("Config", Path(fn_config).resolve())
+    logger.kv("Log file", config.log.resolve())
+    logger.kv("Specs", Path(config.specs).resolve())
+    logger.kv("Models", len(config.models))
+    logger.kv("Device", config.mcmc.device)
+    logger.warn_if(
+        config.mcmc.restart
+        and config.mcmc.checkpoint is not None
+        and Path(config.mcmc.checkpoint).resolve().exists(),
+        "Posterior learning is configured to reuse an existing checkpoint if one is found.",
+    )
+    logger.blank()
     problem = build_problem(
         specs=config.specs,
         model_paths=config.models,

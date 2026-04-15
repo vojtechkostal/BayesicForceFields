@@ -43,11 +43,24 @@ def main(fn_config: PathLike) -> None:
         raise
 
     config = TrainConfig.load(fn_config)
-    logger = Logger("BFF", str(config.log), mode="w")
+    logger = Logger("train", str(config.log), mode="w")
     datasets = _load_datasets(config)
     model_paths, y_means, observation_scales = _dataset_options(config)
 
     config.training.model_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.section("Surrogate Training")
+    logger.kv("Config", Path(fn_config).resolve())
+    logger.kv("Log file", config.log.resolve())
+    logger.kv("Datasets", len(datasets))
+    logger.kv("Model directory", config.training.model_dir.resolve())
+    logger.kv("Device", config.training.device)
+    logger.warn_if(
+        config.training.reuse_models
+        and any(path is not None and path.exists() for path in model_paths.values()),
+        "Existing surrogate models may be reused if matching files are present.",
+    )
+    logger.blank()
 
     train_surrogates(
         datasets,

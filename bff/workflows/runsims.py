@@ -372,22 +372,25 @@ def print_simulate_summary(
 ) -> None:
     """Print a concise summary of the sampled simulation campaign."""
     specs = Specs(fn_specs)
-    logger.info("", level=0)
-    logger.info("=== Running simulation campaign ===\n", level=0)
-    logger.info(f"molecule name: {specs.mol_resname}", level=1)
-    logger.info(f"trainset dir: {config.trainset_dir.resolve()}", level=1)
-    logger.info(
-        f"systems: {len(config.systems)} | samples: {config.n_samples} "
-        f"| scheduler: {config.job_scheduler}",
-        level=1,
+    logger.section("Simulation Campaign")
+    logger.kv("Molecule", specs.mol_resname)
+    logger.kv("Log file", config.log.resolve())
+    logger.kv("Trainset directory", config.trainset_dir.resolve())
+    logger.kv("Systems", len(config.systems))
+    logger.kv("Samples", config.n_samples)
+    logger.kv("Scheduler", config.job_scheduler)
+    logger.kv("Dispatch", "yes" if config.dispatch else "no (stage only)")
+    logger.kv(
+        "Stored outputs",
+        ", ".join(config.store) if config.store else "none",
     )
-    logger.info(
-        f"dispatch: {'yes' if config.dispatch else 'no (stage only)'}",
-        level=1,
+    logger.warn_if(
+        not config.dispatch,
+        "Simulation jobs will only be staged; no MD will be submitted.",
     )
-    logger.info(
-        f"stored outputs: {', '.join(config.store) if config.store else 'none'}",
-        level=1,
+    logger.warn_if(
+        not config.store,
+        "No simulation outputs are configured to be stored after completion.",
     )
     logger.info("parameters:", level=1)
     for name, bounds in specs.bounds.by_name.items():
@@ -395,7 +398,8 @@ def print_simulate_summary(
         if name == specs.implicit_param:
             label += " (implicit)"
         logger.info(label, level=2)
-    logger.info(f"total charge: {specs.total_charge}\n", level=1)
+    logger.kv("Total charge", specs.total_charge)
+    logger.blank()
 
 
 def print_validate_summary(
@@ -406,29 +410,30 @@ def print_validate_summary(
 ) -> None:
     """Print a concise summary of the validation campaign."""
     specs = Specs(fn_specs)
-    logger.info("", level=0)
-    logger.info("=== Running validation campaign ===\n", level=0)
-    logger.info(f"molecule name: {specs.mol_resname}", level=1)
-    logger.info(f"trainset dir: {config.trainset_dir.resolve()}", level=1)
-    logger.info(
-        f"systems: {len(config.systems)} | samples: {n_samples} "
-        f"| scheduler: {config.job_scheduler}",
-        level=1,
+    logger.section("Validation Campaign")
+    logger.kv("Molecule", specs.mol_resname)
+    logger.kv("Log file", config.log.resolve())
+    logger.kv("Trainset directory", config.trainset_dir.resolve())
+    logger.kv("Systems", len(config.systems))
+    logger.kv("Samples", n_samples)
+    logger.kv("Scheduler", config.job_scheduler)
+    logger.kv("Dispatch", "yes" if config.dispatch else "no (stage only)")
+    logger.kv(
+        "Stored outputs",
+        ", ".join(config.store) if config.store else "none",
     )
-    logger.info(
-        f"dispatch: {'yes' if config.dispatch else 'no (stage only)'}",
-        level=1,
+    logger.warn_if(
+        not config.dispatch,
+        "Validation jobs will only be staged; no MD will be submitted.",
     )
-    logger.info(
-        f"stored outputs: {', '.join(config.store) if config.store else 'none'}\n",
-        level=1,
+    logger.warn_if(
+        not config.store,
+        "No validation outputs are configured to be stored after completion.",
     )
     parameter_source = getattr(config, "parameters", None)
     if parameter_source is not None:
-        logger.info(
-            f"parameter source: {Path(parameter_source).resolve()}\n",
-            level=1,
-        )
+        logger.kv("Parameter source", Path(parameter_source).resolve())
+    logger.blank()
 
 
 def run_campaign(
@@ -459,9 +464,9 @@ def run_campaign(
     try:
         for idx, sample in enumerate(parameter_samples):
             sample_id = f"{idx:0{pad}d}"
-            logger.info(
-                f"{action}: {idx + 1}/{n_total} "
-                f"({((idx + 1) / n_total * 100):.0f}%)",
+            logger.status(
+                action,
+                f"{idx + 1}/{n_total} ({((idx + 1) / n_total * 100):.0f}%)",
                 level=1,
                 overwrite=True,
             )
@@ -532,7 +537,11 @@ def run_campaign(
             control_jobs(job_ids, job_scheduler)
 
         campaign_finished = True
-        logger.info(f"{action}: {n_total}/{n_total} (100%) | Done.", level=1)
+        logger.done(
+            action,
+            detail=f"{n_total}/{n_total} (100%)",
+            level=1,
+        )
     finally:
         collect_campaign_metadata(
             samples=samples,

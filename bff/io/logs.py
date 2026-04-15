@@ -1,16 +1,19 @@
-import logging
-from typing import Optional
+"""Shared logging utilities for BFF workflows."""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+from typing import TYPE_CHECKING, Optional
 
 import numpy as np
 
-from ..mcmc.sampler import Sampler
+if TYPE_CHECKING:
+    from ..mcmc.sampler import Sampler
 
 
 class Logger:
-    """
-    A logging utility that supports logging to a file
-    or console without duplicate output.
-    """
+    """Small workflow logger with consistent console and file output."""
 
     def __init__(
         self,
@@ -20,74 +23,117 @@ class Logger:
         verbose: bool = True,
         mode: str = "a",
     ) -> None:
-
-        """
-        Parameters
-        ----------
-        name : str
-            Name of the logger.
-        fn_log : Optional[str], optional
-            Filename to log messages to. If None, logs to console.
-        width : Optional[int], default=100
-            Width for message formatting.
-        verbose : bool, default=True
-            If False, suppresses logging output.
-        mode : str, default="a"
-            File open mode used when ``fn_log`` is provided.
-        """
-
-        self.fn_log = fn_log
+        self.name = name
+        self.fn_log = None if fn_log is None else str(Path(fn_log).resolve())
         self.width = width
         self.verbose = verbose
+        self._last_console_len = 0
 
-        self.logger = logging.getLogger(name)
-        self.logger.setLevel(logging.INFO)
+        if mode not in {"a", "w"}:
+            raise ValueError("'mode' must be either 'a' or 'w'.")
 
-        # Remove old handlers if re-running in Jupyter
-        if self.logger.hasHandlers():
-            self.logger.handlers.clear()
+        if self.fn_log is not None:
+            log_path = Path(self.fn_log)
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            if mode == "w":
+                log_path.write_text("", encoding="utf-8")
+            elif not log_path.exists():
+                log_path.touch()
 
-        formatter = logging.Formatter("%(message)s")
+    def _prefix(self, level: int) -> str:
+        if level <= 0:
+            return ""
+        if level == 1:
+            return "> "
+        return "  " * (level - 1) + "- "
 
-        if fn_log:
-            handler = logging.FileHandler(fn_log, mode=mode)
-        else:
-            handler = logging.StreamHandler()
-            handler.terminator = ""
-        handler.setFormatter(formatter)
-        self.logger.addHandler(handler)
+    def _clear_console_line(self) -> None:
+        if self._last_console_len == 0:
+            return
+        sys.stdout.write("\r" + (" " * self._last_console_len) + "\r")
+        sys.stdout.flush()
+        self._last_console_len = 0
 
-        self.logger.propagate = False  # Prevent double logging
+    def _write_console(self, line: str, *, overwrite: bool) -> None:
+        if not self.verbose:
+            return
 
-    def info(self, message: str, level: int, overwrite: bool = False) -> None:
-        """
-        Logs a message to a file or console, optionally overwriting the console output.
+        if overwrite:
+            clear = max(self._last_console_len - len(line), 0)
+            sys.stdout.write("\r" + line + (" " * clear))
+            sys.stdout.flush()
+            self._last_console_len = len(line)
+            return
 
-        Parameters
-        ----------
-        message : str
-            The message to log.
-        overwrite : bool, default=False
-            If True, the message overwrites the previous console output (stdout only).
-        """
+        self._clear_console_line()
+        sys.stdout.write(line + "\n")
+        sys.stdout.flush()
 
-        # determine width of the line automatically if not set
-        width = len(message) + 10 if self.width is None else self.width
+    def _write_file(self, line: str) -> None:
+        if self.fn_log is None:
+            return
+        with Path(self.fn_log).open("a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
 
-        if self.verbose:
-            if level < 1:
-                start = ''
-            elif level == 1:
-                start = '> '
-            else:
-                start = ' ' * 2 * (level - 1) + '- '
-            message = start + f"{message}".ljust(width)
-            if self.fn_log:
-                self.logger.info(message)  # Always log to file if specified
+    def info(self, message: str = "", level: int = 1, overwrite: bool = False) -> None:
+        """Write a formatted log line."""
+        line = f"{self._prefix(level)}{message}" if message else ""
+        self._write_file(line)
+        self._write_console(line, overwrite=overwrite)
 
-            else:
-                terminator = '\r' if overwrite else '\n'
-                self.logger.info(message + terminator)  # Log to logger (console)
+    def blank(self) -> None:
+        """Write an empty line."""
+        self.info("", level=0)
+
+    def section(self, title: str) -> None:
+        """Write a top-level section header."""
+        self.info(title, level=0)
+        self.info("=" * len(title), level=0)
+
+    def kv(self, key: str, value: object, *, level: int = 1) -> None:
+        """Write one key-value summary line."""
+        self.info(f"{key}: {value}", level=level)
+
+    def status(
+        self,
+        label: str,
+        state: str,
+        *,
+        detail: str | None = None,
+        level: int = 1,
+        overwrite: bool = False,
+    ) -> None:
+        """Write one workflow status line."""
+        message = f"{label}: {state}"
+        if detail:
+            message += f" | {detail}"
+        self.info(message, level=level, overwrite=overwrite)
+
+    def done(
+        self,
+        label: str,
+        *,
+        detail: str | None = None,
+        level: int = 1,
+        overwrite: bool = False,
+    ) -> None:
+        """Write a completed status line."""
+        self.status(
+            label,
+            "Done.",
+            detail=detail,
+            level=level,
+            overwrite=overwrite,
+        )
+
+    def warn(self, message: str, *, level: int = 1) -> None:
+        """Write a warning line."""
+        self.info(f"Warning: {message}", level=level)
+
+    def warn_if(self, condition: bool, message: str, *, level: int = 1) -> None:
+        """Write a warning line when ``condition`` is true."""
+        if condition:
+            self.warn(message, level=level)
 
 
 def print_progress_mcmc(
@@ -98,34 +144,9 @@ def print_progress_mcmc(
     restart: bool = True,
     fn_checkpoint: Optional[str] = None,
     logger: Optional[Logger] = None,
-    **kwargs
+    **kwargs,
 ) -> None:
-    """
-    Monitors and logs the convergence progress of an MCMC sampler.
-
-    Parameters
-    ----------
-    sampler : Sampler
-        The MCMC sampler with methods
-        `sample`, `get_autocorr_time`, and attribute `iteration`.
-    p0 : array-like
-        Initial parameter vector for the MCMC posterior sampling.
-    total_steps : int
-        Total number of MCMC iterations including warmup.
-    stride : int, default=100
-        Frequency of autocorrelation time checks and printing.
-    min_chain_length : int, default=100
-        Factor to multiply the autocorrelation time with in order to
-        get the minimum chain length to have proper sampling.
-    rtol : float, default=0.01
-        Relative tolerance of the autocorrelation time fluctuations
-        for the MCMC sampling to be considered converged.
-    logger : Logger, optional
-        Logger instance for logging progress messages.
-    **kwargs
-        Additional arguments passed to the sampler's `sample` method.
-    """
-
+    """Monitor and log MCMC sampling progress."""
     logger = logger or Logger("mcmc-progress")
 
     rhat_tol = kwargs.get("rhat_tol", 1.01)
@@ -139,18 +160,13 @@ def print_progress_mcmc(
         return f"{label}: {current:>{width}d}/{total:<{width}d}"
 
     if fn_checkpoint is not None:
-        logger.info(f"Checkpoint: {fn_checkpoint}", level=2)
+        logger.kv("Checkpoint", fn_checkpoint, level=2)
 
-    logger.info(
-        (
-            f"Posterior sampling: it. {0:>{total_digits}d}/"
-            f"{total_steps:<{total_digits}d}"
-        ),
-        level=1,
-        overwrite=True,
+    line = (
+        f"Posterior sampling: it. {0:>{total_digits}d}/{total_steps:<{total_digits}d}"
     )
+    logger.info(line, level=1, overwrite=True)
 
-    line = ""
     for state in sampler.run(
         p0,
         total_steps=total_steps,
@@ -201,13 +217,12 @@ def print_progress_mcmc(
                 line += f" | {state.it_per_sec:>3.0f} it/s"
         logger.info(line, level=1, overwrite=True)
 
-    if line and logger.fn_log is None:
-        logger.info(line, level=1)
-    logger.info("", level=0)
+    logger.info(line, level=1)
+    logger.blank()
     if sampler.converged:
-        logger.info("Posterior sampling: Done.", level=1)
+        logger.done("Posterior sampling", level=1)
     else:
-        logger.info(
-            "Posterior sampling: Failed to converge within the maximum iterations.",
+        logger.warn(
+            "Posterior sampling failed to converge within the maximum iterations.",
             level=1,
         )

@@ -18,7 +18,7 @@ def main(fn_config: str) -> None:
     fn_specs, systems = stage_campaign(config, fn_specs=config.specs)
     assert fn_specs is not None
 
-    logger = Logger("validate")
+    logger = Logger("validate", str(config.log), mode="w")
     print_validate_summary(config, fn_specs, len(parameter_samples), logger)
     run_campaign(
         config=config,

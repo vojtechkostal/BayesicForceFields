@@ -254,13 +254,22 @@ def find_map(
     """
 
     if logger is not None:
-        logger.info("learning rate search: in progress...", level=2, overwrite=True)
+        logger.status(
+            "Learning-rate search",
+            "in progress...",
+            level=2,
+            overwrite=True,
+        )
 
     lr_opt = find_max_stable_lr(fn, x0, learning_rates=lr)
     if lr_opt is not None:
         lr_opt = 0.5 * lr_opt
         if logger is not None:
-            logger.info(f"learning rate search: Done. | lr = {lr_opt:.1e}", level=2)
+            logger.done(
+                "Learning-rate search",
+                detail=f"lr = {lr_opt:.1e}",
+                level=2,
+            )
     else:
         raise ValueError("No stable learning rate found.")
 
@@ -273,24 +282,25 @@ def find_map(
         loss.backward()
         grad_norm = x0.grad.norm().item()
         if i % 100 == 0 and logger is not None:
-            logger.info(
+            logger.status(
+                "MAP search",
                 (
-                    f"MAP search: it. {i}/{max_iter} | "
+                    f"it. {i}/{max_iter} | "
                     f"loss: {loss.item():.3f} | grad: {grad_norm:.3f}/{tol_grad}"
                 ),
                 level=2,
-                overwrite=True
+                overwrite=True,
             )
         optimizer.step()
         if grad_norm < tol_grad:
             if logger is not None:
-                logger.info("MAP search: Done.", level=2)
+                logger.done("MAP search", level=2)
             break
 
     else:
         if logger is not None:
-            logger.info(
-                "MAP search: Fail. | Max iterations reached without convergence.",
+            logger.warn(
+                "MAP search reached the maximum iterations without convergence.",
                 level=2,
             )
 
