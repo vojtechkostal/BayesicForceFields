@@ -18,19 +18,22 @@ The acetate example optimizes acetate partial charges using three systems:
 cd examples/acetate/01-prepare/colvars
 bff prepare config.yaml
 
-cd ../../03-training-trjs
-bff simulate config-local.yaml
+cd ../../02-reference-data
+bff reference config-local.yaml
 
-cd ../04-qoi
+cd ../02-training-data
+bff trainset config-local.yaml
+
+cd ../03-qoi
 bff qoi config.yaml
 
-cd ../05-train-lgp
+cd ../04-train-lgp
 bff train config.yaml
 
-cd ../06-learn
+cd ../05-learning
 bff learn config.yaml
 
-cd ../08-validate
+cd ../07-validate
 bff validate config.yaml
 ```
 
@@ -42,25 +45,29 @@ bff validate config.yaml
   `01-prepare/common/`
 - Colvars prepare config:
   [01-prepare/colvars/config.yaml][acetate-prepare-colvars]
+- local reference config:
+  [02-reference-data/config-local.yaml][acetate-reference]
+- reference CP2K overrides and trajectories:
+  `02-reference-data/inputs/`, `02-reference-data/trajectories/`
 - PLUMED prepare config:
   [01-prepare/plumed/config.yaml][acetate-prepare-plumed]
-- local simulate config:
-  [03-training-trjs/config-local.yaml][acetate-simulate]
+- local force-field trajectory config:
+  [02-training-data/config-local.yaml][acetate-trainset]
 - QoI config:
-  [04-qoi/config.yaml][acetate-qoi]
+  [03-qoi/config.yaml][acetate-qoi]
 - train config:
-  [05-train-lgp/config.yaml][acetate-train]
+  [04-train-lgp/config.yaml][acetate-train]
 - learn config:
-  [06-learn/config.yaml][acetate-learn]
+  [05-learning/config.yaml][acetate-learn]
 - validate config:
-  [08-validate/config.yaml][acetate-validate]
+  [07-validate/config.yaml][acetate-validate]
 
 ## Notebooks
 
-- `06-learn/interactive.ipynb`
+- `05-learning/interactive.ipynb`
   walks through surrogate training, posterior sampling, posterior sample export,
   and basic posterior plots interactively.
-- `07-visualize/visualize.ipynb`
+- `06-visualize/visualize.ipynb`
   focuses on plotting and inspection only.
 
 ## Notes
@@ -68,19 +75,29 @@ bff validate config.yaml
 - The walkthrough uses the Colvars preparation variant by default.
 - Shared topologies, force-field files, template coordinates, and MDP inputs
   live in `01-prepare/common/`.
+- `bff reference` consumes the staged CP2K reference inputs under
+  `01-prepare/colvars/reference/system-XXX/` and writes runnable
+  outputs plus collected extxyz files under
+  `02-reference-data/reference-assets/system-XXX/`.
+- `02-reference-data/inputs/` contains optional CP2K input overrides, and
+  `02-reference-data/trajectories/` contains the ab initio reference
+  trajectories used by QoI.
+- `02-training-data/` contains force-field trajectory campaign configs and
+  generated trainset outputs.
 - Prepared training assets live under
   `01-prepare/colvars/ace-colvars/training/system-XXX/`.
 - The QoI step demonstrates both builtin routines and a custom routine loaded
   from `./restraint.py:distance_distribution`.
-- The learn stage writes posterior chains in `06-learn/` and the interactive
-  notebook can also export `posterior-samples.yaml` for stage `08`.
+- The learn stage writes posterior chains in `05-learning/` and the interactive
+  notebook can also export `posterior-samples.yaml` for `07-validate`.
 
 [acetate-root]: https://github.com/vojtechkostal/BayesicForceFields/tree/main/examples/acetate
 [acetate-prepare-readme]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/01-prepare/README.md
 [acetate-prepare-colvars]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/01-prepare/colvars/config.yaml
+[acetate-reference]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/02-reference-data/config-local.yaml
 [acetate-prepare-plumed]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/01-prepare/plumed/config.yaml
-[acetate-simulate]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/03-training-trjs/config-local.yaml
-[acetate-qoi]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/04-qoi/config.yaml
-[acetate-train]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/05-train-lgp/config.yaml
-[acetate-learn]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/06-learn/config.yaml
-[acetate-validate]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/08-validate/config.yaml
+[acetate-trainset]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/02-training-data/config-local.yaml
+[acetate-qoi]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/03-qoi/config.yaml
+[acetate-train]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/04-train-lgp/config.yaml
+[acetate-learn]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/05-learning/config.yaml
+[acetate-validate]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/07-validate/config.yaml

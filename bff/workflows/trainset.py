@@ -1,24 +1,24 @@
-"""Workflow entry point for sampled training-set simulations."""
+"""Workflow entry point for sampled training-set generation."""
 
 from ..io.logs import Logger
-from .configs import SimulateConfig
+from .configs import TrainsetConfig
 from .runsims import (
     build_parameter_samples,
-    print_simulate_summary,
+    print_trainset_summary,
     run_campaign,
     stage_campaign,
 )
 
 
 def main(fn_config: str) -> None:
-    """Run a sampled simulation campaign for training-set generation."""
-    config = SimulateConfig.load(fn_config)
+    """Run a sampled MD campaign for training-set generation."""
+    config = TrainsetConfig.load(fn_config)
     fn_specs, parameter_samples = build_parameter_samples(config)
     resolved_specs, systems = stage_campaign(config, fn_specs=fn_specs)
     assert resolved_specs is not None
 
-    logger = Logger("simulate", str(config.log), mode="w")
-    print_simulate_summary(config, resolved_specs, logger)
+    logger = Logger("trainset")
+    print_trainset_summary(config, resolved_specs, logger)
     run_campaign(
         config=config,
         fn_specs=resolved_specs,

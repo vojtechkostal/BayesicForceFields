@@ -3,7 +3,7 @@
 ## Requirements
 
 - Python 3.10 or newer
-- GROMACS available as `gmx` for `prepare`, `simulate`, and `validate`
+- GROMACS available as `gmx` for `prepare`, `trainset`, and `validate`
 - CP2K only if you want to run the staged reference inputs
 - PLUMED only for PLUMED-biased systems
 

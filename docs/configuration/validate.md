@@ -11,15 +11,15 @@ Source code:
 `bff validate` reruns selected parameter samples, usually drawn from the
 posterior learned by `bff learn`.
 
-The campaign runtime keys intentionally match `bff simulate` as closely as
+The campaign runtime keys intentionally match `bff trainset` as closely as
 possible.
 
 ## Minimal Example
 
 ```yaml
 trainset_dir: ./validation-trainset
-parameters: ../06-learn/posterior-samples.yaml
-specs: ../03-training-trjs/trainset/specs.yaml
+parameters: ../05-learning/posterior-samples.yaml
+specs: ../02-training-data/trainset/specs.yaml
 systems:
   - assets: ../01-prepare/colvars/ace-colvars/training/system-000
     n_steps: 1000

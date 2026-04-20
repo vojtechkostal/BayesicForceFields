@@ -1,14 +1,14 @@
-# Simulate Configuration
+# Trainset Configuration
 
 Source code:
 
 - `bff/workflows/configs.py`
-- `bff/workflows/simulate.py`
+- `bff/workflows/trainset.py`
 - `bff/workflows/runsims.py`
 
 ## Purpose
 
-`bff simulate` samples parameter vectors, writes a trainset directory, and runs
+`bff trainset` samples parameter vectors, writes a trainset directory, and runs
 the corresponding GROMACS training campaign.
 
 ## Minimal Example
@@ -83,7 +83,7 @@ job_scheduler: local
 
 ## Outputs
 
-`bff simulate` writes:
+`bff trainset` writes:
 
 - `trainset/specs.yaml`
 - `trainset/samples.yaml`

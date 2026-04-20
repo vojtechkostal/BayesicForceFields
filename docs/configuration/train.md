@@ -17,7 +17,7 @@ per QoI.
 log: out.log
 datasets:
   rdf:
-    data: ../04-qoi/qoi-rdf.pt
+    data: ../03-qoi/qoi-rdf.pt
     mean: sigmoid
 training:
   model_dir: ./models

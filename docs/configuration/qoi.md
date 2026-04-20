@@ -10,20 +10,20 @@ Source code:
 
 `bff qoi` computes quantities of interest for:
 
-- the sampled trainset produced by `bff simulate`
+- the sampled trainset produced by `bff trainset`
 - the reference trajectories provided by the user
 
 ## Minimal Example
 
 ```yaml
 trainset:
-  dir: ../03-training-trjs/trainset
+  dir: ../02-training-data/trainset
 
 refset:
   systems:
-    - coordinates: ../01-prepare/colvars/ace-colvars/reference/system-000/system.gro
-      topology: ../01-prepare/colvars/ace-colvars/reference/system-000/system.top
-      trajectory: ../02-reference-trjs/pos-000.xtc
+    - coordinates: ../01-prepare/colvars/reference/system-000/system.gro
+      topology: ../01-prepare/colvars/reference/system-000/system.top
+      trajectory: ../02-reference-data/trajectories/pos-000.xtc
       routines:
         - routine: rdf
           mol_resname: ACE
@@ -55,7 +55,7 @@ output:
 ## `trainset` Keys
 
 - `dir`
-  Trainset directory produced by `bff simulate`.
+  Trainset directory produced by `bff trainset`.
 - `start`
   First frame index to analyze.
 - `stop`

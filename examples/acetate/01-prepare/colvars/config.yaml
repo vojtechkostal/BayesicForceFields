@@ -1,5 +1,5 @@
 project:
-  directory: ace-colvars
+  directory: ./
 
 gromacs:
   command: gmx

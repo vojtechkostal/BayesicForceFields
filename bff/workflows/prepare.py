@@ -29,11 +29,6 @@ from ..io.cp2k import (
     make_cp2k_isolated_atom_input,
     make_cp2k_short_md_input,
     make_cp2k_single_point_input,
-    write_cp2k_md_slurm_script,
-    write_cp2k_single_atom_run_script,
-    write_cp2k_single_atom_submit_script,
-    write_cp2k_snapshot_run_script,
-    write_cp2k_snapshot_submit_script,
 )
 from ..io.logs import Logger
 from ..io.plumed import (
@@ -50,7 +45,9 @@ CP2K_EQUILIBRATION_STEPS = 10000
 CP2K_SNAPSHOT_MD_STEPS = 100
 
 
-def _cell_vectors_from_dimensions(dimensions: np.ndarray | Sequence[float]) -> np.ndarray:
+def _cell_vectors_from_dimensions(
+    dimensions: np.ndarray | Sequence[float],
+) -> np.ndarray:
     """Convert MDAnalysis box dimensions to a 3x3 lattice matrix."""
     a, b, c, alpha, beta, gamma = np.asarray(dimensions, dtype=float)[:6]
     alpha = np.deg2rad(alpha)
@@ -528,7 +525,8 @@ def prepare_equilibrated_topology(
 
     if nsteps_npt <= 0:
         logger.warn(
-            "Skipping NpT equilibration because nsteps_npt <= 0; using the box from the constructed system.",
+            "Skipping NpT equilibration because nsteps_npt <= 0; using the "
+            "box from the constructed system.",
             level=2,
         )
         return EquilibratedTopology(
@@ -616,7 +614,6 @@ def write_reference_assets(
     *,
     reference_dir: Path,
     window_index: int,
-    project_name: str,
     charge: int,
     mult: int,
     box: np.ndarray,
@@ -634,14 +631,12 @@ def write_reference_assets(
     snapshots_dir = window_dir / "snapshots"
     single_atoms_dir = window_dir / "single-atoms"
     snapshot_xyz_dir = snapshots_dir / "xyz"
-    snapshot_runs_dir = snapshots_dir / "runs"
 
     for directory in [
         window_dir,
         md_dir,
         single_atoms_dir,
         snapshot_xyz_dir,
-        snapshot_runs_dir,
     ]:
         directory.mkdir(parents=True, exist_ok=True)
 
@@ -664,13 +659,6 @@ def write_reference_assets(
         atom_dir = single_atoms_dir / get_cp2k_single_atom_directory_name(element)
         atom_dir.mkdir(parents=True, exist_ok=True)
         make_cp2k_isolated_atom_input(element, atom_dir / "input.inp")
-
-    fn_single_atom_run = single_atoms_dir / "run.sh"
-    write_cp2k_single_atom_run_script(fn_single_atom_run)
-    fn_single_atom_run.chmod(0o755)
-    fn_single_atom_submit = single_atoms_dir / "submit.sh"
-    write_cp2k_single_atom_submit_script(fn_single_atom_submit)
-    fn_single_atom_submit.chmod(0o755)
 
     fn_plumed = None
     stale_plumed = md_dir / "plumed.dat"
@@ -706,7 +694,7 @@ def write_reference_assets(
     ]
     for cp2k_input in cp2k_inputs:
         make_cp2k_input(
-            project_name,
+            "md",
             charge,
             mult,
             box[:3].astype(float).tolist(),
@@ -717,14 +705,6 @@ def write_reference_assets(
             plumed_input_file=fn_plumed,
             steps=cp2k_input["steps"],
         )
-
-    fn_md_submit = md_dir / "run.sh"
-    write_cp2k_md_slurm_script(
-        fn_md_submit,
-        uses_plumed=fn_plumed is not None,
-        project=project_name,
-    )
-    fn_md_submit.chmod(0o755)
 
     with warnings.catch_warnings():
         warnings.filterwarnings(
@@ -745,16 +725,16 @@ def write_reference_assets(
         )
 
     make_cp2k_single_point_input(
-        f"{project_name}-sp",
+        "sp",
         charge,
         mult,
         box[:3].astype(float).tolist(),
         snapshot_files[0],
-        snapshots_dir / "single-point.inp",
-        coord_filename="pos.xyz",
+        snapshots_dir / "sp.inp",
+        coord_filename="md-pos-1.xyz",
     )
     make_cp2k_short_md_input(
-        f"{project_name}-md",
+        "md",
         charge,
         mult,
         box[:3].astype(float).tolist(),
@@ -763,13 +743,6 @@ def write_reference_assets(
         steps=CP2K_SNAPSHOT_MD_STEPS,
         coord_filename="pos.xyz",
     )
-
-    fn_snapshot_run = snapshots_dir / "run.sh"
-    fn_snapshot_submit = snapshots_dir / "submit.sh"
-    write_cp2k_snapshot_run_script(fn_snapshot_run)
-    write_cp2k_snapshot_submit_script(fn_snapshot_submit)
-    fn_snapshot_run.chmod(0o755)
-    fn_snapshot_submit.chmod(0o755)
     logger.done("Reference assets", level=2)
 
 
@@ -798,7 +771,8 @@ def main(fn_config: PathLike) -> None:
     )
     logger.warn_if(
         config.n_single_point_snapshots < 10,
-        "Very few CP2K reference snapshots are requested; train/valid splits may be noisy.",
+        "Very few CP2K reference snapshots are requested; train/valid splits "
+        "may be noisy.",
     )
     if config.fn_log is not None:
         logger.kv("Log file", config.fn_log.resolve())
@@ -909,7 +883,6 @@ def main(fn_config: PathLike) -> None:
         write_reference_assets(
             reference_dir=reference_dir,
             window_index=i,
-            project_name=config.project_dir.name,
             charge=system.charge,
             mult=system.mult,
             box=topology_state.box,

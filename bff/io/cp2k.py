@@ -180,6 +180,49 @@ def configure_cp2k_single_point(tree: dict[str, Any]) -> None:
     """Configure a CP2K input tree for single-point energy/forces."""
     tree["global"]["run_type"] = "ENERGY_FORCE"
     tree.pop("motion", None)
+    tree["force_eval"]["print"] = {
+        "forces on": {
+            "filename": "__STD_OUT__",
+        }
+    }
+
+
+def configure_cp2k_gfn1_xtb(tree: dict[str, Any]) -> None:
+    """Switch a CP2K input tree to a GFN1-xTB Quickstep setup."""
+    subsys = tree["force_eval"].setdefault("subsys", {})
+    dft = tree["force_eval"].get("dft", {})
+    topology = subsys.get("topology", {})
+    cell = subsys.get("cell", {})
+    tree["force_eval"] = {
+        "method": "QS",
+        "subsys": {},
+        "dft": {
+            "scf": {
+                "max_scf": 50,
+                "eps_scf": 1.0e-6,
+                "outer_scf": {"max_scf": 200, "eps_scf": 1.0e-6},
+                "ot": {
+                    "preconditioner": "FULL_SINGLE_INVERSE",
+                    "minimizer": "DIIS",
+                },
+                "scf_guess": "ATOMIC",
+            },
+            "qs": {
+                "method": "XTB",
+                "xtb": {
+                    "gfn_type": 1,
+                    "check_atomic_charges": False,
+                    "do_ewald": True,
+                    "use_halogen_correction": True,
+                },
+            },
+            "charge": dft.get("charge", 0),
+            "multiplicity": dft.get("multiplicity", 1),
+            "uks": dft.get("uks", False),
+        },
+    }
+    tree["force_eval"]["subsys"]["topology"] = dict(topology)
+    tree["force_eval"]["subsys"]["cell"] = dict(cell)
 
 
 def configure_cp2k_isolated_atom(
@@ -197,14 +240,14 @@ def configure_cp2k_isolated_atom(
     dft = tree["force_eval"]["dft"]
     dft["poisson"] = {"periodic": "NONE", "psolver": "MT"}
     dft["scf"]["scf_guess"] = "ATOMIC"
-    dft["scf"]["max_scf"] = 100
+    dft["scf"]["max_scf"] = 200
     dft["scf"]["eps_scf"] = 1.0e-6
     dft["scf"]["ot"] = {
         "preconditioner": "FULL_SINGLE_INVERSE",
         "minimizer": "DIIS",
         "energy_gap": 0.05,
     }
-    dft["scf"]["outer_scf"] = {"max_scf": 20, "eps_scf": 1.0e-6}
+    dft["scf"].pop("outer_scf", None)
     dft["qs"].pop("extrapolation_order", None)
     dft["qs"].pop("extrapolation", None)
     dft["xc"].pop("vdw_potential", None)
@@ -309,7 +352,6 @@ def make_cp2k_input(
     with open(fn_out, "w") as handle:
         handle.write("\n".join(format_cp2k_input(tree)) + "\n")
 
-
 def make_cp2k_single_point_input(
     project: str,
     charge: int,
@@ -399,185 +441,25 @@ def make_cp2k_short_md_input(
     steps: int = 100,
     coord_filename: str = "pos.xyz",
 ) -> None:
-    """Generate a short CP2K MD input for one snapshot."""
-    make_cp2k_input(
-        project,
-        charge,
-        multiplicity,
-        unitcell,
-        fn_pos,
-        equilibration=False,
-        restart=False,
-        fn_out=fn_out,
-        steps=steps,
+    """Generate a short GFN1-xTB CP2K MD input for one snapshot."""
+    steps = int(steps)
+    tree = build_cp2k_tree(
+        project=project,
+        charge=charge,
+        multiplicity=multiplicity,
+        unitcell=unitcell,
+        fn_pos=fn_pos,
         coord_filename=coord_filename,
-        xyz_output=True,
     )
+    configure_cp2k_gfn1_xtb(tree)
+    configure_cp2k_ensemble(tree, equilibration=False)
+    tree["motion"]["md"]["steps"] = steps
+    tree["motion"]["print"] = {
+        "trajectory": {
+            "format": "XYZ",
+            "each": {"md": steps},
+        }
+    }
 
-
-def write_cp2k_md_slurm_script(
-    fn_out: str | Path,
-    *,
-    uses_plumed: bool = False,
-    project: str = "project",
-) -> None:
-    """Write a restart-aware Slurm script for CP2K MD."""
-    plumed_block = ""
-    if uses_plumed:
-        plumed_block = 'echo "Using PLUMED input: plumed.dat"\n'
-
-    script = f"""#!/bin/bash
-#SBATCH --job-name=cp2k-md
-#SBATCH --nodes=1
-#SBATCH --ntasks-per-node=8
-#SBATCH --mem=10G
-#SBATCH --time=04:00:00
-#SBATCH --output=slurm-%j.out
-
-set -euo pipefail
-
-CP2K_CMD="${{CP2K_CMD:-cp2k.psmp}}"
-CP2K_PROJECT="${{CP2K_PROJECT:-{project}}}"
-
-if [[ -f setup-env.sh ]]; then
-  # Optional user/site-specific environment setup.
-  source setup-env.sh
-fi
-export OMP_NUM_THREADS="${{OMP_NUM_THREADS:-1}}"
-{plumed_block}
-
-if [[ ! -f .eq.done ]]; then
-  restart_file="${{CP2K_PROJECT}}-1.restart"
-  wfn_file="${{CP2K_PROJECT}}-RESTART.wfn"
-  if [[ -f "${{restart_file}}" || -f "${{wfn_file}}" ]]; then
-    eq_input="md-eq-restart.inp"
-  else
-    eq_input="md-eq-start.inp"
-  fi
-
-  echo "Running equilibration: ${{eq_input}}"
-  srun "${{CP2K_CMD}}" -i "${{eq_input}}" -o "${{eq_input%.inp}}.out"
-  touch .eq.done
-else
-  echo "Skipping equilibration; found .eq.done."
-fi
-
-if [[ ! -f .prod.done ]]; then
-  echo "Running production: md-prod.inp"
-  srun "${{CP2K_CMD}}" -i md-prod.inp -o md-prod.out
-  touch .prod.done
-else
-  echo "Skipping production; found .prod.done."
-fi
-"""
-    Path(fn_out).write_text(script)
-
-
-def write_cp2k_snapshot_run_script(
-    fn_out: str | Path,
-) -> None:
-    """Write the per-snapshot Slurm script for CP2K reference jobs."""
-    script = """#!/bin/bash
-#SBATCH --job-name=cp2k-snapshot
-#SBATCH --nodes=1
-#SBATCH --ntasks-per-node=8
-#SBATCH --mem=10G
-#SBATCH --time=04:00:00
-#SBATCH --output=slurm-%j.out
-
-set -euo pipefail
-
-CP2K_CMD="${CP2K_CMD:-cp2k.psmp}"
-
-if [[ -f setup-env.sh ]]; then
-  source setup-env.sh
-fi
-export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
-
-echo "Running short MD in $(pwd)"
-srun "${CP2K_CMD}" -i md.inp -o md.out
-
-# The single-point input is staged for optional manual use:
-# srun "${CP2K_CMD}" -i single-point.inp -o single-point.out
-"""
-    Path(fn_out).write_text(script)
-
-
-def write_cp2k_snapshot_submit_script(
-    fn_out: str | Path,
-    *,
-    snapshots_dirname: str = "xyz",
-) -> None:
-    """Write the submission helper for all prepared CP2K snapshots."""
-    script = f"""#!/usr/bin/env bash
-set -euo pipefail
-snapshot_dir="${{1:-{snapshots_dirname}}}"
-mkdir -p runs
-
-for xyz in "${{snapshot_dir}}"/snapshot-*.xyz; do
-  [[ -e "${{xyz}}" ]] || continue
-  stem="$(basename "${{xyz}}" .xyz)"
-  run_dir="runs/${{stem}}"
-
-  mkdir -p "${{run_dir}}"
-  cp single-point.inp md.inp run.sh "${{run_dir}}"/
-  cp "${{xyz}}" "${{run_dir}}/pos.xyz"
-  if [[ -f setup-env.sh ]]; then
-    cp setup-env.sh "${{run_dir}}"/
-  fi
-  echo "Submitting ${{stem}}"
-  sbatch --chdir="${{run_dir}}" "${{run_dir}}/run.sh"
-done
-"""
-    Path(fn_out).write_text(script)
-
-
-def write_cp2k_single_atom_run_script(
-    fn_out: str | Path,
-) -> None:
-    """Write the Slurm script for one isolated-atom CP2K job."""
-    energy_command = (
-        'grep "Total FORCE_EVAL" out.log | '
-        """awk '{gsub(/\\.$/, "", $NF); """
-        """printf "%.12f\\n", $NF * 27.211386245988}' > energy.dat"""
-    )
-    script = """#!/bin/bash
-#SBATCH --job-name=cp2k-atom
-#SBATCH --nodes=1
-#SBATCH --ntasks-per-node=8
-#SBATCH --mem=10G
-#SBATCH --time=04:00:00
-#SBATCH --output=slurm-%j.out
-
-set -euo pipefail
-
-CP2K_CMD="${CP2K_CMD:-cp2k.psmp}"
-
-if [[ -f setup-env.sh ]]; then
-  source setup-env.sh
-elif [[ -f ../setup-env.sh ]]; then
-  source ../setup-env.sh
-fi
-export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
-
-echo "Running isolated-atom single point in $(pwd)"
-srun "${CP2K_CMD}" -i input.inp -o out.log
-""" + energy_command + """
-"""
-    Path(fn_out).write_text(script)
-
-
-def write_cp2k_single_atom_submit_script(
-    fn_out: str | Path,
-) -> None:
-    """Write the submission helper for isolated-atom CP2K jobs."""
-    script = """#!/usr/bin/env bash
-set -euo pipefail
-
-for run_dir in */; do
-  [[ -d "${run_dir}" ]] || continue
-  echo "Submitting ${run_dir%/}"
-  sbatch --chdir="${run_dir}" run.sh
-done
-"""
-    Path(fn_out).write_text(script)
+    with open(fn_out, "w") as handle:
+        handle.write("\n".join(format_cp2k_input(tree)) + "\n")

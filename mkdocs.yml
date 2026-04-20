@@ -34,7 +34,8 @@ nav:
   - CLI: cli.md
   - Configuration:
       - Prepare: configuration/prepare.md
-      - Simulate: configuration/simulate.md
+      - Reference: configuration/reference.md
+      - Trainset: configuration/trainset.md
       - QoI: configuration/qoi.md
       - Train: configuration/train.md
       - Learn: configuration/learn.md

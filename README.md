@@ -12,10 +12,11 @@ observables. It combines system preparation, sampled MD campaigns, QoI
 analysis, surrogate training and posterior inference in one
 toolchain.
 
-The public CLI is centered around six workflows:
+The public CLI is centered around seven workflows:
 
 - `bff prepare`
-- `bff simulate`
+- `bff reference`
+- `bff trainset`
 - `bff qoi`
 - `bff train`
 - `bff learn`
@@ -92,8 +93,8 @@ Use `v0.0.1` for exact reproduction of the published paper data. The current
 
 External tools are still required for full workflows:
 
-- [Gromacs](https://www.gromacs.org) for `prepare`, `simulate`, and `validate`
-- [CP2K](https://www.cp2k.org) for staged reference calculations
+- [Gromacs](https://www.gromacs.org) for `prepare`, `trainset`, and `validate`
+- [CP2K](https://www.cp2k.org) for `reference` and other staged reference calculations
 - [PLUMED](https://www.plumed.org) only for PLUMED-biased systems
 - [PyTorch](https://pytorch.org) installed separately for `train`, `learn`, and posterior notebooks
 
@@ -123,32 +124,35 @@ intended stage order:
 cd examples/acetate/01-prepare/colvars
 bff prepare config.yaml
 
-cd ../../03-training-trjs
-bff simulate config-local.yaml
+cd ../../02-reference-data
+bff reference config-local.yaml
 
-cd ../04-qoi
+cd ../02-training-data
+bff trainset config-local.yaml
+
+cd ../03-qoi
 bff qoi config.yaml
 
-cd ../05-train-lgp
+cd ../04-train-lgp
 bff train config.yaml
 
-cd ../06-learn
+cd ../05-learning
 bff learn config.yaml
 ```
 
-Validation is configured separately in stage `08`:
+Validation is configured separately in `07-validate`:
 
 ```bash
-cd ../08-validate
+cd ../07-validate
 bff validate config.yaml
 ```
 
 Two notebooks are included in the example:
 
-- [06-learn/interactive.ipynb](examples/acetate/06-learn/interactive.ipynb)
+- [05-learning/interactive.ipynb](examples/acetate/05-learning/interactive.ipynb)
   shows interactive surrogate training, posterior sampling, and posterior
   sample export.
-- [07-visualize/visualize.ipynb](examples/acetate/07-visualize/visualize.ipynb)
+- [06-visualize/visualize.ipynb](examples/acetate/06-visualize/visualize.ipynb)
   focuses on plotting and inspection only.
 
 If you installed BFF from PyPI and want the example tree locally, run:
@@ -158,21 +162,12 @@ bff examples
 cd examples/acetate
 ```
 
-Prepared CP2K snapshot folders can be collected into `train.extxyz` and
-`valid.extxyz` with:
+The reference workflow itself writes the final `train.extxyz` and
+`valid.extxyz` files, so the normal path is simply:
 
 ```bash
-bff cp2k-collect
+bff reference CONFIG.yaml
 ```
-
-To force one fixed box for every collected frame, use:
-
-```bash
-bff cp2k-collect --box "24.0000 0.0000 0.0000 0.0000 24.0000 0.0000 0.0000 0.0000 24.0000"
-```
-
-That override applies the same lattice to every frame, so it should only be
-used for snapshots from an NVT or otherwise fixed-cell ensemble.
 
 ## Repository Layout
 

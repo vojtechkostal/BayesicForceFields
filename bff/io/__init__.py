@@ -5,7 +5,6 @@ from importlib import import_module
 __all__ = [
     "colvars",
     "cp2k",
-    "cp2k_collect",
     "logs",
     "mdp",
     "plumed",

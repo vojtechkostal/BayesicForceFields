@@ -16,10 +16,10 @@ from the surrogate files themselves, not from the original QoI datasets.
 
 ```yaml
 log: out.log
-specs: ../03-training-trjs/trainset/specs.yaml
+specs: ../02-training-data/trainset/specs.yaml
 models:
-  rdf: ../05-train-lgp/models/rdf.lgp
-  hb: ../05-train-lgp/models/hb.lgp
+  rdf: ../04-train-lgp/models/rdf.lgp
+  hb: ../04-train-lgp/models/hb.lgp
 mcmc:
   total_steps: 10000
   warmup: 2000
@@ -35,7 +35,7 @@ mcmc:
 - `log`
   Workflow log file.
 - `specs`
-  Force-field specification file from the simulate stage.
+  Force-field specification file from the trainset stage.
 - `models`
   Non-empty mapping from QoI name to trained `.lgp` model file.
 - `mcmc`

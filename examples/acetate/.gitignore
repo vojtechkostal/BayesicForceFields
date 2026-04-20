@@ -3,26 +3,27 @@
 01-prepare/plumed/ace/
 01-prepare/plumed/*.log
 
-02-reference-trjs/*.npz
-02-reference-trjs/*.lock
+02-reference-data/trajectories/*.npz
+02-reference-data/trajectories/*.lock
+02-reference-data/reference-assets/
 
-03-training-trjs/trainset/
+02-training-data/trainset/
 
-04-qoi/*.log
-04-qoi/*.npy
-04-qoi/qoi-*
+03-qoi/*.log
+03-qoi/*.npy
+03-qoi/qoi-*
 
-05-train-lgp/*.log
-05-train-lgp/models/
+04-train-lgp/*.log
+04-train-lgp/models/
 
-06-learn/*.log
-06-learn/*.pt
-06-learn/posterior-samples.yaml
-06-learn/*.png
+05-learning/*.log
+05-learning/*.pt
+05-learning/posterior-samples.yaml
+05-learning/*.png
 
-07-visualize/*.png
+06-visualize/*.png
 
-08-validate/validation-trainset/
+07-validate/validation-trainset/
 
 **/__pycache__/
 *.pyc
