@@ -1,4 +1,4 @@
-reference_dir: ./reference
+reference_dir: ./assets
 job_scheduler: local
 cp2k_cmd: ~/miniforge3/envs/cp2k/bin/cp2k.psmp
 single_atoms: true

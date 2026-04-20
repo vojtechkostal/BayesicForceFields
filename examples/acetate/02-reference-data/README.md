@@ -1,7 +1,8 @@
-# Reference Stage
+# Reference Data Stage
 
-Stage `02-reference` runs the staged CP2K reference calculations written by
-`bff prepare`.
+Stage `02-reference-data` contains the ab initio/reference side of the acetate
+example. It runs the staged CP2K reference calculations written by
+`bff prepare` and keeps the reference trajectories used by QoI.
 
 The prepared CP2K inputs still live under:
 
@@ -9,10 +10,17 @@ The prepared CP2K inputs still live under:
 
 This stage keeps the runnable output separate under:
 
-- `./reference/system-XXX/`
+- `./reference-assets/system-XXX/`
 
 The configs in this directory point back to the staged inputs in
 `../01-prepare/colvars/reference/system-XXX/`.
+
+This directory also carries:
+
+- `inputs/`
+  optional CP2K input overrides for the short-MD and single-point jobs
+- `trajectories/`
+  ab initio reference trajectories used later by `../03-qoi/config.yaml`
 
 An optional revPBE0 single-point template is included at:
 
@@ -51,6 +59,6 @@ The workflow stages one run directory per snapshot, runs the short GFN1-xTB
 MD plus final single-point calculation, optionally evaluates isolated
 single-atom energies, and writes:
 
-- `reference/system-XXX/train.extxyz`
-- `reference/system-XXX/valid.extxyz`
-- `reference/system-XXX/single-atoms/energies.yaml`
+- `reference-assets/system-XXX/train.extxyz`
+- `reference-assets/system-XXX/valid.extxyz`
+- `reference-assets/system-XXX/single-atoms/energies.yaml`

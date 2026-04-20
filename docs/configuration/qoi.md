@@ -17,13 +17,13 @@ Source code:
 
 ```yaml
 trainset:
-  dir: ../03-training-trjs/trainset
+  dir: ../02-training-data/trainset
 
 refset:
   systems:
     - coordinates: ../01-prepare/colvars/reference/system-000/system.gro
       topology: ../01-prepare/colvars/reference/system-000/system.top
-      trajectory: ../02-reference-trjs/pos-000.xtc
+      trajectory: ../02-reference-data/trajectories/pos-000.xtc
       routines:
         - routine: rdf
           mol_resname: ACE

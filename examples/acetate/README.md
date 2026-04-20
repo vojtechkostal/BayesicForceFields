@@ -12,22 +12,21 @@ location.
    [colvars/](01-prepare/colvars/)
    and
    [plumed/](01-prepare/plumed/).
-2. [02-reference/](02-reference/)
-   runs the staged CP2K reference calculations and writes the collected
-   `train.extxyz` / `valid.extxyz` splits.
-3. [02-reference-trjs/](02-reference-trjs/)
-   contains reference trajectories.
-4. [03-training-trjs/](03-training-trjs/)
-   runs sampled GROMACS campaigns.
-5. [04-qoi/](04-qoi/)
+2. [02-reference-data/](02-reference-data/)
+   contains reference configs, CP2K input overrides, ab initio reference
+   trajectories, and generated `reference-assets/` outputs.
+3. [02-training-data/](02-training-data/)
+   contains force-field trajectory campaign configs and generated trainset
+   outputs.
+4. [03-qoi/](03-qoi/)
    computes quantities of interest from the trainset and reference data.
-6. [05-train-lgp/](05-train-lgp/)
+5. [04-train-lgp/](04-train-lgp/)
    trains the surrogate models.
-7. [06-learn/](06-learn/)
+6. [05-learning/](05-learning/)
    runs posterior inference and contains an interactive notebook.
-8. [07-visualize/](07-visualize/)
+7. [06-visualize/](06-visualize/)
    contains a plotting-only notebook.
-9. [08-validate/](08-validate/)
+8. [07-validate/](07-validate/)
    reruns selected posterior samples for validation.
 
 ## Recommended Run Order
@@ -36,22 +35,22 @@ location.
 cd examples/acetate/01-prepare/colvars
 bff prepare config.yaml
 
-cd ../../02-reference
+cd ../../02-reference-data
 bff reference config-local.yaml
 
-cd ../03-training-trjs
+cd ../02-training-data
 bff trainset config-local.yaml
 
-cd ../04-qoi
+cd ../03-qoi
 bff qoi config.yaml
 
-cd ../05-train-lgp
+cd ../04-train-lgp
 bff train config.yaml
 
-cd ../06-learn
+cd ../05-learning
 bff learn config.yaml
 
-cd ../08-validate
+cd ../07-validate
 bff validate config.yaml
 ```
 
@@ -59,21 +58,25 @@ bff validate config.yaml
 
 - [01-prepare/README.md](01-prepare/README.md)
   explains the two preparation variants.
-- [02-reference/config-local.yaml](02-reference/config-local.yaml)
+- [02-reference-data/config-local.yaml](02-reference-data/config-local.yaml)
   runs the staged CP2K reference jobs locally after `bff prepare`.
-- [03-training-trjs/config-local.yaml](03-training-trjs/config-local.yaml)
-  runs the sampled training campaign locally.
-- [04-qoi/config.yaml](04-qoi/config.yaml)
+- [02-reference-data/inputs/](02-reference-data/inputs/)
+  contains optional CP2K input overrides.
+- [02-reference-data/trajectories/](02-reference-data/trajectories/)
+  contains the reference trajectories consumed by the QoI stage.
+- [02-training-data/config-local.yaml](02-training-data/config-local.yaml)
+  runs the sampled force-field trajectory campaign locally.
+- [03-qoi/config.yaml](03-qoi/config.yaml)
   computes QoIs from the trainset and reference set.
-- [05-train-lgp/config.yaml](05-train-lgp/config.yaml)
+- [04-train-lgp/config.yaml](04-train-lgp/config.yaml)
   trains the surrogate models.
-- [06-learn/config.yaml](06-learn/config.yaml)
+- [05-learning/config.yaml](05-learning/config.yaml)
   runs posterior inference from the selected surrogates.
-- [06-learn/interactive.ipynb](06-learn/interactive.ipynb)
+- [05-learning/interactive.ipynb](05-learning/interactive.ipynb)
   demonstrates training, learning, sample export, and plotting interactively.
-- [07-visualize/visualize.ipynb](07-visualize/visualize.ipynb)
+- [06-visualize/visualize.ipynb](06-visualize/visualize.ipynb)
   focuses on posterior plotting only.
-- [08-validate/config.yaml](08-validate/config.yaml)
+- [07-validate/config.yaml](07-validate/config.yaml)
   reruns selected posterior samples for validation.
 
 ## Current API Shape
@@ -85,9 +88,9 @@ The example reflects the streamlined package APIs:
 - prepare systems define residue `templates`, per-system `mdp` files, and
   optional bias files.
 - `bff reference` consumes the staged `01-prepare/.../reference/system-XXX/`
-  directories, creates runnable outputs in `02-reference/reference/system-XXX/`,
-  and runs CP2K snapshot plus optional single-atom calculations locally or
-  through Slurm.
+  directories, creates runnable outputs in
+  `02-reference-data/reference-assets/system-XXX/`, and runs CP2K snapshot plus
+  optional single-atom calculations locally or through Slurm.
 - prepared training assets are written into one directory per system under
   `training/system-XXX/`.
 - trainset and validate configs point to those prepared asset directories with

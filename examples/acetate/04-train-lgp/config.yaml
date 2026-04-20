@@ -1,15 +1,15 @@
 log: out.log
 datasets:
   rdf:
-    data: ../04-qoi/qoi-rdf.pt
+    data: ../03-qoi/qoi-rdf.pt
     mean: sigmoid
     observation_scale: 1.0
   hb:
-    data: ../04-qoi/qoi-hb.pt
+    data: ../03-qoi/qoi-hb.pt
     mean: 0
     observation_scale: 1.0
   dist:
-    data: ../04-qoi/qoi-dist.pt
+    data: ../03-qoi/qoi-dist.pt
     mean: 0
     observation_scale: 1.0
 training:

@@ -12,7 +12,7 @@ Source code:
 It can:
 
 - stage one run directory per snapshot under a separate output tree such as
-  `02-reference/reference/system-XXX/snapshots/snapshot-XXXX/`
+  `02-reference-data/reference-assets/system-XXX/snapshots/snapshot-XXXX/`
 - run the short GFN1-xTB MD plus final single-point evaluation
 - collect `sp.extxyz` files into `train.extxyz` and `valid.extxyz`
 - optionally run isolated single-atom reference calculations
@@ -21,7 +21,7 @@ It can:
 ## Minimal Example
 
 ```yaml
-reference_dir: ./reference
+reference_dir: ./reference-assets
 job_scheduler: local
 cp2k_cmd: cp2k.psmp
 single_atoms: true
@@ -46,7 +46,7 @@ systems:
 ## Slurm Example
 
 ```yaml
-reference_dir: ./reference
+reference_dir: ./reference-assets
 job_scheduler: slurm
 cp2k_cmd: cp2k.psmp
 single_atoms: true
@@ -73,7 +73,7 @@ environment, or your site scheduler defaults.
 
 - `reference_dir`
   Output directory written by `bff reference`. In the acetate example this is
-  `./reference` inside `02-reference/`.
+  `./reference-assets` inside `02-reference-data/`.
 - `job_scheduler`
   Either `local` or `slurm`.
 - `cp2k_cmd`
@@ -100,7 +100,7 @@ environment, or your site scheduler defaults.
 
 - `assets`
   Path to one prepared reference system directory such as
-  `reference/system-000/`.
+  `../01-prepare/colvars/reference/system-000/`.
 - `md`
   Optional CP2K MD input for this system's short snapshot relaxations. If
   omitted, `bff reference` uses `assets/snapshots/md.inp`.

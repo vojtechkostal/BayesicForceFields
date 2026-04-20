@@ -1,4 +1,4 @@
-reference_dir: ./reference
+reference_dir: ./assets
 job_scheduler: slurm
 cp2k_cmd: cp2k.psmp
 single_atoms: true

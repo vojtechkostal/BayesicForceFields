@@ -34,14 +34,14 @@ The preferred launcher is:
 ```bash
 cd colvars
 bff prepare config.yaml
-cd ../../02-reference
+cd ../../02-reference-data
 bff reference config-local.yaml
 ```
 
 That runs the staged snapshot MD/single-point jobs from the inputs in
 `01-prepare`, optionally evaluates the isolated single-atom energies, and
 writes the deterministic shuffled `train.extxyz` and `valid.extxyz` split in
-`eV` / `eV/Å` under `02-reference/reference/`.
+`eV` / `eV/Å` under `02-reference-data/reference-assets/`.
 
 The full stage is self-contained in the exported example tree and does not
 depend on repository-level `data/` paths.

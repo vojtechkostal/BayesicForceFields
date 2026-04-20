@@ -124,35 +124,35 @@ intended stage order:
 cd examples/acetate/01-prepare/colvars
 bff prepare config.yaml
 
-cd ../../02-reference
+cd ../../02-reference-data
 bff reference config-local.yaml
 
-cd ../03-training-trjs
+cd ../02-training-data
 bff trainset config-local.yaml
 
-cd ../04-qoi
+cd ../03-qoi
 bff qoi config.yaml
 
-cd ../05-train-lgp
+cd ../04-train-lgp
 bff train config.yaml
 
-cd ../06-learn
+cd ../05-learning
 bff learn config.yaml
 ```
 
-Validation is configured separately in stage `08`:
+Validation is configured separately in `07-validate`:
 
 ```bash
-cd ../08-validate
+cd ../07-validate
 bff validate config.yaml
 ```
 
 Two notebooks are included in the example:
 
-- [06-learn/interactive.ipynb](examples/acetate/06-learn/interactive.ipynb)
+- [05-learning/interactive.ipynb](examples/acetate/05-learning/interactive.ipynb)
   shows interactive surrogate training, posterior sampling, and posterior
   sample export.
-- [07-visualize/visualize.ipynb](examples/acetate/07-visualize/visualize.ipynb)
+- [06-visualize/visualize.ipynb](examples/acetate/06-visualize/visualize.ipynb)
   focuses on plotting and inspection only.
 
 If you installed BFF from PyPI and want the example tree locally, run:

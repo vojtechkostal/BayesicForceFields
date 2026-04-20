@@ -128,7 +128,7 @@ The reference tree is system-centered:
 `bff prepare` only stages these reusable reference inputs. The runnable output
 tree, per-snapshot `runs/` directories, optional Slurm staging, and final
 `train.extxyz` / `valid.extxyz` split are created later by `bff reference`,
-typically from a separate `02-reference/` example stage.
+typically from a separate `02-reference-data/` example stage.
 
 [prepare-configs]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/bff/workflows/configs.py
 [prepare-workflow]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/bff/workflows/prepare.py
