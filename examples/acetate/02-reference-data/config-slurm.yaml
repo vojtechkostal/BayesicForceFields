@@ -31,4 +31,3 @@ slurm:
     - export OMP_NUM_THREADS=1
     - export SLURM_MPI_TYPE=pmix_v3
     - export LD_LIBRARY_PATH=/uochb/soft/core/pmix/pmix-3.2.3/lib:$LD_LIBRARY_PATH
-
