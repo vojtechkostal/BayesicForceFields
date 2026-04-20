@@ -11,7 +11,7 @@ Source code:
 `bff validate` reruns selected parameter samples, usually drawn from the
 posterior learned by `bff learn`.
 
-The campaign runtime keys intentionally match `bff simulate` as closely as
+The campaign runtime keys intentionally match `bff trainset` as closely as
 possible.
 
 ## Minimal Example

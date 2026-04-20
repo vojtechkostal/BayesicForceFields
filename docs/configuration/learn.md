@@ -35,7 +35,7 @@ mcmc:
 - `log`
   Workflow log file.
 - `specs`
-  Force-field specification file from the simulate stage.
+  Force-field specification file from the trainset stage.
 - `models`
   Non-empty mapping from QoI name to trained `.lgp` model file.
 - `mcmc`

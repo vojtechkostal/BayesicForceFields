@@ -14,7 +14,7 @@ from ..io.logs import Logger
 from ..io.schedulers import Slurm
 from ..io.utils import compress_results, load_yaml, save_yaml
 from ..topology import TopologyModifier
-from .configs import SimulateConfig, SimulationCampaignConfig, SimulationSystemConfig
+from .configs import SimulationCampaignConfig, SimulationSystemConfig, TrainsetConfig
 from .md import modify_topology
 
 PathLike = str | Path
@@ -23,6 +23,41 @@ PathLike = str | Path
 SCHEDULER_CLASSES = {
     "slurm": Slurm,
 }
+
+
+def bff_cli_command(command: str, *args: PathLike) -> list[str]:
+    """Build a Python-module invocation for one hidden or public BFF command."""
+    return [sys.executable, "-m", "bff.cli", command, *[str(arg) for arg in args]]
+
+
+def repo_pythonpath_command(command: list[str]) -> str:
+    """Prefix a command so scheduled jobs import this checkout first."""
+    repo_root = Path(__file__).resolve().parents[2]
+    pythonpath_prefix = (
+        f"PYTHONPATH={shlex.quote(str(repo_root))}"
+        '${PYTHONPATH:+":$PYTHONPATH"}'
+    )
+    return f"{pythonpath_prefix} {shlex.join(command)}"
+
+
+def build_slurm_cli_job(
+    *,
+    command: list[str],
+    slurm_config: Any,
+    sbatch: dict[str, Any],
+    cwd: Path | None = None,
+) -> Slurm:
+    """Build a Slurm script that runs one BFF CLI command."""
+    submit_script = Slurm(**sbatch)
+    submit_script.add_command("set -euo pipefail")
+    for cmd in slurm_config.setup:
+        submit_script.add_command(cmd)
+    if cwd is not None:
+        submit_script.add_command(f"cd {shlex.quote(str(cwd.resolve()))}")
+    submit_script.add_command(repo_pythonpath_command(command))
+    for cmd in slurm_config.teardown:
+        submit_script.add_command(cmd)
+    return submit_script
 
 
 def _relative_path(path: Path | None, base_dir: Path) -> str | None:
@@ -50,7 +85,7 @@ def _system_record(
     }
 
 
-def build_specs(config: SimulateConfig) -> Path:
+def build_specs(config: TrainsetConfig) -> Path:
     """Create the force-field specification file for one sampled campaign."""
     config.trainset_dir.resolve().mkdir(parents=True, exist_ok=True)
     top_modifier = TopologyModifier(
@@ -206,26 +241,17 @@ def build_submission_script(
         return None
 
     trainset_dir = config.trainset_dir.resolve()
-    repo_root = Path(__file__).resolve().parents[2]
-    cmd_run = [sys.executable, "-m", "bff.cli", "md", str(fn_config_md)]
-
     submit_cls = SCHEDULER_CLASSES[config.job_scheduler]
     assert config.slurm is not None
     fn_stdout = trainset_dir / f"run-{sample_id}.out"
     submit_specs = dict(config.slurm.sbatch or {}) | {"output": fn_stdout}
-    submit_script = submit_cls(**submit_specs)
-
-    for cmd in config.slurm.setup:
-        submit_script.add_command(cmd)
-    pythonpath_prefix = (
-        f"PYTHONPATH={shlex.quote(str(repo_root))}"
-        '${PYTHONPATH:+":$PYTHONPATH"}'
+    if submit_cls is not Slurm:
+        raise NotImplementedError
+    return build_slurm_cli_job(
+        command=bff_cli_command("md", fn_config_md),
+        slurm_config=config.slurm,
+        sbatch=submit_specs,
     )
-    submit_script.add_command(f"{pythonpath_prefix} {shlex.join(cmd_run)}")
-    for cmd in config.slurm.teardown:
-        submit_script.add_command(cmd)
-
-    return submit_script
 
 
 def write_submission_script(
@@ -256,7 +282,7 @@ def dispatch_simulation_job(
     """Run or submit one MD job for a force-field parameter vector."""
     trainset_dir = config.trainset_dir.resolve()
     fn_config_md = trainset_dir / f"config-{sample_id}.yaml"
-    cmd_run = [sys.executable, "-m", "bff.cli", "md", str(fn_config_md)]
+    cmd_run = bff_cli_command("md", fn_config_md)
     if config.job_scheduler == "local":
         subprocess.run(cmd_run, cwd=str(trainset_dir), check=True)
         return None
@@ -365,16 +391,15 @@ def collect_campaign_metadata(
                 file.unlink(missing_ok=True)
 
 
-def print_simulate_summary(
-    config: SimulateConfig,
+def print_trainset_summary(
+    config: TrainsetConfig,
     fn_specs: PathLike,
     logger: Logger,
 ) -> None:
-    """Print a concise summary of the sampled simulation campaign."""
+    """Print a concise summary of the sampled training-set campaign."""
     specs = Specs(fn_specs)
-    logger.section("Simulation Campaign")
+    logger.section("Training-Set Generation")
     logger.kv("Molecule", specs.mol_resname)
-    logger.kv("Log file", config.log.resolve())
     logger.kv("Trainset directory", config.trainset_dir.resolve())
     logger.kv("Systems", len(config.systems))
     logger.kv("Samples", config.n_samples)
@@ -560,7 +585,7 @@ def run_campaign(
         )
 
 
-def build_parameter_samples(config: SimulateConfig) -> tuple[Path, np.ndarray]:
+def build_parameter_samples(config: TrainsetConfig) -> tuple[Path, np.ndarray]:
     """Build ``specs.yaml`` and sample explicit parameters for one campaign."""
     fn_specs = build_specs(config)
     constraint = ChargeConstraint(fn_specs)

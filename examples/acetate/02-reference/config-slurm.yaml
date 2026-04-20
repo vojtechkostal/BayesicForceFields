@@ -1,0 +1,24 @@
+reference_dir: ./reference
+job_scheduler: slurm
+cp2k_cmd: cp2k.psmp
+single_atoms: true
+snapshot_md_steps: 100
+train_fraction: 0.8
+seed: 2026
+
+systems:
+  - assets: ../01-prepare/colvars/reference/system-000
+    # Optional per-system overrides:
+    # md: ./inputs/system-000-md.inp
+    # sp: ./inputs/revpbe0-sp.inp
+  - assets: ../01-prepare/colvars/reference/system-001
+  - assets: ../01-prepare/colvars/reference/system-002
+
+slurm:
+  max_parallel_jobs: 10
+  sbatch:
+    partition: cpu
+    time: "04:00:00"
+    mem: 10G
+  setup:
+    - module load cp2k

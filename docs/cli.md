@@ -7,7 +7,10 @@ The CLI entry point is implemented in
 
 - `bff prepare CONFIG.yaml`
   Stage equilibrated systems, reference inputs, and training assets.
-- `bff simulate CONFIG.yaml`
+- `bff reference CONFIG.yaml`
+  Run staged CP2K reference calculations from prepared assets locally or
+  through Slurm.
+- `bff trainset CONFIG.yaml`
   Run a sampled GROMACS campaign from prepared assets.
 - `bff qoi CONFIG.yaml`
   Compute quantities of interest from trainset and reference trajectories.
@@ -19,10 +22,6 @@ The CLI entry point is implemented in
   Rerun selected parameter samples for validation.
 - `bff examples`
   Copy or download the repository example tree.
-- `bff cp2k-collect`
-  Collect CP2K snapshot runs into `train.extxyz` and `valid.extxyz`.
-  `--box` accepts either 3 box lengths or 9 flattened lattice components and
-  applies the same box to every collected frame.
 - `bff version`
   Print the installed package version.
 
@@ -34,7 +33,8 @@ jobs and is intentionally hidden from normal workflow navigation.
 Each top-level workflow uses one focused config file:
 
 - prepare config: how to stage systems and reusable assets
-- simulate config: how to turn prepared assets into a sampled trainset
+- reference config: how to execute staged CP2K reference assets
+- trainset config: how to turn prepared assets into a sampled trainset
 - QoI config: how to compute observables from trajectories
 - train config: how to fit surrogates
 - learn config: which models to use for posterior inference
@@ -59,10 +59,10 @@ conda activate bfflearn
 After that, `bff <TAB>` should offer:
 
 - `prepare`
-- `simulate`
+- `reference`
+- `trainset`
 - `qoi`
 - `train`
 - `learn`
 - `validate`
 - `examples`
-- `cp2k-collect`

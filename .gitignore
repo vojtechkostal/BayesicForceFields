@@ -36,6 +36,7 @@ examples/acetate/**
 !examples/acetate/**/config.yaml
 !examples/acetate/**/config-*.yaml
 !examples/acetate/**/*.py
+!examples/acetate/02-reference/inputs/*.inp
 !examples/acetate/01-prepare/common/**
 !examples/acetate/01-prepare/colvars/*.dat
 !examples/acetate/01-prepare/plumed/*.dat

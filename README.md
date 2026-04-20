@@ -12,10 +12,11 @@ observables. It combines system preparation, sampled MD campaigns, QoI
 analysis, surrogate training and posterior inference in one
 toolchain.
 
-The public CLI is centered around six workflows:
+The public CLI is centered around seven workflows:
 
 - `bff prepare`
-- `bff simulate`
+- `bff reference`
+- `bff trainset`
 - `bff qoi`
 - `bff train`
 - `bff learn`
@@ -92,8 +93,8 @@ Use `v0.0.1` for exact reproduction of the published paper data. The current
 
 External tools are still required for full workflows:
 
-- [Gromacs](https://www.gromacs.org) for `prepare`, `simulate`, and `validate`
-- [CP2K](https://www.cp2k.org) for staged reference calculations
+- [Gromacs](https://www.gromacs.org) for `prepare`, `trainset`, and `validate`
+- [CP2K](https://www.cp2k.org) for `reference` and other staged reference calculations
 - [PLUMED](https://www.plumed.org) only for PLUMED-biased systems
 - [PyTorch](https://pytorch.org) installed separately for `train`, `learn`, and posterior notebooks
 
@@ -123,8 +124,11 @@ intended stage order:
 cd examples/acetate/01-prepare/colvars
 bff prepare config.yaml
 
-cd ../../03-training-trjs
-bff simulate config-local.yaml
+cd ../../02-reference
+bff reference config-local.yaml
+
+cd ../03-training-trjs
+bff trainset config-local.yaml
 
 cd ../04-qoi
 bff qoi config.yaml
@@ -158,21 +162,12 @@ bff examples
 cd examples/acetate
 ```
 
-Prepared CP2K snapshot folders can be collected into `train.extxyz` and
-`valid.extxyz` with:
+The reference workflow itself writes the final `train.extxyz` and
+`valid.extxyz` files, so the normal path is simply:
 
 ```bash
-bff cp2k-collect
+bff reference CONFIG.yaml
 ```
-
-To force one fixed box for every collected frame, use:
-
-```bash
-bff cp2k-collect --box "24.0000 0.0000 0.0000 0.0000 24.0000 0.0000 0.0000 0.0000 24.0000"
-```
-
-That override applies the same lattice to every frame, so it should only be
-used for snapshots from an NVT or otherwise fixed-cell ensemble.
 
 ## Repository Layout
 

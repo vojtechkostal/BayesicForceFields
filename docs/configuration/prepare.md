@@ -108,7 +108,7 @@ Each such directory contains one prepared system with:
 - `system-XXX.mdp`
 - optional bias file
 
-Those directories are consumed directly by both `simulate` and `validate`.
+Those directories are consumed directly by both `trainset` and `validate`.
 
 The reference tree is system-centered:
 
@@ -116,29 +116,19 @@ The reference tree is system-centered:
 - `PROJECT/reference/system-XXX/system.top`
 - `PROJECT/reference/system-XXX/system.xyz`
 - `PROJECT/reference/system-XXX/md/`
-  CP2K direct-MD inputs and `run.sh`.
+  CP2K direct-MD input files.
 - `PROJECT/reference/system-XXX/single-atoms/`
-  One isolated-atom CP2K `input.inp` and centered `pos.xyz` per
-  unique element in the prepared system plus shared top-level `run.sh` and
-  `submit.sh` helpers. These jobs use a
-  neutral atom in a nonperiodic `10 Å` cubic box with the same revPBE-based
-  CP2K setup as the staged MD inputs.
+  One isolated-atom CP2K `input.inp` and centered `pos.xyz` per unique element
+  in the prepared system. These jobs use a neutral atom in a nonperiodic
+  `10 Å` cubic box with the same revPBE-based CP2K setup as the staged MD
+  inputs.
 - `PROJECT/reference/system-XXX/snapshots/`
-  Decorrelated XYZ snapshots, `single-point.inp`, a 100-step `md.inp`,
-  `run.sh`, and `submit.sh`. Use `bff cp2k-collect` from this directory to
-  read the final short-MD positions, forces, and potential energies from
-  `runs/` and write an 80/20 deterministic shuffled `train.extxyz` /
-  `valid.extxyz` split in `eV` / `eV/Å`.
-  CP2K XYZ outputs are read directly. If you switch the CP2K output format to
-  DCD, run `bff cp2k-collect --topology pos.xyz` or point `--topology` at another
-  per-run topology file. You can also force one fixed lattice for every
-  collected frame with `bff cp2k-collect --box "a_x a_y a_z b_x b_y b_z c_x c_y c_z"`.
-  That override assumes the snapshots come from an NVT or otherwise fixed-cell
-  ensemble.
+  Decorrelated XYZ snapshots, `sp.inp`, and a 100-step `md.inp`.
 
-Generated CP2K Slurm scripts are intentionally machine-agnostic. They use
-`CP2K_CMD=cp2k.psmp` by default and source an optional local `setup-env.sh`
-file if you need cluster-specific modules, Spack loads, or environment exports.
+`bff prepare` only stages these reusable reference inputs. The runnable output
+tree, per-snapshot `runs/` directories, optional Slurm staging, and final
+`train.extxyz` / `valid.extxyz` split are created later by `bff reference`,
+typically from a separate `02-reference/` example stage.
 
 [prepare-configs]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/bff/workflows/configs.py
 [prepare-workflow]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/bff/workflows/prepare.py

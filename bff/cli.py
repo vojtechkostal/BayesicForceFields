@@ -15,13 +15,13 @@ app = typer.Typer(
 WorkflowMain = Callable[[Path], None]
 WORKFLOW_COMMANDS = (
     "prepare",
-    "simulate",
+    "reference",
+    "trainset",
     "qoi",
     "train",
     "learn",
     "validate",
     "examples",
-    "cp2k-collect",
 )
 
 _COMPLETION_ACTIVATE = f"""# Managed automatically by Bayesic Force Fields.
@@ -45,7 +45,7 @@ if [ -n "${{BASH_VERSION-}}" ]; then
         fi
 
         case "${{COMP_WORDS[1]}}" in
-            prepare|simulate|qoi|train|learn|validate)
+            prepare|reference|trainset|qoi|train|learn|validate)
                 COMPREPLY=($(compgen -f -- "$cur"))
                 ;;
             *)
@@ -69,7 +69,7 @@ elif [ -n "${{ZSH_VERSION-}}" ]; then
         fi
 
         case "${{words[2]}}" in
-            prepare|simulate|qoi|train|learn|validate)
+            prepare|reference|trainset|qoi|train|learn|validate)
                 _files
                 ;;
         esac
@@ -213,86 +213,6 @@ def examples(
     typer.echo(f"Source: {source}")
 
 
-@app.command(name="cp2k-collect")
-def cp2k_collect(
-    runs: Path = typer.Option(
-        Path("runs"),
-        "--runs",
-        file_okay=False,
-        dir_okay=True,
-        resolve_path=False,
-        help="Directory containing per-snapshot CP2K run directories.",
-    ),
-    train: Path = typer.Option(
-        Path("train.extxyz"),
-        "--train",
-        dir_okay=False,
-        resolve_path=False,
-        help="Output training extxyz file.",
-    ),
-    valid: Path = typer.Option(
-        Path("valid.extxyz"),
-        "--valid",
-        dir_okay=False,
-        resolve_path=False,
-        help="Output validation extxyz file.",
-    ),
-    train_fraction: float = typer.Option(
-        0.8,
-        "--train-fraction",
-        min=0.0,
-        max=1.0,
-        help="Fraction of collected frames written to the training split.",
-    ),
-    seed: int = typer.Option(
-        2026,
-        "--seed",
-        help="Seed for the deterministic shuffled train/validation split.",
-    ),
-    topology: str = typer.Option(
-        "pos.xyz",
-        "--topology",
-        help="Per-run topology file used when CP2K outputs DCD files.",
-    ),
-    box: str | None = typer.Option(
-        None,
-        "--box",
-        help=(
-            "Fixed box used for every collected frame. Provide either 3 box "
-            "lengths or 9 flattened lattice components, separated by spaces "
-            "or commas."
-        ),
-    ),
-) -> None:
-    """
-    Collect CP2K snapshot runs into train/validation extxyz files.
-    """
-    from bff.io.cp2k_collect import collect_outputs, parse_box_override
-
-    try:
-        box_override = parse_box_override(box)
-        if box_override is not None:
-            typer.echo(
-                "Warning: applying one fixed box to every collected frame. "
-                "This assumes the snapshots come from an NVT or otherwise fixed-cell ensemble.",
-                err=True,
-            )
-        n_train, n_valid = collect_outputs(
-            runs=runs,
-            train=train,
-            valid=valid,
-            train_fraction=train_fraction,
-            seed=seed,
-            topology_name=topology,
-            box_override=box_override,
-        )
-    except (FileNotFoundError, ValueError) as exc:
-        raise typer.BadParameter(str(exc), param_hint="cp2k-collect") from exc
-
-    typer.echo(f"Wrote {n_train} training frames to {train}")
-    typer.echo(f"Wrote {n_valid} validation frames to {valid}")
-
-
 @app.command()
 def prepare(fn_config: Path = config_argument()) -> None:
     """
@@ -303,14 +223,24 @@ def prepare(fn_config: Path = config_argument()) -> None:
     run_workflow(fn_config, prepare_main, "prepare")
 
 
-@app.command(name="simulate")
-def simulate(fn_config: Path = config_argument()) -> None:
+@app.command()
+def reference(fn_config: Path = config_argument()) -> None:
+    """
+    Run staged CP2K reference calculations locally or through Slurm.
+    """
+    from bff.workflows.reference import main as reference_main
+
+    run_workflow(fn_config, reference_main, "reference")
+
+
+@app.command()
+def trainset(fn_config: Path = config_argument()) -> None:
     """
     Run a sampled molecular-dynamics campaign for training-set generation.
     """
-    from bff.workflows.simulate import main as simulate_main
+    from bff.workflows.trainset import main as trainset_main
 
-    run_workflow(fn_config, simulate_main, "simulate")
+    run_workflow(fn_config, trainset_main, "trainset")
 
 
 @app.command()
@@ -331,6 +261,16 @@ def md(fn_config: Path = config_argument()) -> None:
     from bff.workflows.md import main as md_main
 
     run_workflow(fn_config, md_main, "md")
+
+
+@app.command(name="reference-job", hidden=True)
+def reference_job(fn_config: Path = config_argument()) -> None:
+    """
+    Run one staged CP2K reference job from a configuration file.
+    """
+    from bff.workflows.reference import run_job
+
+    run_workflow(fn_config, run_job, "reference-job")
 
 
 @app.command(name="qoi")

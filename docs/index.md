@@ -16,7 +16,8 @@ post-paper refactored workflow.
 The public interface is intentionally small:
 
 - `bff prepare` stages equilibrated systems and reusable training assets.
-- `bff simulate` generates a sampled trainset from prepared assets.
+- `bff reference` executes staged CP2K reference calculations.
+- `bff trainset` generates a sampled trainset from prepared assets.
 - `bff qoi` computes quantities of interest from trainset and reference data.
 - `bff train` fits surrogate models from analyzed QoI datasets.
 - `bff learn` performs posterior inference from trained surrogate models.

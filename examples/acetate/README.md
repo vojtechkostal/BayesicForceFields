@@ -12,19 +12,22 @@ location.
    [colvars/](01-prepare/colvars/)
    and
    [plumed/](01-prepare/plumed/).
-2. [02-reference-trjs/](02-reference-trjs/)
+2. [02-reference/](02-reference/)
+   runs the staged CP2K reference calculations and writes the collected
+   `train.extxyz` / `valid.extxyz` splits.
+3. [02-reference-trjs/](02-reference-trjs/)
    contains reference trajectories.
-3. [03-training-trjs/](03-training-trjs/)
+4. [03-training-trjs/](03-training-trjs/)
    runs sampled GROMACS campaigns.
-4. [04-qoi/](04-qoi/)
+5. [04-qoi/](04-qoi/)
    computes quantities of interest from the trainset and reference data.
-5. [05-train-lgp/](05-train-lgp/)
+6. [05-train-lgp/](05-train-lgp/)
    trains the surrogate models.
-6. [06-learn/](06-learn/)
+7. [06-learn/](06-learn/)
    runs posterior inference and contains an interactive notebook.
-7. [07-visualize/](07-visualize/)
+8. [07-visualize/](07-visualize/)
    contains a plotting-only notebook.
-8. [08-validate/](08-validate/)
+9. [08-validate/](08-validate/)
    reruns selected posterior samples for validation.
 
 ## Recommended Run Order
@@ -33,8 +36,11 @@ location.
 cd examples/acetate/01-prepare/colvars
 bff prepare config.yaml
 
-cd ../../03-training-trjs
-bff simulate config-local.yaml
+cd ../../02-reference
+bff reference config-local.yaml
+
+cd ../03-training-trjs
+bff trainset config-local.yaml
 
 cd ../04-qoi
 bff qoi config.yaml
@@ -53,6 +59,8 @@ bff validate config.yaml
 
 - [01-prepare/README.md](01-prepare/README.md)
   explains the two preparation variants.
+- [02-reference/config-local.yaml](02-reference/config-local.yaml)
+  runs the staged CP2K reference jobs locally after `bff prepare`.
 - [03-training-trjs/config-local.yaml](03-training-trjs/config-local.yaml)
   runs the sampled training campaign locally.
 - [04-qoi/config.yaml](04-qoi/config.yaml)
@@ -76,9 +84,13 @@ The example reflects the streamlined package APIs:
   coordinates, and MDP inputs used by both bias variants.
 - prepare systems define residue `templates`, per-system `mdp` files, and
   optional bias files.
+- `bff reference` consumes the staged `01-prepare/.../reference/system-XXX/`
+  directories, creates runnable outputs in `02-reference/reference/system-XXX/`,
+  and runs CP2K snapshot plus optional single-atom calculations locally or
+  through Slurm.
 - prepared training assets are written into one directory per system under
   `training/system-XXX/`.
-- simulate and validate configs point to those prepared asset directories with
+- trainset and validate configs point to those prepared asset directories with
   `systems[].assets` and system-specific `n_steps`.
 - the QoI workflow uses `trainset`, `refset`, `run`, and `output`.
 - train writes surrogate model files.
