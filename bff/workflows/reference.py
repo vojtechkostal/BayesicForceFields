@@ -25,17 +25,24 @@ from .runsims import (
 HARTREE_TO_EV = 27.211386245988
 BOHR_TO_ANGSTROM = 0.529177210903
 HARTREE_PER_BOHR_TO_EV_PER_ANGSTROM = HARTREE_TO_EV / BOHR_TO_ANGSTROM
+FLOAT_RE = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][-+]?\d+)?"
 ENERGY_RE = re.compile(
-    r"ENERGY\| Total FORCE_EVAL .*?([-+]?\d*\.?\d+(?:[Ee][-+]?\d+)?)\s*$",
+    rf"ENERGY\| Total FORCE_EVAL .*?({FLOAT_RE})\s*$",
     re.MULTILINE,
 )
-FORCE_RE = re.compile(
+PIPE_FORCE_RE = re.compile(
     r"^\s*FORCES\|\s+\d+\s+"
-    r"([-+]?\d*\.?\d+(?:[Ee][-+]?\d+)?)\s+"
-    r"([-+]?\d*\.?\d+(?:[Ee][-+]?\d+)?)\s+"
-    r"([-+]?\d*\.?\d+(?:[Ee][-+]?\d+)?)\s+"
-    r"[-+]?\d*\.?\d+(?:[Ee][-+]?\d+)?\s*$",
+    rf"({FLOAT_RE})\s+"
+    rf"({FLOAT_RE})\s+"
+    rf"({FLOAT_RE})\s+"
+    rf"{FLOAT_RE}\s*$",
     re.MULTILINE,
+)
+LEGACY_FORCE_ROW_RE = re.compile(
+    r"^\s*\d+\s+\d+\s+\S+\s+"
+    rf"({FLOAT_RE})\s+"
+    rf"({FLOAT_RE})\s+"
+    rf"({FLOAT_RE})\s*$"
 )
 LATTICE_RE = re.compile(r'Lattice="([^"]+)"')
 
@@ -266,16 +273,54 @@ def _parse_single_point_energy(fn_output: Path) -> float:
     return float(match.group(1)) * HARTREE_TO_EV
 
 
+def _convert_force(values: tuple[str, str, str]) -> list[float]:
+    return [
+        float(value) * HARTREE_PER_BOHR_TO_EV_PER_ANGSTROM
+        for value in values
+    ]
+
+
+def _parse_pipe_forces(text: str) -> list[list[float]]:
+    return [
+        _convert_force(match.group(1, 2, 3))
+        for match in PIPE_FORCE_RE.finditer(text)
+    ]
+
+
+def _parse_legacy_atomic_forces(text: str) -> list[list[float]]:
+    tables: list[list[list[float]]] = []
+    lines = text.splitlines()
+    index = 0
+
+    while index < len(lines):
+        if not re.match(r"^\s*ATOMIC FORCES\b", lines[index]):
+            index += 1
+            continue
+
+        table: list[list[float]] = []
+        index += 1
+        while index < len(lines):
+            line = lines[index]
+            if re.match(r"^\s*SUM OF ATOMIC FORCES\b", line):
+                break
+
+            match = LEGACY_FORCE_ROW_RE.match(line)
+            if match is not None:
+                table.append(_convert_force(match.group(1, 2, 3)))
+            index += 1
+
+        if table:
+            tables.append(table)
+        index += 1
+
+    return tables[-1] if tables else []
+
+
 def _parse_single_point_forces(fn_output: Path) -> list[list[float]]:
     text = fn_output.read_text(encoding="utf-8", errors="ignore")
-    forces = [
-        [
-            float(match.group(1)) * HARTREE_PER_BOHR_TO_EV_PER_ANGSTROM,
-            float(match.group(2)) * HARTREE_PER_BOHR_TO_EV_PER_ANGSTROM,
-            float(match.group(3)) * HARTREE_PER_BOHR_TO_EV_PER_ANGSTROM,
-        ]
-        for match in FORCE_RE.finditer(text)
-    ]
+    forces = _parse_pipe_forces(text)
+    if not forces:
+        forces = _parse_legacy_atomic_forces(text)
     if not forces:
         raise ValueError(f"Could not extract atomic forces from {fn_output}.")
     return forces
