@@ -62,3 +62,6 @@ single-atom energies, and writes:
 - `reference-assets/system-XXX/train.extxyz`
 - `reference-assets/system-XXX/valid.extxyz`
 - `reference-assets/system-XXX/single-atoms/energies.yaml`
+
+BFF removes `*.wfn*` and `*.restart*` files from each CP2K run directory after
+the job finishes, so the staged reference tree stays compact.

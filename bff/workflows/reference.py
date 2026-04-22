@@ -136,19 +136,35 @@ def _write_snapshot_md_input(
 ) -> None:
     """Copy one staged short-MD input and optionally override its step count."""
     text = src.read_text(encoding="utf-8")
-    if steps is None:
-        dst.write_text(text, encoding="utf-8")
-        return
+    if steps is not None:
+        text, n_replaced = re.subn(
+            r"(?m)^(\s*STEPS\s+)\d+\s*$",
+            rf"\g<1>{steps}",
+            text,
+            count=1,
+        )
+        if n_replaced != 1:
+            raise ValueError(f"Could not override STEPS in staged CP2K input {src}.")
 
-    updated, n_replaced = re.subn(
-        r"(?m)^(\s*STEPS\s+)\d+\s*$",
-        rf"\g<1>{steps}",
+    text, n_replaced = re.subn(
+        r"(?im)^(\s*BACKUP_COPIES\s+)\d+\s*$",
+        r"\g<1>1",
         text,
         count=1,
     )
-    if n_replaced != 1:
-        raise ValueError(f"Could not override STEPS in staged CP2K input {src}.")
-    dst.write_text(updated, encoding="utf-8")
+    if n_replaced == 0:
+        text = re.sub(
+            r"(?im)^(\s*)&END\s+PRINT\s*$",
+            (
+                r"\1  &RESTART\n"
+                r"\1    BACKUP_COPIES 1\n"
+                r"\1  &END RESTART\n"
+                r"\g<0>"
+            ),
+            text,
+            count=1,
+        )
+    dst.write_text(text, encoding="utf-8")
 
 
 def stage_system(
@@ -242,6 +258,13 @@ def _run_cp2k(
     if os.environ.get("SLURM_JOB_ID") and shutil.which("srun") is not None:
         command = ["srun", *command]
     subprocess.run(command, cwd=str(cwd), env=env, check=True)
+
+
+def _remove_cp2k_restart_files(run_dir: Path) -> None:
+    """Remove large CP2K restart artifacts from one run directory."""
+    for pattern in ("*.wfn*", "*.restart*"):
+        for path in run_dir.glob(pattern):
+            path.unlink()
 
 
 def _last_xyz_frame(path: Path) -> tuple[list[str], list[list[float]]]:
@@ -384,6 +407,7 @@ def run_snapshot_job(run_dir: Path, cp2k_cmd: str) -> None:
         cwd=run_dir,
         env=env,
     )
+    _remove_cp2k_restart_files(run_dir)
     write_snapshot_extxyz(run_dir)
 
 
@@ -405,6 +429,7 @@ def run_single_atom_job(run_dir: Path, cp2k_cmd: str) -> None:
         cwd=run_dir,
         env=env,
     )
+    _remove_cp2k_restart_files(run_dir)
 
 
 def submit_reference_job(

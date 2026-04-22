@@ -18,6 +18,10 @@ It can:
 - optionally run isolated single-atom reference calculations
 - run either locally or through Slurm
 
+Staged short-MD inputs request only one CP2K restart backup. After each CP2K
+reference job finishes, BFF removes `*.wfn*` and `*.restart*` files from the
+run directory to avoid keeping large restart artifacts.
+
 ## Minimal Example
 
 ```yaml
