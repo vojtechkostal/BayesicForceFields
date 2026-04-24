@@ -15,6 +15,8 @@ from typing import Literal
 
 from ...io.cp2k import (
     collect_single_atom_energies,
+    cp2k_supports_gfn_type,
+    strip_cp2k_gfn_type,
     write_cp2k_snapshot_extxyz,
 )
 from ...io.extxyz import read_extxyz_frame, write_extxyz_frames
@@ -79,7 +81,11 @@ class ReferenceJobConfig:
         if len(parts) != 1:
             raise ValueError("'cp2k_cmd' must be a single executable name or path.")
 
-        return cls(kind=kind, run_dir=run_dir, cp2k_cmd=cp2k_cmd)
+        executable = parts[0]
+        if "/" in executable:
+            executable = str(Path(executable).expanduser())
+
+        return cls(kind=kind, run_dir=run_dir, cp2k_cmd=executable)
 
 
 def check_cp2k_available(cp2k_cmd: str) -> str:
@@ -298,12 +304,11 @@ def _run_cp2k(
     fn_input: str,
     fn_output: str,
     cwd: Path,
-    env: dict[str, str] | None = None,
 ) -> None:
     command = [cp2k_cmd, "-i", fn_input, "-o", fn_output]
     if os.environ.get("SLURM_JOB_ID") and shutil.which("srun") is not None:
         command = ["srun", *command]
-    subprocess.run(command, cwd=str(cwd), env=env, check=True)
+    subprocess.run(command, cwd=str(cwd), check=True)
 
 
 def _remove_cp2k_restart_files(run_dir: Path) -> None:
@@ -319,15 +324,15 @@ def run_reference_job(
     cp2k_cmd: str,
 ) -> None:
     """Run one staged snapshot or isolated-atom CP2K job."""
-    env = os.environ.copy()
-    env["CP2K_CMD"] = cp2k_cmd
+    if kind == "snapshot" and cp2k_supports_gfn_type(cp2k_cmd) is False:
+        strip_cp2k_gfn_type(run_dir / "md.inp")
+
     for fn_input, fn_output in REFERENCE_JOBS[kind]["steps"]:
         _run_cp2k(
             cp2k_cmd=cp2k_cmd,
             fn_input=fn_input,
             fn_output=fn_output,
             cwd=run_dir,
-            env=env,
         )
     _remove_cp2k_restart_files(run_dir)
     if kind == "snapshot":
@@ -550,23 +555,24 @@ def collect_system_outputs(
     )
 
     if config.single_atoms:
-        single_atom_dirs = sorted(
-            path
-            for path in (system_dir / "single-atoms").iterdir()
-            if path.is_dir()
-        )
+        single_atom_root = system_dir / "single-atoms"
+        single_atom_dirs = sorted(path for path in single_atom_root.iterdir() if path.is_dir())
         energies = collect_single_atom_energies(single_atom_dirs)
-        save_yaml(energies, system_dir / "single-atoms" / "energies.yaml")
+        save_yaml(energies, system_dir / "single-atoms.yaml")
         logger.done(
             "Single-atom energies",
             detail=", ".join(
-                f"{name}={value:.6f} eV" for name, value in energies.items()
+                f"Z={atomic_number}={value:.6f} eV"
+                for atomic_number, value in energies.items()
             ),
             level=2,
         )
 
     if config.cleanup_snapshots:
         cleanup_collected_snapshot_dirs(collected_snapshot_dirs, logger)
+        single_atom_root = system_dir / "single-atoms"
+        if single_atom_root.exists():
+            shutil.rmtree(single_atom_root)
 
 
 def _enabled_job_kinds(include_single_atoms: bool) -> tuple[ReferenceJobKind, ...]:

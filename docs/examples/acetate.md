@@ -60,7 +60,7 @@ as `01-build-colvars/`, `02-reference-run-local/`, `03-sample-local/`, or
   `inputs/common/`
 - Colvars and PLUMED restraint files:
   `inputs/biases/`
-- optional CP2K input overrides for the Slurm reference run:
+- optional CP2K input overrides for customized reference runs:
   `inputs/reference-inputs/`
 - ab initio reference trajectories imported for QoI analysis:
   `inputs/reference-trajectories/`
@@ -72,7 +72,8 @@ as `01-build-colvars/`, `02-reference-run-local/`, `03-sample-local/`, or
 - The build stage writes prepared FFMD assets under `01-build-*/ffmd/` and
   staged CP2K assets under `01-build-*/reference/`.
 - `reference-run-*.yaml` produces canonical `train.extxyz` and `valid.extxyz`
-  datasets from staged CP2K jobs.
+  datasets from staged CP2K jobs. By default the snapshot relaxations use the
+  staged GFN1-xTB `md.inp` from the build stage.
 - `reference-import.yaml` separately copies the AIMD trajectories into the
   canonical `system.top`, `system.gro`, and `trajectory.*` layout consumed by
   `bff analyze`.

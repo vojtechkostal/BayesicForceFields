@@ -33,7 +33,7 @@ systems:
   - assets: ../01-build-colvars/reference/system-000
 ```
 
-Per-system CP2K input overrides are optional:
+The staged snapshot `md.inp` uses GFN1-xTB by default. Per-system CP2K input overrides are optional:
 
 ```yaml
 systems:
@@ -76,12 +76,15 @@ Import mode requires all three files for each system:
   Whether to also run isolated single-atom reference jobs. Defaults to `true`.
 - `snapshot_md_steps`
   Optional override for the staged short GFN1-xTB MD length.
+  When CP2K older than 2025 is detected, BFF removes the `GFN_TYPE` keyword
+  from that staged xTB input for compatibility.
 - `train_fraction`
   Fraction of collected snapshot frames written into `train.extxyz`.
 - `seed`
   Deterministic shuffle seed used before the train/validation split.
 - `cleanup_snapshots`
-  Remove collected snapshot run directories after successful collection.
+  Remove collected snapshot run directories and the staged `single-atoms/`
+  run tree after successful collection.
 - `collection_wait_seconds`
   Grace period for delayed `sp.extxyz` files on shared filesystems.
 - `slurm`
@@ -112,7 +115,7 @@ In `run` mode, `bff reference` writes or refreshes:
 - `snapshots/snapshot-XXXX/`
 - `train.extxyz`
 - `valid.extxyz`
-- optional `single-atoms/energies.yaml`
+- optional `single-atoms.yaml` with atomic-number keys
 
 In `import` mode, it writes one canonical directory per system containing:
 

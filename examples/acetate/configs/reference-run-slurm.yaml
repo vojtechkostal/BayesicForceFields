@@ -3,7 +3,7 @@ reference_dir: ../02-reference-run-slurm
 job_scheduler: slurm
 cp2k_cmd: cp2k.psmp
 single_atoms: true
-snapshot_md_steps: 100
+snapshot_md_steps: 10
 train_fraction: 0.8
 seed: 2026
 cleanup_snapshots: true
@@ -11,11 +11,8 @@ collection_wait_seconds: 60
 
 systems:
   - assets: ../01-build-colvars/reference/system-000
-    md: ../inputs/reference-inputs/md-0.inp
   - assets: ../01-build-colvars/reference/system-001
-    md: ../inputs/reference-inputs/md-1.inp
   - assets: ../01-build-colvars/reference/system-002
-    md: ../inputs/reference-inputs/md-2.inp
 
 slurm:
   max_parallel_jobs: 100

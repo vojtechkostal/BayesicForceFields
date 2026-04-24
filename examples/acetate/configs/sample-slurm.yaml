@@ -2,7 +2,11 @@ mol_resname: ACE
 campaign_dir: ../03-sample-slurm
 systems:
   - assets: ../01-build-colvars/ffmd/system-000
-    n_steps: 55000
+    n_steps: 10000
+  - assets: ../01-build-colvars/ffmd/system-001
+    n_steps: 10000
+  - assets: ../01-build-colvars/ffmd/system-002
+    n_steps: 10000
 bounds:
   charge C2: [0.0, 1.0]
   charge O1 O2: [-0.8, -0.3]
@@ -12,22 +16,26 @@ implicit_atoms: [C2]
 total_charge: -0.80
 n_samples: 10
 compress: false
-cleanup: true
+cleanup: false
 store: ["xtc"]
-gmx_cmd: gmx
+gmx_cmd: gmx_mpi
 job_scheduler: slurm
 slurm:
   max_parallel_jobs: 1500
   sbatch:
     job_name: ace-sample
+    constraint: gen-a  
     nodes: 1
     ntasks_per_node: 1
     cpus_per_task: 1
     mem: 1G
     time: 00:40:00
-    partition: a36_96
   setup:
     - '# Optional: add your site-specific GROMACS setup command here'
+    - source /uochb/soft/a/spack/2024.1-gcc11.4-0.21.1/share/spack/setup-env.sh
+    - spack load gromacs@2024.3
+    - export SLURM_MPI_TYPE=pmix_v3
+    - export LD_LIBRARY_PATH=/uochb/soft/core/pmix/pmix-3.2.3/lib/:$LD_LIBRARY_PATH
     - export SUBMIT_DIR="${SLURM_SUBMIT_DIR:-$PWD}"
     - export WORKDIR="${SLURM_TMPDIR:-${TMPDIR:-}}"
     - export WORKDIR="${WORKDIR:-$SUBMIT_DIR/work-${SLURM_JOB_ID:-local}}"

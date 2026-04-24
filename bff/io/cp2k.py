@@ -1,5 +1,7 @@
+from functools import lru_cache
 from pathlib import Path
 import re
+import subprocess
 from typing import Any, Sequence
 
 import numpy as np
@@ -59,6 +61,75 @@ CP2K_SINGLE_ATOM_MULTIPLICITIES = {
     'br': 2,
     'i': 2,
 }
+
+ATOMIC_NUMBERS = {
+    'h': 1,
+    'li': 3,
+    'c': 6,
+    'n': 7,
+    'o': 8,
+    'f': 9,
+    'na': 11,
+    'mg': 12,
+    'p': 15,
+    's': 16,
+    'cl': 17,
+    'k': 19,
+    'ca': 20,
+    'br': 35,
+    'rb': 37,
+    'i': 53,
+}
+
+CP2K_VERSION_RE = re.compile(
+    r"\b(?:CP2K(?:\s+version)?|version)\s+(\d{4}|\d+)(?:[._](\d+))?",
+    re.IGNORECASE,
+)
+CP2K_FALLBACK_VERSION_RE = re.compile(r"\b(\d{4}|\d+)\.(\d+)\b")
+
+
+@lru_cache(maxsize=None)
+def detect_cp2k_version(cp2k_cmd: str) -> tuple[int, int] | None:
+    """Detect the CP2K major/minor version from the executable output."""
+    for flag in ("--version", "-v"):
+        try:
+            result = subprocess.run(
+                [cp2k_cmd, flag],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        except FileNotFoundError:
+            raise
+
+        text = "\n".join(part for part in (result.stdout, result.stderr) if part)
+        match = CP2K_VERSION_RE.search(text) or CP2K_FALLBACK_VERSION_RE.search(text)
+        if match is not None:
+            return int(match.group(1)), int(match.group(2) or 0)
+    return None
+
+
+def cp2k_supports_gfn_type(cp2k_cmd: str) -> bool | None:
+    """Return whether the selected CP2K build supports the XTB GFN_TYPE keyword."""
+    version = detect_cp2k_version(cp2k_cmd)
+    if version is None:
+        return None
+    return version[0] >= 2025
+
+
+def strip_cp2k_gfn_type(fn_input: str | Path) -> bool:
+    """Remove the XTB GFN_TYPE line from one CP2K input file if present."""
+    fn_input = Path(fn_input)
+    text = fn_input.read_text(encoding='utf-8')
+    updated, n_removed = re.subn(
+        r"(?im)^[ \t]*GFN_TYPE\b.*(?:\n|$)",
+        "",
+        text,
+    )
+    if n_removed == 0:
+        return False
+    fn_input.write_text(updated, encoding='utf-8')
+    return True
 
 
 def format_cp2k_input(data: dict[str, Any], indent: int = 0) -> list[str]:
@@ -554,9 +625,9 @@ def write_cp2k_snapshot_extxyz(
     return fn_extxyz
 
 
-def collect_single_atom_energies(single_atom_dirs: Sequence[str | Path]) -> dict[str, float]:
+def collect_single_atom_energies(single_atom_dirs: Sequence[str | Path]) -> dict[int, float]:
     """Collect isolated-atom CP2K energies from staged single-atom jobs."""
-    energies: dict[str, float] = {}
+    energies: dict[int, float] = {}
     for atom_dir in sorted(Path(path) for path in single_atom_dirs):
         fn_output = atom_dir / 'atom.out'
         if not fn_output.exists():
@@ -564,8 +635,12 @@ def collect_single_atom_energies(single_atom_dirs: Sequence[str | Path]) -> dict
         lines = (atom_dir / 'pos.xyz').read_text(encoding='utf-8').splitlines()
         if len(lines) < 3:
             raise ValueError(f'Invalid isolated-atom XYZ file: {atom_dir / "pos.xyz"}')
-        symbol = lines[2].split()[0]
-        energies[symbol] = read_cp2k_energy(
+        symbol = lines[2].split()[0].lower()
+        if symbol not in ATOMIC_NUMBERS:
+            raise ValueError(
+                f'Unsupported isolated-atom element in {atom_dir / "pos.xyz"}: {symbol}'
+            )
+        energies[ATOMIC_NUMBERS[symbol]] = read_cp2k_energy(
             fn_output,
             context='isolated-atom energy',
         )

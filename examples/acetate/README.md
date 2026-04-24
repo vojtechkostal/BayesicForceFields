@@ -18,7 +18,7 @@ bff learn configs/learn.yaml
 bff validate configs/validate.yaml
 ```
 
-The default walkthrough uses the Colvars build plus local execution. Variant
+The default walkthrough uses the Colvars build plus local execution, and `bff reference` uses the staged GFN1-xTB snapshot MD input by default. Variant
 configs for PLUMED and Slurm are also included.
 
 ## Layout
@@ -68,8 +68,8 @@ examples/acetate/
   runs staged CP2K snapshot and single-atom jobs locally into
   [02-reference-run-local/](02-reference-run-local/).
 - [configs/reference-run-slurm.yaml](configs/reference-run-slurm.yaml)
-  is the Slurm-backed CP2K variant and can override staged MD inputs from
-  `inputs/reference-inputs/`.
+  is the Slurm-backed CP2K variant and uses the same staged GFN1-xTB snapshot
+  MD input by default.
 - [configs/reference-import.yaml](configs/reference-import.yaml)
   canonicalizes external AIMD trajectories into `02-reference-import/` for the
   analysis stage.
@@ -96,7 +96,8 @@ examples/acetate/
   contains the Colvars and PLUMED restraint files used by the two build
   variants.
 - [inputs/reference-inputs/](inputs/reference-inputs/)
-  contains optional CP2K input overrides for the Slurm reference run.
+  contains optional CP2K input overrides for customized reference runs; the
+  default acetate configs use the staged GFN1-xTB snapshot MD input instead.
 - [inputs/reference-trajectories/](inputs/reference-trajectories/)
   contains the external AIMD trajectories imported by `reference-import.yaml`.
 - [inputs/restraint.py](inputs/restraint.py)
@@ -108,7 +109,8 @@ examples/acetate/
 - The build stage writes prepared FFMD assets under `01-build-*/ffmd/` and
   staged CP2K inputs under `01-build-*/reference/`.
 - `reference-run-*.yaml` produces canonical `train.extxyz` and `valid.extxyz`
-  labels from staged CP2K jobs, while `reference-import.yaml` copies the AIMD
-  trajectories consumed by `bff analyze`.
+  labels from staged CP2K jobs. By default those snapshot relaxations use the
+  GFN1-xTB `md.inp` staged by `bff build`, while `reference-import.yaml` copies
+  the AIMD trajectories consumed by `bff analyze`.
 - Numbered stage directories are runtime outputs and are ignored by git.
 - Interactive notebooks live in [notebooks/](notebooks/).

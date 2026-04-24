@@ -18,6 +18,23 @@ from .config import MDJobConfig
 PathLike = Union[str, Path]
 
 
+def check_gmx_available(gmx_cmd: str = "gmx") -> None:
+    """Check if the configured GROMACS command can be executed."""
+    try:
+        subprocess.run(
+            build_command(gmx_cmd, '--version'),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+        raise RuntimeError(
+            f"GROMACS command {gmx_cmd!r} is not available.\n"
+            "Make sure the executable is on PATH in the job environment, "
+            "or set 'gmx_cmd' to the correct command."
+        ) from exc
+
+
 def _sample_output_paths(
     run_dir: Path,
     sample_id: str,
@@ -120,6 +137,7 @@ def main(fn_config: PathLike) -> None:
     implicit = True
     gmx_cmd = config.gmx_cmd
     run = config.run
+    check_gmx_available(gmx_cmd)
     if any(
         system.bias.kind == "plumed"
         for system in config.systems

@@ -129,6 +129,10 @@ def run_workflow(
     try:
         return workflow_main(fn_config)
     except FileNotFoundError as exc:
+        missing = getattr(exc, 'filename', None)
+        if missing is not None and Path(missing).resolve() != fn_config.resolve():
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=1) from exc
         raise typer.BadParameter(str(exc), param_hint="fn_config") from exc
     except ValueError as exc:
         raise typer.BadParameter(str(exc), param_hint=workflow_name) from exc
