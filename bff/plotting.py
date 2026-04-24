@@ -98,6 +98,11 @@ def plot_marginals(
     posterior = specs.with_implicit_charge(results.prepared_samples)
     param_names = specs.bounds.names.tolist()
     tick_labels = _parameter_labels(param_names, parameter_labels)
+    if parameter_labels is None:
+        tick_labels = [
+            label if label.startswith("$") else label.split(maxsplit=1)[-1]
+            for label in tick_labels
+        ]
 
     param_groups: dict[str, list[int]] = {}
     for idx, name in enumerate(param_names):

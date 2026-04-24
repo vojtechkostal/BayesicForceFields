@@ -73,31 +73,29 @@ def _prune_auxiliary_outputs(run_dir: Path, store: tuple[str, ...]) -> None:
 
 
 def check_success(
-    fn_trj: str,
-    fn_mdp: str,
-    n_target: int,
-    gmx_cmd: str = "gmx",
+    fn_trj: str | Path,
+    fn_mdp: str | Path,
+    n_steps: int,
 ) -> bool:
-    """Check if the trajectory has reached the target number of frames."""
-    output = subprocess.run(
-        build_command(gmx_cmd, 'check', '-f', fn_trj),
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    """Check if the trajectory reached the expected number of saved frames."""
+    fn_trj = Path(fn_trj)
+    if not fn_trj.exists():
+        return False
 
-    n = None
-    for line in output.stderr.splitlines():
-        if line.startswith("Step"):
-            n = int(line.split()[1])
-            break
-    if n is None:
-        raise RuntimeError(f"Could not determine trajectory length from {fn_trj}.")
+    _, stride = get_n_frames_target(fn_mdp)
+    if stride in (None, 0):
+        return False
 
-    n_target_mdp, stride = get_n_frames_target(fn_mdp)
-    n_target = n_target_mdp if n_target == -2 else (n_target // stride)
+    expected_frames = max(1, n_steps // stride + 1)
+    try:
+        from MDAnalysis.coordinates.XTC import XTCReader
 
-    return n >= n_target
+        with XTCReader(str(fn_trj)) as reader:
+            n_frames = reader.n_frames
+    except Exception:
+        return False
+
+    return n_frames >= expected_frames
 
 
 def modify_topology(
@@ -148,7 +146,7 @@ def main(fn_config: PathLike) -> None:
     job_scheduler = config.job_scheduler
     run_dir = campaign_dir if job_scheduler == "local" else Path("./").resolve()
 
-    fn_log = campaign_dir / "gmx.log"
+    fn_log = campaign_dir / f"gmx-{sample_id}.log"
     success = []
     outputs: list[dict[str, str | None]] = []
     with open(fn_log, 'a+') as log:
@@ -277,7 +275,7 @@ def main(fn_config: PathLike) -> None:
 
                 # Check if the simulation finished aka has the expected number of frames
                 success.append(
-                    check_success(f'{deffnm}.xtc', fn_prod_mdp, steps, gmx_cmd)
+                    check_success(f'{deffnm}.xtc', fn_prod_mdp, steps)
                 )
                 generated_files = _sample_output_paths(run_dir, sample_id, i)
                 if job_scheduler == "local":

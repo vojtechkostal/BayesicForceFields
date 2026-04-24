@@ -43,6 +43,32 @@ def build_problem(
     return learning_problem_type.from_models(models, constraint=constraint)
 
 
+def _write_default_plots(results, config: LearnConfig, logger: Logger) -> None:
+    try:
+        from ...plotting import plot_corner, plot_marginals
+    except ModuleNotFoundError as exc:
+        logger.warn(
+            f"Skipping default posterior plots because {exc.name!r} is not installed.",
+            level=1,
+        )
+        return
+
+    fn_posterior = Path(config.mcmc.posterior).resolve()
+    fn_marginals = fn_posterior.with_name('marginals.pdf')
+    fn_corner = fn_posterior.with_name('corner.pdf')
+
+    try:
+        results.prepare_samples()
+        plot_marginals(results, config.specs, fn_out=fn_marginals)
+        plot_corner(results, fn_out=fn_corner)
+    except Exception as exc:
+        logger.warn(f"Skipping default posterior plots: {exc}", level=1)
+        return
+
+    logger.kv('Marginals plot', fn_marginals.resolve(), level=1)
+    logger.kv('Corner plot', fn_corner.resolve(), level=1)
+
+
 def main(fn_config: PathLike):
     config = LearnConfig.load(fn_config)
     logger = Logger('learn', str(config.log), mode='w')
@@ -63,7 +89,7 @@ def main(fn_config: PathLike):
         specs=config.specs,
         model_paths=config.models,
     )
-    return problem.learn(
+    results = problem.learn(
         priors_disttype=config.mcmc.priors_disttype,
         total_steps=config.mcmc.total_steps,
         warmup=config.mcmc.warmup,
@@ -80,3 +106,5 @@ def main(fn_config: PathLike):
         ess_min=config.mcmc.ess_min,
         include_implicit_charge=config.mcmc.include_implicit_charge,
     )
+    _write_default_plots(results, config, logger)
+    return results
