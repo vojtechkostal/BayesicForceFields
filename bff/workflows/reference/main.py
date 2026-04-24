@@ -226,6 +226,7 @@ def stage_system(
     shutil.copy2(system.fn_system_top, system_dir / "system.top")
     shutil.copy2(system.fn_system_gro, system_dir / "system.gro")
     shutil.copy2(system.fn_system_xyz, system_dir / "system.xyz")
+    shutil.copy2(system.fn_system_xyz, system_dir / "system.extxyz")
 
     snapshot_files = sorted(system.snapshot_xyz_dir.glob("snapshot-*.xyz"))
     if not snapshot_files:
