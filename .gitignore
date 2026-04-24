@@ -7,9 +7,9 @@ __pycache__/
 .ruff_cache/
 *.swp
 *.egg-info/
-build/
-dist/
-site/
+/build/
+/dist/
+/site/
 
 # Common runtime artifacts
 *.log
