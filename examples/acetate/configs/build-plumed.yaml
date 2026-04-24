@@ -1,0 +1,51 @@
+project:
+  directory: ../01-build-plumed
+
+gromacs:
+  command: gmx
+
+defaults:
+  nsteps:
+    npt: 0
+    prod: 100000
+
+reference:
+  n_single_point_snapshots: 1000
+
+systems:
+  - topology: ../inputs/common/topol.top
+    templates:
+      ACE: ../inputs/common/ace.gro
+    mdp:
+      em: ../inputs/common/mdp/em.mdp
+      npt: ../inputs/common/mdp/npt.mdp
+      prod: ../inputs/common/mdp/nvt.mdp
+    charge: -1
+    multiplicity: 1
+    box: [15.7107, 15.7107, 15.7107, 90, 90, 90]
+
+  - topology: ../inputs/common/topol-ions.top
+    templates:
+      ACE: ../inputs/common/ace.gro
+    mdp:
+      em: ../inputs/common/mdp/em.mdp
+      npt: ../inputs/common/mdp/npt.mdp
+      prod: ../inputs/common/mdp/nvt.mdp
+    charge: 1
+    multiplicity: 1
+    box: [15.7480, 15.7480, 15.7480, 90, 90, 90]
+    bias:
+      plumed_file: ../inputs/biases/plumed-001.dat
+
+  - topology: ../inputs/common/topol-ions.top
+    templates:
+      ACE: ../inputs/common/ace.gro
+    mdp:
+      em: ../inputs/common/mdp/em.mdp
+      npt: ../inputs/common/mdp/npt.mdp
+      prod: ../inputs/common/mdp/nvt.mdp
+    charge: 1
+    multiplicity: 1
+    box: [15.7480, 15.7480, 15.7480, 90, 90, 90]
+    bias:
+      plumed_file: ../inputs/biases/plumed-002.dat

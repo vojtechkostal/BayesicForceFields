@@ -18,7 +18,7 @@ mamba activate bfflearn
 
 That shared environment installs the package in editable mode together with the
 developer, notebook, and docs extras. Install PyTorch separately afterward if
-you want to run `bff train`, `bff learn`, or the posterior notebooks.
+you want to run `bff fit`, `bff learn`, or the posterior notebooks.
 
 ## Local Quality Checks
 

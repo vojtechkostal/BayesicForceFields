@@ -8,17 +8,17 @@
 
 Bayesic Force Fields (BFF) is a workflow-oriented Python package for learning
 fixed-charge molecular force-field parameters from molecular dynamics
-observables. It combines system preparation, sampled MD campaigns, QoI
-analysis, surrogate training and posterior inference in one
+observables. It combines system building, reference-data handling, sampled MD
+campaigns, QoI analysis, surrogate fitting, and posterior learning in one
 toolchain.
 
 The public CLI is centered around seven workflows:
 
-- `bff prepare`
+- `bff build`
 - `bff reference`
-- `bff trainset`
-- `bff qoi`
-- `bff train`
+- `bff sample`
+- `bff analyze`
+- `bff fit`
 - `bff learn`
 - `bff validate`
 
@@ -60,7 +60,7 @@ mamba create -n bfflearn python=3.10 pip
 mamba activate bfflearn
 ```
 
-Install a matching PyTorch build for your machine before training or learning.
+Install a matching PyTorch build for your machine before fitting or learning.
 The recommended way is to use the selector on the official PyTorch install
 page:
 https://pytorch.org/get-started/locally/
@@ -93,10 +93,10 @@ Use `v0.0.1` for exact reproduction of the published paper data. The current
 
 External tools are still required for full workflows:
 
-- [Gromacs](https://www.gromacs.org) for `prepare`, `trainset`, and `validate`
-- [CP2K](https://www.cp2k.org) for `reference` and other staged reference calculations
+- [Gromacs](https://www.gromacs.org) for `build`, `sample`, and `validate`
+- [CP2K](https://www.cp2k.org) for `reference` and staged ab initio inputs
 - [PLUMED](https://www.plumed.org) only for PLUMED-biased systems
-- [PyTorch](https://pytorch.org) installed separately for `train`, `learn`, and posterior notebooks
+- [PyTorch](https://pytorch.org) installed separately for `fit`, `learn`, and posterior notebooks
 
 PyTorch is not installed by default because the appropriate CPU or CUDA build
 depends on the target machine. Install the matching PyTorch build first, then
@@ -117,42 +117,33 @@ pip install -e ".[dev,docs,notebook]"
 
 ## Quick Start
 
-The acetate example in [examples/acetate/](examples/acetate/) shows the
-intended stage order:
+The acetate example in [examples/acetate/](examples/acetate/) keeps runnable
+YAML files under `configs/` and writes generated results into numbered stage
+directories:
 
 ```bash
-cd examples/acetate/01-prepare/colvars
-bff prepare config.yaml
-
-cd ../../02-reference-data
-bff reference config-local.yaml
-
-cd ../02-training-data
-bff trainset config-local.yaml
-
-cd ../03-qoi
-bff qoi config.yaml
-
-cd ../04-train-lgp
-bff train config.yaml
-
-cd ../05-learning
-bff learn config.yaml
+cd examples/acetate
+bff build configs/build-colvars.yaml
+bff reference configs/reference-run-local.yaml
+bff reference configs/reference-import.yaml
+bff sample configs/sample-local.yaml
+bff analyze configs/analyze.yaml
+bff fit configs/fit.yaml
+bff learn configs/learn.yaml
 ```
 
-Validation is configured separately in `07-validate`:
+Validation is configured separately:
 
 ```bash
-cd ../07-validate
-bff validate config.yaml
+bff validate configs/validate.yaml
 ```
 
 Two notebooks are included in the example:
 
-- [05-learning/interactive.ipynb](examples/acetate/05-learning/interactive.ipynb)
-  shows interactive surrogate training, posterior sampling, and posterior
+- [notebooks/interactive.ipynb](examples/acetate/notebooks/interactive.ipynb)
+  shows interactive surrogate fitting, posterior sampling, and posterior
   sample export.
-- [06-visualize/visualize.ipynb](examples/acetate/06-visualize/visualize.ipynb)
+- [notebooks/visualize.ipynb](examples/acetate/notebooks/visualize.ipynb)
   focuses on plotting and inspection only.
 
 If you installed BFF from PyPI and want the example tree locally, run:

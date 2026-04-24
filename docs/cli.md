@@ -1,23 +1,21 @@
 # Command-Line Interface
 
-The CLI entry point is implemented in
-`bff/cli.py`.
+The CLI entry point is implemented in `bff/cli.py`.
 
 ## Public Commands
 
-- `bff prepare CONFIG.yaml`
-  Stage equilibrated systems, reference inputs, and training assets.
+- `bff build CONFIG.yaml`
+  Build reusable FFMD and reference starting assets.
 - `bff reference CONFIG.yaml`
-  Run staged CP2K reference calculations from prepared assets locally or
-  through Slurm.
-- `bff trainset CONFIG.yaml`
-  Run a sampled GROMACS campaign from prepared assets.
-- `bff qoi CONFIG.yaml`
-  Compute quantities of interest from trainset and reference trajectories.
-- `bff train CONFIG.yaml`
+  Run or import canonical reference datasets.
+- `bff sample CONFIG.yaml`
+  Sample force-field parameters and run FFMD campaigns.
+- `bff analyze CONFIG.yaml`
+  Analyze sampled and reference trajectories into matched QoI datasets.
+- `bff fit CONFIG.yaml`
   Fit surrogate models from analyzed QoI datasets.
 - `bff learn CONFIG.yaml`
-  Run posterior inference from selected trained surrogate models.
+  Run Bayesian posterior learning over force-field parameters.
 - `bff validate CONFIG.yaml`
   Rerun selected parameter samples for validation.
 - `bff examples`
@@ -25,19 +23,21 @@ The CLI entry point is implemented in
 - `bff version`
   Print the installed package version.
 
-`bff md` exists as an internal low-level command used by scheduled campaign
-jobs and is intentionally hidden from normal workflow navigation.
+Hidden internal commands also exist for scheduled jobs:
+
+- `bff md CONFIG.yaml`
+- `bff reference-job CONFIG.yaml`
 
 ## Config Philosophy
 
 Each top-level workflow uses one focused config file:
 
-- prepare config: how to stage systems and reusable assets
-- reference config: how to execute staged CP2K reference assets
-- trainset config: how to turn prepared assets into a sampled trainset
-- QoI config: how to compute observables from trajectories
-- train config: how to fit surrogates
-- learn config: which models to use for posterior inference
+- build config: how to stage reusable FFMD and reference assets
+- reference config: how to run or import canonical reference data
+- sample config: how to turn prepared assets into a sampled FFMD campaign
+- analyze config: how to compute observables from trajectories
+- fit config: how to train surrogates
+- learn config: which models and MCMC settings to use for posterior learning
 - validate config: how to rerun chosen parameter samples
 
 Detailed key-by-key documentation is in the configuration reference.
@@ -58,11 +58,11 @@ conda activate bfflearn
 
 After that, `bff <TAB>` should offer:
 
-- `prepare`
+- `build`
 - `reference`
-- `trainset`
-- `qoi`
-- `train`
+- `sample`
+- `analyze`
+- `fit`
 - `learn`
 - `validate`
 - `examples`

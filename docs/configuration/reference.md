@@ -2,30 +2,26 @@
 
 Source code:
 
-- [configs.py][reference-configs]
-- [reference.py][reference-workflow]
+- `bff/workflows/reference/config.py`
+- `bff/workflows/reference/main.py`
 
 ## Purpose
 
-`bff reference` executes the CP2K reference assets staged by `bff prepare`.
+`bff reference` either runs staged CP2K reference jobs or imports externally
+generated reference trajectories into BFF's canonical layout.
 
-It can:
+Supported modes:
 
-- stage one run directory per snapshot under a separate output tree such as
-  `02-reference-data/reference-assets/system-XXX/snapshots/snapshot-XXXX/`
-- run the short GFN1-xTB MD plus final single-point evaluation
-- collect `sp.extxyz` files into `train.extxyz` and `valid.extxyz`
-- optionally run isolated single-atom reference calculations
-- run either locally or through Slurm
+- `mode: run`
+  execute the staged CP2K snapshot and optional single-atom jobs
+- `mode: import`
+  copy externally generated `.top`, `.gro`, and trajectory files into canonical assets
 
-Staged short-MD inputs request only one CP2K restart backup. After each CP2K
-reference job finishes, BFF removes `*.wfn*` and `*.restart*` files from the
-run directory to avoid keeping large restart artifacts.
-
-## Minimal Example
+## Run Example
 
 ```yaml
-reference_dir: ./reference-assets
+mode: run
+reference_dir: ./02-reference-run-local
 job_scheduler: local
 cp2k_cmd: cp2k.psmp
 single_atoms: true
@@ -34,125 +30,93 @@ train_fraction: 0.8
 seed: 2026
 
 systems:
-  - assets: ../01-prepare/colvars/reference/system-000
-  - assets: ../01-prepare/colvars/reference/system-001
+  - assets: ../01-build-colvars/reference/system-000
 ```
 
 Per-system CP2K input overrides are optional:
 
 ```yaml
 systems:
-  - assets: ../01-prepare/colvars/reference/system-000
-    md: ./inputs/system-000-md.inp
-    sp: ./inputs/revpbe0-sp.inp
+  - assets: ../01-build-colvars/reference/system-000
+    md: ../inputs/reference-inputs/md-0.inp
+    sp: ../inputs/reference-inputs/revpbe0-sp.inp
 ```
 
-## Slurm Example
+## Import Example
 
 ```yaml
-reference_dir: ./reference-assets
-job_scheduler: slurm
-cp2k_cmd: cp2k.psmp
-single_atoms: true
-snapshot_md_steps: 100
+mode: import
+reference_dir: ./02-reference-import
 
 systems:
-  - assets: ../01-prepare/colvars/reference/system-000
-
-slurm:
-  max_parallel_jobs: 20
-  sbatch:
-    partition: cpu
-    time: "04:00:00"
-    mem: 10G
-  setup:
-    - module load cp2k
+  - topology: ../01-build-colvars/reference/system-000/system.top
+    coordinates: ../01-build-colvars/reference/system-000/system.gro
+    trajectory: ../inputs/reference-trajectories/pos-000.xtc
 ```
 
-In Slurm mode, `cp2k_cmd` is kept for config symmetry but not injected into the
-batch job. Make `cp2k.psmp` available through `slurm.setup`, your shell
-environment, or your site scheduler defaults.
+Import mode requires all three files for each system:
+
+- `topology`: a `.top` file
+- `coordinates`: a `.gro` file
+- `trajectory`: a trajectory file such as `.xtc`
 
 ## Top-Level Keys
 
+- `mode`
+  Either `run` or `import`.
 - `reference_dir`
-  Output directory written by `bff reference`. In the acetate example this is
-  `./reference-assets` inside `02-reference-data/`.
+  Output directory written by `bff reference`.
+- `systems`
+  Non-empty list of systems to run or import.
 - `job_scheduler`
-  Either `local` or `slurm`.
+  Required in `run` mode. Either `local` or `slurm`.
 - `cp2k_cmd`
-  CP2K executable used for local execution. This should be a single executable
-  name or path such as `cp2k.psmp`.
+  Required in `run` mode. CP2K executable used for local execution.
 - `single_atoms`
-  Whether to also run the isolated single-atom reference jobs. Defaults to
-  `true`.
+  Whether to also run isolated single-atom reference jobs. Defaults to `true`.
 - `snapshot_md_steps`
-  Optional override for the number of short GFN1-xTB MD steps run for each
-  snapshot. If omitted, `bff reference` uses the staged `snapshots/md.inp`
-  from `bff prepare` unchanged.
+  Optional override for the staged short GFN1-xTB MD length.
 - `train_fraction`
-  Fraction of collected snapshot frames written into `train.extxyz`. The rest
-  goes to `valid.extxyz`.
+  Fraction of collected snapshot frames written into `train.extxyz`.
 - `seed`
   Deterministic shuffle seed used before the train/validation split.
-- `systems`
-  Non-empty list of prepared reference-asset directories.
+- `cleanup_snapshots`
+  Remove collected snapshot run directories after successful collection.
+- `collection_wait_seconds`
+  Grace period for delayed `sp.extxyz` files on shared filesystems.
 - `slurm`
   Required when `job_scheduler: slurm`.
 
-## `systems[]` Keys
+## `systems[]` Keys In `run` Mode
 
 - `assets`
-  Path to one prepared reference system directory such as
-  `../01-prepare/colvars/reference/system-000/`.
+  Path to one staged reference system directory under `build/reference/system-XXX/`.
 - `md`
-  Optional CP2K MD input for this system's short snapshot relaxations. If
-  omitted, `bff reference` uses `assets/snapshots/md.inp`.
+  Optional CP2K MD input override for this system.
 - `sp`
-  Optional CP2K single-point input for this system's final energy/force
-  calculation. If omitted, `bff reference` uses `assets/snapshots/sp.inp`.
+  Optional CP2K single-point input override for this system.
 
-Each referenced system must already contain:
+## `systems[]` Keys In `import` Mode
 
-- `system.top`
-- `system.gro`
-- `system.xyz`
-- `snapshots/md.inp`, unless `systems[].md` is provided
-- `snapshots/sp.inp`, unless `systems[].sp` is provided
-- `snapshots/xyz/snapshot-*.xyz`
-- `single-atoms/*/input.inp`
-- `single-atoms/*/pos.xyz`
-
-Those are written by `bff prepare`.
-
-## `slurm` Keys
-
-The `slurm` block intentionally matches the simulation workflow shape:
-
-- `slurm.max_parallel_jobs`
-  Maximum number of simultaneously active jobs. Use `-1` for no client-side
-  throttling.
-- `slurm.sbatch`
-  Mapping of `sbatch` options such as `partition`, `time`, `mem`,
-  `ntasks_per_node`, or `cpus_per_task`.
-- `slurm.setup`
-  Optional shell commands inserted before each batch job.
-- `slurm.teardown`
-  Optional shell commands inserted after each batch job.
+- `topology`
+  Topology file for the imported system. Must be `.top`.
+- `coordinates`
+  Coordinate file for the imported system. Must be `.gro`.
+- `trajectory`
+  Trajectory file copied into the canonical `trajectory.*` asset name.
 
 ## Outputs
 
-For each configured reference system, `bff reference` writes or refreshes:
+In `run` mode, `bff reference` writes or refreshes:
 
 - `snapshots/snapshot-XXXX/`
-  Per-snapshot run directories with staged `md.inp`, `sp.inp`, `pos.xyz`, and
-  the resulting `sp.extxyz`.
 - `train.extxyz`
 - `valid.extxyz`
+- optional `single-atoms/energies.yaml`
 
-If `single_atoms: true`, it also writes:
+In `import` mode, it writes one canonical directory per system containing:
 
-- `single-atoms/energies.yaml`
-
-[reference-configs]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/bff/workflows/configs.py
-[reference-workflow]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/bff/workflows/reference.py
+- `system.top`
+- `system.gro`
+- `trajectory.*`
+- `imported.yaml`

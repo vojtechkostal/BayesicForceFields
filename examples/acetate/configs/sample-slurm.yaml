@@ -1,0 +1,38 @@
+mol_resname: ACE
+campaign_dir: ../03-sample-slurm
+systems:
+  - assets: ../01-build-colvars/ffmd/system-000
+    n_steps: 55000
+bounds:
+  charge C2: [0.0, 1.0]
+  charge O1 O2: [-0.8, -0.3]
+  charge C1: [-1.0, 0.3]
+  charge H1 H2 H3: [-0.3, 0.3]
+implicit_atoms: [C2]
+total_charge: -0.80
+n_samples: 10
+compress: false
+cleanup: true
+store: ["xtc"]
+gmx_cmd: gmx
+job_scheduler: slurm
+slurm:
+  max_parallel_jobs: 1500
+  sbatch:
+    job_name: ace-sample
+    nodes: 1
+    ntasks_per_node: 1
+    cpus_per_task: 1
+    mem: 1G
+    time: 00:40:00
+    partition: a36_96
+  setup:
+    - '# Optional: add your site-specific GROMACS setup command here'
+    - export SUBMIT_DIR="${SLURM_SUBMIT_DIR:-$PWD}"
+    - export WORKDIR="${SLURM_TMPDIR:-${TMPDIR:-}}"
+    - export WORKDIR="${WORKDIR:-$SUBMIT_DIR/work-${SLURM_JOB_ID:-local}}"
+    - mkdir -p "$WORKDIR"
+    - cd "$WORKDIR"
+  teardown:
+    - cd "$SUBMIT_DIR"
+    - rm -rf "$WORKDIR"

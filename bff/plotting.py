@@ -8,7 +8,7 @@ from matplotlib.colors import ListedColormap
 from matplotlib.ticker import MaxNLocator
 from scipy.stats import gaussian_kde
 
-from .bayes.results import InferenceResults
+from .bayes.results import PosteriorResults
 from .domain.specs import Specs
 
 PathLike = Union[str, Path]
@@ -28,9 +28,9 @@ def _coerce_specs(specs: Specs | PathLike) -> Specs:
 
 
 def _coerce_samples(
-    samples: InferenceResults | ArrayLike,
+    samples: PosteriorResults | ArrayLike,
 ) -> np.ndarray:
-    if isinstance(samples, InferenceResults):
+    if isinstance(samples, PosteriorResults):
         return np.asarray(samples.prepared_samples, dtype=float)
     if isinstance(samples, torch.Tensor):
         return samples.detach().cpu().numpy()
@@ -86,7 +86,7 @@ def _axis_labels(kind: str) -> tuple[str, str]:
 
 
 def plot_marginals(
-    results: InferenceResults,
+    results: PosteriorResults,
     specs: Specs | PathLike,
     *,
     parameter_labels: Optional[Sequence[str] | Mapping[str, str]] = None,
@@ -242,7 +242,7 @@ def plot_marginals(
 
 
 def plot_corner(
-    samples: InferenceResults | ArrayLike,
+    samples: PosteriorResults | ArrayLike,
     labels: Optional[Sequence[str]] = None,
     *,
     quantiles: Sequence[float] = (0.16, 0.5, 0.84),
@@ -259,13 +259,13 @@ def plot_corner(
 
     n_dim = samples.shape[1]
     if labels is None:
-        if isinstance(sample_source, InferenceResults):
+        if isinstance(sample_source, PosteriorResults):
             labels = list(sample_source.labels)
         else:
             labels = [f"theta_{i}" for i in range(n_dim)]
     elif len(labels) != n_dim:
         raise ValueError("labels must match the posterior sample dimension.")
-    elif isinstance(sample_source, InferenceResults):
+    elif isinstance(sample_source, PosteriorResults):
         labels = _expand_short_labels(labels, sample_source.labels)
 
     labels = [_wrap_label(label) for label in labels]

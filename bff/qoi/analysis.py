@@ -7,7 +7,7 @@ from typing import Any, Iterable, Sequence
 
 import MDAnalysis as mda
 
-from ..domain.trainset import TrajectorySet
+from ..domain.sample import TrajectorySet
 from ..io.logs import Logger
 from ..io.progress import iter_progress
 from ..tools import _normalized_dimensions

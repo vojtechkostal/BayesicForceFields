@@ -2,30 +2,30 @@
 
 Source code:
 
-- `bff/workflows/configs.py`
-- `bff/workflows/learn.py`
+- `bff/workflows/learn/config.py`
+- `bff/workflows/learn/main.py`
 - `bff/bayes/learning.py`
 
 ## Purpose
 
-`bff learn` runs posterior inference from previously trained surrogate models.
-The reference observation vectors and effective observation counts are read
-from the surrogate files themselves, not from the original QoI datasets.
+`bff learn` runs posterior learning from previously trained surrogate models.
+The reference observation vectors and effective observation counts are read from
+the surrogate files themselves, not from the original QoI datasets.
 
 ## Minimal Example
 
 ```yaml
-log: out.log
-specs: ../02-training-data/trainset/specs.yaml
+log: ../06-learn/out.log
+specs: ../03-sample-local/specs.yaml
 models:
-  rdf: ../04-train-lgp/models/rdf.lgp
-  hb: ../04-train-lgp/models/hb.lgp
+  rdf: ../05-fit/models/rdf.lgp
+  hb: ../05-fit/models/hb.lgp
 mcmc:
   total_steps: 10000
   warmup: 2000
-  checkpoint: mcmc-checkpoint.pt
-  posterior: posterior.pt
-  priors: priors.pt
+  checkpoint: ../06-learn/mcmc-checkpoint.pt
+  posterior: ../06-learn/posterior.pt
+  priors: ../06-learn/priors.pt
   restart: false
   device: cuda
 ```
@@ -35,7 +35,7 @@ mcmc:
 - `log`
   Workflow log file.
 - `specs`
-  Force-field specification file from the trainset stage.
+  Force-field specification file from the sample stage.
 - `models`
   Non-empty mapping from QoI name to trained `.lgp` model file.
 - `mcmc`

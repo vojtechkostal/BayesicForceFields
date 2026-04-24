@@ -15,7 +15,7 @@ from .gaussian_process import LGPCommittee, LocalGaussianProcess
 from .likelihoods import gaussian_log_likelihood, loo_log_likelihood
 from .posterior import log_posterior
 from .priors import Prior, Priors
-from .results import InferenceResults
+from .results import PosteriorResults
 from .utils import (
     check_device,
     check_tensor,
@@ -30,8 +30,8 @@ ArrayLike = Union[np.ndarray, torch.Tensor]
 
 
 @dataclass(frozen=True, slots=True)
-class InferenceProblem:
-    """Complete Bayesian learning problem for force-field parameter inference."""
+class LearningProblem:
+    """Complete Bayesian learning problem for force-field parameters."""
 
     models: dict[str, LGPCommittee]
     constraint: Optional[Callable] = None
@@ -42,7 +42,7 @@ class InferenceProblem:
 
     def __post_init__(self) -> None:
         if not self.models:
-            raise ValueError("InferenceProblem requires at least one surrogate model.")
+            raise ValueError("LearningProblem requires at least one surrogate model.")
 
         empty_models = [qoi for qoi, model in self.models.items() if not model.lgps]
         if empty_models:
@@ -153,7 +153,7 @@ class InferenceProblem:
         models: Mapping[str, LGPCommittee],
         *,
         constraint: Optional[Callable] = None,
-    ) -> "InferenceProblem":
+    ) -> "LearningProblem":
         return cls(models=dict(models), constraint=constraint)
 
     def build_priors(self, dist_type: str = "normal") -> Priors:
@@ -169,8 +169,8 @@ class InferenceProblem:
         self,
         device: str,
         dtype: torch.dtype = torch.float32,
-    ) -> "InferenceProblem":
-        problem = InferenceProblem(
+    ) -> "LearningProblem":
+        problem = LearningProblem(
             models=self.models,
             constraint=self.constraint,
         )
@@ -184,7 +184,7 @@ class InferenceProblem:
         )
         return problem
 
-    def infer(
+    def learn(
         self,
         *,
         priors_disttype: str = "normal",
@@ -202,12 +202,12 @@ class InferenceProblem:
         rhat_tol: float = 1.01,
         ess_min: int = 100,
         include_implicit_charge: bool = False,
-    ) -> InferenceResults:
-        """Run posterior sampling for this inference problem."""
+    ) -> PosteriorResults:
+        """Run posterior sampling for this learning problem."""
         owns_logger = logger is None
         logger = logger or Logger("learn")
         if owns_logger:
-            logger.section("Posterior Inference")
+            logger.section("Posterior Learning")
             logger.blank()
 
         priors = self.build_priors(dist_type=priors_disttype)
@@ -267,7 +267,7 @@ class InferenceProblem:
 
         sampler.write_posterior(fn_posterior)
         specs = getattr(self.constraint, "specs", None)
-        return InferenceResults.load(
+        return PosteriorResults.load(
             posterior=fn_posterior,
             priors=priors,
             specs=specs,
@@ -315,7 +315,7 @@ def fit_lgp_committee(
 ) -> LGPCommittee:
     """Fit a committee of local Gaussian-process surrogates."""
     check_device(device)
-    logger = logger or Logger("train")
+    logger = logger or Logger("fit")
     opt_kwargs = dict(opt_kwargs or {})
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_fraction)
@@ -404,7 +404,7 @@ def _effective_observations(
     return max(1, int(round(dataset.n_observations * float(observation_scale))))
 
 
-def train_surrogates(
+def fit_surrogates(
     datasets: Sequence[QoIDataset],
     *,
     y_means: Optional[Mapping[str, ArrayLike | float | str]] = None,
@@ -418,15 +418,15 @@ def train_surrogates(
     logger: Optional[Logger] = None,
     **opt_kwargs,
 ) -> dict[str, LGPCommittee]:
-    """Train or load QoI surrogate models."""
+    """Fit or load QoI surrogate models."""
     owns_logger = logger is None
-    logger = logger or Logger("train")
+    logger = logger or Logger("fit")
     y_means = dict(y_means or {})
     observation_scales = dict(observation_scales or {})
     model_paths = dict(model_paths or {})
 
     if owns_logger:
-        logger.section("Surrogate Training")
+        logger.section("Surrogate Fitting")
         logger.blank()
 
     models: dict[str, LGPCommittee] = {}

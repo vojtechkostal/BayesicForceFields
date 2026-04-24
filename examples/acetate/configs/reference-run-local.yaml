@@ -1,0 +1,13 @@
+mode: run
+reference_dir: ../02-reference-run-local
+job_scheduler: local
+cp2k_cmd: ~/miniforge3/envs/cp2k/bin/cp2k.psmp
+single_atoms: true
+snapshot_md_steps: 1
+train_fraction: 0.8
+seed: 2026
+
+systems:
+  - assets: ../01-build-colvars/reference/system-000
+  - assets: ../01-build-colvars/reference/system-001
+  - assets: ../01-build-colvars/reference/system-002

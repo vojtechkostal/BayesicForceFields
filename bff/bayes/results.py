@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 import numpy as np
 import torch
@@ -15,10 +15,10 @@ PathLike = Union[str, Path]
 
 
 @dataclass
-class InferenceResults:
+class PosteriorResults:
     posterior: np.ndarray
     priors: Optional[Priors] = None
-    sample_labels: Optional[List[str]] = None
+    sample_labels: Optional[list[str]] = None
     sample_transform: Optional[Callable[[np.ndarray], np.ndarray]] = None
     specs: Optional[Specs] = None
     include_implicit_charge: bool = False
@@ -36,11 +36,11 @@ class InferenceResults:
         cls,
         posterior: PathLike | np.ndarray | torch.Tensor,
         priors: Optional[Union[Priors, PathLike, list]] = None,
-        sample_labels: Optional[List[str]] = None,
+        sample_labels: Optional[list[str]] = None,
         sample_transform: Optional[Callable[[np.ndarray], np.ndarray]] = None,
         specs: Optional[Specs | PathLike] = None,
         include_implicit_charge: bool = False,
-    ) -> "InferenceResults":
+    ) -> 'PosteriorResults':
         return cls(
             posterior=posterior,
             priors=priors,
@@ -67,19 +67,19 @@ class InferenceResults:
             return []
         return [
             i for i, name in enumerate(self.priors.names)
-            if name.startswith("log_sigma_")
+            if name.startswith('log_sigma_')
         ]
 
     def _default_sample_labels(self) -> list[str]:
         if self.priors is None:
-            return [f"theta_{i}" for i in range(self.n_dim)]
+            return [f'theta_{i}' for i in range(self.n_dim)]
         labels = []
         for i, name in enumerate(self.priors.names):
-            if name.startswith("log_sigma_"):
-                qoi = name.removeprefix("log_sigma_")
-                labels.append(f"$\\sigma_{{\\mathrm{{{qoi}}}}}$")
+            if name.startswith('log_sigma_'):
+                qoi = name.removeprefix('log_sigma_')
+                labels.append(f'$\sigma_{{\mathrm{{{qoi}}}}}$')
             else:
-                labels.append(name or f"theta_{i}")
+                labels.append(name or f'theta_{i}')
         return labels
 
     def _default_transform(self, samples: np.ndarray) -> np.ndarray:
@@ -105,10 +105,10 @@ class InferenceResults:
     @staticmethod
     def _load_posterior_payload(fn_in: PathLike) -> dict[str, Any]:
         fn_in = Path(fn_in)
-        if fn_in.suffix != ".pt":
+        if fn_in.suffix != '.pt':
             raise ValueError(
-                f"Unsupported posterior file {fn_in!r}. "
-                "InferenceResults accepts only .pt files."
+                f'Unsupported posterior file {fn_in!r}. '
+                'PosteriorResults accepts only .pt files.'
             )
         return torch.load(fn_in, weights_only=False)
 
@@ -121,18 +121,18 @@ class InferenceResults:
             posterior_array = cls._to_numpy(posterior)
         elif isinstance(posterior, (str, Path)):
             payload = cls._load_posterior_payload(posterior)
-            if "posterior" not in payload:
+            if 'posterior' not in payload:
                 raise KeyError(
-                    f"Posterior file {posterior!r} does not contain posterior samples."
+                    f'Posterior file {posterior!r} does not contain posterior samples.'
                 )
-            posterior_array = cls._to_numpy(payload["posterior"])
+            posterior_array = cls._to_numpy(payload['posterior'])
         else:
-            raise TypeError(f"Unsupported posterior source: {type(posterior)}")
+            raise TypeError(f'Unsupported posterior source: {type(posterior)}')
 
         if posterior_array.ndim != 3:
             raise ValueError(
-                "Expected raw posterior with shape "
-                f"(n_saved, n_walkers, n_dim), got {posterior_array.shape}."
+                'Expected raw posterior with shape '
+                f'(n_saved, n_walkers, n_dim), got {posterior_array.shape}.'
             )
         return posterior_array
 
@@ -153,7 +153,7 @@ class InferenceResults:
     def prepared_samples(self) -> np.ndarray:
         if self._prepared_samples is None:
             raise ValueError(
-                "No prepared samples available. Call prepare_samples() first."
+                'No prepared samples available. Call prepare_samples() first.'
             )
         return self._prepared_samples
 
@@ -162,48 +162,44 @@ class InferenceResults:
         return self._prepared_samples is not None
 
     @property
-    def labels(self) -> List[str]:
+    def labels(self) -> list[str]:
         if self._prepared_samples is not None and self._prepared_labels is not None:
             return self._prepared_labels
         if self.sample_labels is not None:
             if len(self.sample_labels) != self.n_dim:
                 raise ValueError(
-                    "sample_labels length does not match the posterior dimension."
+                    'sample_labels length does not match the posterior dimension.'
                 )
             return self.sample_labels
-        return [f"theta_{i}" for i in range(self.n_dim)]
+        return [f'theta_{i}' for i in range(self.n_dim)]
 
     def _labels_with_implicit_charge(self) -> list[str]:
         if self.specs is None:
             raise ValueError(
-                "Implicit-charge expansion requires Specs to be attached to "
-                "InferenceResults."
+                'Implicit-charge expansion requires Specs to be attached to '
+                'PosteriorResults.'
             )
         raw_labels = (
             list(self.sample_labels)
             if self.sample_labels is not None
-            else [f"theta_{i}" for i in range(self.n_dim)]
+            else [f'theta_{i}' for i in range(self.n_dim)]
         )
         n_explicit = self.specs.explicit_bounds.n_params
         if len(raw_labels) < n_explicit:
             raise ValueError(
-                "Posterior labels do not cover all explicit parameters required "
-                "by the specs."
+                'Posterior labels do not cover all explicit parameters required '
+                'by the specs.'
             )
         insert_at = self.specs.implicit_param_index
         implicit_param = self.specs.implicit_param
-        return (
-            raw_labels[:insert_at]
-            + [implicit_param]
-            + raw_labels[insert_at:]
-        )
+        return raw_labels[:insert_at] + [implicit_param] + raw_labels[insert_at:]
 
     def prepare_samples(
         self,
         discard: Optional[int] = None,
         thin: Optional[int] = None,
         sample_transform: Optional[Callable[[np.ndarray], np.ndarray]] = None,
-        strip_outliers: bool = True
+        strip_outliers: bool = True,
     ) -> None:
         tau = self.autocorr_time
         discard = discard if discard is not None else int(2 * np.max(tau))
@@ -212,8 +208,8 @@ class InferenceResults:
         samples = self.posterior[discard::thin]
         if samples.size == 0:
             raise ValueError(
-                "No posterior samples remain after applying discard/thin. "
-                "Try smaller values."
+                'No posterior samples remain after applying discard/thin. '
+                'Try smaller values.'
             )
 
         prepared = samples.reshape(-1, samples.shape[-1]).copy()
@@ -223,7 +219,7 @@ class InferenceResults:
         if self.include_implicit_charge:
             if self.specs is None:
                 raise ValueError(
-                    "include_implicit_charge=True requires Specs to be provided."
+                    'include_implicit_charge=True requires Specs to be provided.'
                 )
             prepared = self.specs.with_implicit_charge(prepared)
             self._prepared_labels = self._labels_with_implicit_charge()
@@ -231,97 +227,48 @@ class InferenceResults:
             self._prepared_labels = (
                 list(self.sample_labels)
                 if self.sample_labels is not None
-                else [f"theta_{i}" for i in range(prepared.shape[1])]
+                else [f'theta_{i}' for i in range(prepared.shape[1])]
             )
         self._prepared_samples = prepared
 
         if strip_outliers:
-            # Remove samples outside the 99% central interval to avoid skewing plots.
             q_low = 0.01 / 2
             q_high = 1 - q_low
-            confint = np.quantile(prepared, [q_low, q_high], axis=0)
-            mask = np.all((prepared >= confint[0]) & (prepared <= confint[1]), axis=1)
+            lower = np.quantile(prepared, q_low, axis=0)
+            upper = np.quantile(prepared, q_high, axis=0)
+            mask = np.logical_and(prepared >= lower, prepared <= upper).all(axis=1)
             self._prepared_samples = prepared[mask]
 
-    @property
-    def map_estimates(self) -> dict[str, float]:
-        modes: list[float] = []
-        for col in self.prepared_samples.T:
-            grid = np.linspace(col.min(), col.max(), 1000)
-            density = gaussian_kde(col)
-            modes.append(float(np.round(grid[np.argmax(density(grid))], 3)))
-        return dict(zip(self.labels, modes))
-
-    def quantiles(self, confidence: float = 0.95) -> np.ndarray:
-        q_low = (1 - confidence) / 2
-        q_high = 1 - q_low
-        return np.quantile(self.prepared_samples, [q_low, 0.5, q_high], axis=0)
-
-    def _export_parameter_indices_and_labels(self) -> tuple[list[int], list[str]]:
-        if self.specs is not None:
-            explicit_names = list(self.specs.parameter_names(explicit_only=True))
-            label_to_index = {label: i for i, label in enumerate(self.labels)}
-            missing = [name for name in explicit_names if name not in label_to_index]
-            if missing:
-                raise ValueError(
-                    "Prepared samples do not contain all explicit parameter "
-                    "labels required by the specs: "
-                    + ", ".join(repr(name) for name in missing)
-                )
-            return [label_to_index[name] for name in explicit_names], explicit_names
-
-        if self.priors is not None:
-            indices = [
-                i for i, name in enumerate(self.priors.names)
-                if not name.startswith("log_sigma_")
-            ]
-            labels = [self.labels[i] for i in indices]
-            return indices, labels
-
-        return list(range(self.prepared_samples.shape[1])), list(self.labels)
-
-    def _parameter_draw_source(self) -> tuple[np.ndarray, list[str]]:
-        indices, labels = self._export_parameter_indices_and_labels()
-        return np.asarray(self.prepared_samples[:, indices], dtype=float), labels
-
-    def sample_parameters(
+    def posterior_mode(
         self,
-        n_samples: int = 10,
-        distribution: str = "normal",
-        confidence: float = 0.9,
-        fn_out: Optional[str] = None,
-        overwrite: bool = False,
-    ) -> np.ndarray:
-        param_samples, export_labels = self._parameter_draw_source()
-        q_low = (1 - confidence) / 2
-        q_high = 1 - q_low
-        confint = np.quantile(param_samples, [q_low, q_high], axis=0)
+        sample_id: int,
+        x: Optional[np.ndarray] = None,
+    ) -> tuple[float, float]:
+        samples = self.prepared_samples[:, sample_id]
+        if x is None:
+            x = np.linspace(np.min(samples), np.max(samples), 1000)
+        posterior = gaussian_kde(samples)
+        y = posterior(x)
+        idx = np.argmax(y)
+        return float(x[idx]), float(y[idx])
 
-        if distribution == "normal":
-            mean = np.mean(param_samples, axis=0)
-            cov = np.cov(param_samples, rowvar=False)
-            if np.ndim(cov) == 0:
-                draws = np.random.normal(mean, np.sqrt(cov), size=n_samples)[:, None]
-            else:
-                draws = np.random.multivariate_normal(mean, cov, size=n_samples)
-        elif distribution == "uniform":
-            widths = np.diff(confint, axis=0).ravel()
-            draws = np.random.rand(n_samples, widths.size) * widths + confint[0]
-        else:
-            raise ValueError('distribution must be "uniform" or "normal".')
+    def summary(self) -> dict[str, Any]:
+        if self._prepared_samples is None:
+            self.prepare_samples()
+        assert self._prepared_samples is not None
 
-        if fn_out:
-            fn_out = Path(fn_out).resolve()
-            if fn_out.exists() and not overwrite:
-                raise FileExistsError(f"File '{fn_out}' already exists.")
-            if fn_out.suffix != ".yaml":
-                raise ValueError("fn_out must end with .yaml")
-            save_yaml(
-                {
-                    label: draws[:, i].tolist()
-                    for i, label in enumerate(export_labels)
-                },
-                fn_out,
-            )
+        labels = self.labels
+        means = np.mean(self._prepared_samples, axis=0)
+        stds = np.std(self._prepared_samples, axis=0)
+        summary = {
+            label: {
+                'mean': float(mean),
+                'std': float(std),
+            }
+            for label, mean, std in zip(labels, means, stds)
+        }
+        summary['autocorr_time'] = [float(x) for x in np.atleast_1d(self.autocorr_time)]
+        return summary
 
-        return np.asarray(draws, dtype=float)
+    def write_summary(self, fn_out: PathLike) -> None:
+        save_yaml(self.summary(), fn_out)

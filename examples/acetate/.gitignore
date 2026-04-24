@@ -1,29 +1,23 @@
-01-prepare/colvars/ace-colvars/
-01-prepare/colvars/*.log
-01-prepare/plumed/ace/
-01-prepare/plumed/*.log
+# Generated stage outputs
+01-build-colvars/
+01-build-plumed/
+02-reference-run-local/
+02-reference-run-slurm/
+02-reference-import/
+03-sample-local/
+03-sample-slurm/
+04-analyze/
+05-fit/
+06-learn/
+07-validate/
 
-02-reference-data/trajectories/*.npz
-02-reference-data/trajectories/*.lock
-02-reference-data/reference-assets/
+# Legacy generated outputs kept out of version control
+configs/*/
 
-02-training-data/trainset/
+# Notebook exports
+notebooks/*.png
 
-03-qoi/*.log
-03-qoi/*.npy
-03-qoi/qoi-*
-
-04-train-lgp/*.log
-04-train-lgp/models/
-
-05-learning/*.log
-05-learning/*.pt
-05-learning/posterior-samples.yaml
-05-learning/*.png
-
-06-visualize/*.png
-
-07-validate/validation-trainset/
-
-**/__pycache__/
+# Python cache
+__pycache__/
+inputs/__pycache__/
 *.pyc

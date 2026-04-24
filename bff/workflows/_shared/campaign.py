@@ -1,0 +1,524 @@
+from __future__ import annotations
+
+import shutil
+import subprocess
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+from gmxtopology import Topology
+
+from ...domain.specs import ChargeConstraint, RandomParamsGenerator, Specs
+from ...io.logs import Logger
+from ...io.utils import compress_results, load_yaml, save_yaml
+from ...topology import TopologyModifier
+from ..md.main import modify_topology
+from ..sample.config import SampleConfig
+from .config import SimulationCampaignConfig, SimulationSystemConfig
+from .scheduler import (
+    SCHEDULER_CLASSES,
+    bff_cli_command,
+    build_slurm_cli_job,
+    control_jobs,
+    wait_for_scheduler_slot,
+)
+
+PathLike = str | Path
+
+
+def _relative_path(path: Path | None, base_dir: Path) -> str | None:
+    if path is None:
+        return None
+    return str(path.relative_to(base_dir))
+
+
+def _system_record(
+    system: SimulationSystemConfig,
+    campaign_dir: Path,
+) -> dict[str, Any]:
+    return {
+        'system_id': system.system_id,
+        'topology': _relative_path(system.fn_topol, campaign_dir),
+        'coordinates': _relative_path(system.fn_coordinates, campaign_dir),
+        'mdp': {
+            'em': _relative_path(system.fn_mdp_em, campaign_dir),
+            'prod': _relative_path(system.fn_mdp_prod, campaign_dir),
+        },
+        'index': _relative_path(system.fn_ndx, campaign_dir),
+        'bias': _relative_path(system.bias.input_file, campaign_dir),
+        'n_steps': int(system.n_steps),
+    }
+
+
+def build_specs(config: SampleConfig) -> Path:
+    config.campaign_dir.resolve().mkdir(parents=True, exist_ok=True)
+    top_modifier = TopologyModifier(
+        config.systems[0].fn_topol,
+        config.mol_resname,
+        config.implicit_atoms,
+    )
+    bounds_resolved = top_modifier.resolve_parameter_names(config.bounds)
+
+    group: list[str] = []
+    for name in bounds_resolved:
+        param_name, *atoms = name.split()
+        if param_name == 'charge':
+            group.extend(atoms)
+    group_charge = top_modifier.group_charge(group)
+    constraint_charge = (
+        config.total_charge - top_modifier.total_charge + group_charge
+    )
+
+    specs = Specs(
+        {
+            'mol_resname': config.mol_resname,
+            'implicit_atoms': [atom.name for atom in top_modifier.implicit_atoms],
+            'bounds': bounds_resolved,
+            'total_charge': config.total_charge,
+            'charge_target': constraint_charge,
+        }
+    )
+    fn_specs = config.campaign_dir / 'specs.yaml'
+    specs.write(fn_specs)
+    return fn_specs
+
+
+def stage_systems(
+    systems: list[SimulationSystemConfig],
+    campaign_dir: Path,
+) -> list[SimulationSystemConfig]:
+    staged_systems: list[SimulationSystemConfig] = []
+    for index, system in enumerate(systems):
+        fn_topol = campaign_dir / f'window-{index:03d}.top'
+        Topology(system.fn_topol).write(fn_topol, overwrite=True)
+
+        fn_coordinates = campaign_dir / f'window-{index:03d}.gro'
+        shutil.copy2(system.fn_coordinates, fn_coordinates)
+
+        fn_mdp_em = None
+        if system.fn_mdp_em is not None:
+            fn_mdp_em = campaign_dir / f'window-{index:03d}.em.mdp'
+            shutil.copy2(system.fn_mdp_em, fn_mdp_em)
+
+        fn_mdp_prod = campaign_dir / f'window-{index:03d}.mdp'
+        shutil.copy2(system.fn_mdp_prod, fn_mdp_prod)
+
+        fn_ndx = campaign_dir / f'window-{index:03d}.ndx'
+        shutil.copy2(system.fn_ndx, fn_ndx)
+
+        bias = system.bias
+        if bias.input_file is not None and bias.input_filename is not None:
+            fn_bias = campaign_dir / f'window-{index:03d}.{bias.input_filename}'
+            shutil.copy2(bias.input_file, fn_bias)
+            bias = type(bias).load(fn_bias)
+
+        staged_systems.append(
+            SimulationSystemConfig(
+                system_id=system.system_id,
+                fn_topol=fn_topol,
+                fn_coordinates=fn_coordinates,
+                fn_mdp_em=fn_mdp_em,
+                fn_mdp_prod=fn_mdp_prod,
+                fn_ndx=fn_ndx,
+                bias=bias,
+                n_steps=system.n_steps,
+            )
+        )
+    return staged_systems
+
+
+def stage_campaign(
+    config: SimulationCampaignConfig,
+    *,
+    fn_specs: Path | None = None,
+) -> tuple[Path | None, list[SimulationSystemConfig]]:
+    campaign_dir = config.campaign_dir.resolve()
+    campaign_dir.mkdir(parents=True, exist_ok=True)
+
+    systems = stage_systems(config.systems, campaign_dir)
+    resolved_specs = None if fn_specs is None else fn_specs.resolve()
+    save_yaml(
+        {
+            'systems': [_system_record(system, campaign_dir) for system in systems],
+            'samples': {},
+        },
+        campaign_dir / 'samples.yaml',
+    )
+    return resolved_specs, systems
+
+
+def write_sample_job_config(
+    *,
+    sample_id: str,
+    sample: np.ndarray,
+    campaign_dir: Path,
+    fn_specs: Path,
+    gmx_cmd: str,
+    job_scheduler: str,
+    store: tuple[str, ...],
+    systems: list[SimulationSystemConfig],
+) -> Path:
+    config_md = {
+        'sample_id': sample_id,
+        'params': np.asarray(sample, dtype=float).tolist(),
+        'campaign_dir': str(campaign_dir),
+        'fn_specs': str(fn_specs.resolve()),
+        'gmx_cmd': gmx_cmd,
+        'job_scheduler': job_scheduler,
+        'store': list(store),
+        'systems': [system.to_dict() for system in systems],
+    }
+    fn_config_md = campaign_dir / f'config-{sample_id}.yaml'
+    save_yaml(config_md, fn_config_md)
+    return fn_config_md
+
+
+def stage_sample_topologies(
+    *,
+    sample_id: str,
+    sample: np.ndarray,
+    campaign_dir: Path,
+    fn_specs: Path,
+    systems: list[SimulationSystemConfig],
+) -> None:
+    for index, system in enumerate(systems):
+        fn_topol = campaign_dir / f'md-{sample_id}-{index:03d}.top'
+        modify_topology(system.fn_topol, fn_specs, sample, True, fn_topol)
+
+
+def build_submission_script(
+    *,
+    sample_id: str,
+    fn_config_md: Path,
+    config: SimulationCampaignConfig,
+):
+    if config.job_scheduler != 'slurm':
+        return None
+
+    campaign_dir = config.campaign_dir.resolve()
+    assert config.slurm is not None
+    fn_stdout = campaign_dir / f'run-{sample_id}.out'
+    submit_specs = dict(config.slurm.sbatch or {}) | {'output': fn_stdout}
+    return build_slurm_cli_job(
+        command=bff_cli_command('md', fn_config_md),
+        slurm_config=config.slurm,
+        sbatch=submit_specs,
+    )
+
+
+def write_submission_script(
+    *,
+    sample_id: str,
+    fn_config_md: Path,
+    config: SimulationCampaignConfig,
+) -> Path | None:
+    submit_script = build_submission_script(
+        sample_id=sample_id,
+        fn_config_md=fn_config_md,
+        config=config,
+    )
+    if submit_script is None:
+        return None
+
+    fn_submit = config.campaign_dir.resolve() / f'run-{sample_id}.sh'
+    submit_script.save(fn_submit)
+    return fn_submit
+
+
+def dispatch_simulation_job(
+    *,
+    sample_id: str,
+    config: SimulationCampaignConfig,
+) -> int | None:
+    campaign_dir = config.campaign_dir.resolve()
+    fn_config_md = campaign_dir / f'config-{sample_id}.yaml'
+    cmd_run = bff_cli_command('md', fn_config_md)
+    if config.job_scheduler == 'local':
+        subprocess.run(cmd_run, cwd=str(campaign_dir), check=True)
+        return None
+
+    submit_script = build_submission_script(
+        sample_id=sample_id,
+        fn_config_md=fn_config_md,
+        config=config,
+    )
+    assert submit_script is not None
+    fn_submit = campaign_dir / f'run-{sample_id}.sh'
+    return submit_script.submit(fn_submit)
+
+
+def _result_record(sample_id: str, campaign_dir: Path) -> dict[str, Any]:
+    fn_result = campaign_dir / f'result-{sample_id}.yaml'
+    if fn_result.exists():
+        return load_yaml(fn_result)
+    return {}
+
+
+def collect_campaign_metadata(
+    *,
+    samples: dict[str, dict[str, Any]],
+    systems: list[SimulationSystemConfig],
+    campaign_dir: Path,
+    compress: bool = False,
+    remove: bool = False,
+) -> None:
+    sample_records: dict[str, Any] = {}
+    for sample_id, sample_data in samples.items():
+        result = _result_record(sample_id, campaign_dir)
+        sample_records[sample_id] = {
+            'params': sample_data['params'],
+            'job_id': sample_data.get('job_id'),
+            'status': result.get('status', sample_data.get('status', 'failed')),
+            'outputs': result.get('outputs', sample_data.get('outputs', [])),
+        }
+
+    save_yaml(
+        {
+            'systems': [_system_record(system, campaign_dir) for system in systems],
+            'samples': sample_records,
+        },
+        campaign_dir / 'samples.yaml',
+    )
+
+    for fn_result in campaign_dir.glob('result-*.yaml'):
+        fn_result.unlink(missing_ok=True)
+
+    if compress:
+        compress_results(campaign_dir)
+        if remove:
+            shutil.rmtree(campaign_dir)
+        return
+
+    if remove:
+        for pattern in ('run-*.sh', 'run-*.out', 'config-*.yaml'):
+            for file in campaign_dir.glob(pattern):
+                file.unlink(missing_ok=True)
+
+
+def print_sample_summary(
+    config: SampleConfig,
+    fn_specs: PathLike,
+    logger: Logger,
+) -> None:
+    specs = Specs(fn_specs)
+    logger.section('Sampling Campaign')
+    logger.kv('Molecule', specs.mol_resname)
+    logger.kv('Campaign directory', config.campaign_dir.resolve())
+    logger.kv('Systems', len(config.systems))
+    logger.kv('Samples', config.n_samples)
+    logger.kv('Scheduler', config.job_scheduler)
+    logger.kv('Dispatch', 'yes' if config.dispatch else 'no (stage only)')
+    logger.kv('Stored outputs', ', '.join(config.store) if config.store else 'none')
+    logger.warn_if(
+        not config.dispatch,
+        'Simulation jobs will only be staged; no MD will be submitted.',
+    )
+    logger.warn_if(
+        not config.store,
+        'No simulation outputs are configured to be stored after completion.',
+    )
+    logger.info('parameters:', level=1)
+    for name, bounds in specs.bounds.by_name.items():
+        label = f'{name}: {bounds}'
+        if name == specs.implicit_param:
+            label += ' (implicit)'
+        logger.info(label, level=2)
+    logger.kv('Total charge', specs.total_charge)
+    logger.blank()
+
+
+def print_validate_summary(
+    config: SimulationCampaignConfig,
+    fn_specs: PathLike,
+    n_samples: int,
+    logger: Logger,
+) -> None:
+    specs = Specs(fn_specs)
+    logger.section('Validation Campaign')
+    logger.kv('Molecule', specs.mol_resname)
+    logger.kv('Log file', config.log.resolve())
+    logger.kv('Campaign directory', config.campaign_dir.resolve())
+    logger.kv('Systems', len(config.systems))
+    logger.kv('Samples', n_samples)
+    logger.kv('Scheduler', config.job_scheduler)
+    logger.kv('Dispatch', 'yes' if config.dispatch else 'no (stage only)')
+    logger.kv('Stored outputs', ', '.join(config.store) if config.store else 'none')
+    logger.warn_if(
+        not config.dispatch,
+        'Validation jobs will only be staged; no MD will be submitted.',
+    )
+    logger.warn_if(
+        not config.store,
+        'No validation outputs are configured to be stored after completion.',
+    )
+    parameter_source = getattr(config, 'parameters', None)
+    if parameter_source is not None:
+        logger.kv('Parameter source', Path(parameter_source).resolve())
+    logger.blank()
+
+
+def run_campaign(
+    *,
+    config: SimulationCampaignConfig,
+    fn_specs: Path,
+    systems: list[SimulationSystemConfig],
+    parameter_samples: np.ndarray,
+    logger: Logger,
+) -> None:
+    n_total = len(parameter_samples)
+    samples: dict[str, dict[str, Any]] = {}
+    job_ids: list[int] = []
+    pad = len(str(max(n_total, 1)))
+    campaign_dir = config.campaign_dir.resolve()
+    job_scheduler = config.job_scheduler
+    max_parallel_jobs = None
+    action = 'Running MD' if config.dispatch else 'Staging jobs'
+    campaign_finished = False
+
+    if config.dispatch and job_scheduler not in {'local', *SCHEDULER_CLASSES}:
+        raise NotImplementedError(
+            f"Unsupported scheduler '{job_scheduler}'. Supported: {['local', *SCHEDULER_CLASSES]}"
+        )
+
+    try:
+        for idx, sample in enumerate(parameter_samples):
+            sample_id = f'{idx:0{pad}d}'
+            logger.status(
+                action,
+                f'{idx + 1}/{n_total} ({((idx + 1) / n_total * 100):.0f}%)',
+                level=1,
+                overwrite=True,
+            )
+
+            sample = np.asarray(sample, dtype=float).reshape(-1)
+            fn_config_md = write_sample_job_config(
+                sample_id=sample_id,
+                sample=sample,
+                campaign_dir=campaign_dir,
+                fn_specs=fn_specs,
+                gmx_cmd=config.gmx_cmd,
+                job_scheduler=config.job_scheduler,
+                store=config.store,
+                systems=systems,
+            )
+            samples[sample_id] = {
+                'params': sample.tolist(),
+                'job_id': None,
+                'status': 'staged' if not config.dispatch else 'failed',
+                'outputs': [],
+            }
+
+            if not config.dispatch:
+                stage_sample_topologies(
+                    sample_id=sample_id,
+                    sample=sample,
+                    campaign_dir=campaign_dir,
+                    fn_specs=fn_specs,
+                    systems=systems,
+                )
+                write_submission_script(
+                    sample_id=sample_id,
+                    fn_config_md=fn_config_md,
+                    config=config,
+                )
+                continue
+
+            if job_scheduler == 'local':
+                dispatch_simulation_job(sample_id=sample_id, config=config)
+                continue
+
+            assert config.slurm is not None
+            max_parallel_jobs = config.slurm.max_parallel_jobs
+            max_parallel_jobs = np.inf if max_parallel_jobs == -1 else max_parallel_jobs
+            if max_parallel_jobs > 0:
+                wait_for_scheduler_slot(
+                    job_ids=job_ids,
+                    scheduler=job_scheduler,
+                    max_parallel_jobs=max_parallel_jobs,
+                )
+                job_id = dispatch_simulation_job(sample_id=sample_id, config=config)
+                if job_id is not None:
+                    job_ids.append(job_id)
+                    samples[sample_id]['job_id'] = job_id
+
+        if (
+            config.dispatch
+            and job_scheduler != 'local'
+            and max_parallel_jobs is not None
+            and max_parallel_jobs > 0
+        ):
+            control_jobs(job_ids, job_scheduler)
+
+        campaign_finished = True
+        logger.done(action, detail=f'{n_total}/{n_total} (100%)', level=1)
+    finally:
+        collect_campaign_metadata(
+            samples=samples,
+            systems=systems,
+            campaign_dir=campaign_dir,
+            compress=config.compress if config.dispatch and campaign_finished else False,
+            remove=config.cleanup if config.dispatch and campaign_finished else False,
+        )
+
+
+def build_parameter_samples(config: SampleConfig) -> tuple[Path, np.ndarray]:
+    fn_specs = build_specs(config)
+    constraint = ChargeConstraint(fn_specs)
+    sampler = RandomParamsGenerator(constraint.explicit_bounds, constraint)
+    parameter_samples = np.asarray(
+        [sampler(1).squeeze(0) for _ in range(config.n_samples)],
+        dtype=float,
+    )
+    return fn_specs, parameter_samples
+
+
+def _load_yaml_parameter_samples(
+    data: dict[str, Any],
+    *,
+    specs: Specs,
+) -> np.ndarray:
+    explicit_names = list(specs.parameter_names(explicit_only=True))
+    if all(name in data for name in explicit_names):
+        lengths = {len(data[name]) for name in explicit_names}
+        if len(lengths) != 1:
+            raise ValueError(
+                'Column-oriented YAML sample lists must all have the same length.'
+            )
+        return np.column_stack(
+            [np.asarray(data[name], dtype=float) for name in explicit_names]
+        )
+
+    raise ValueError(
+        'Unsupported YAML parameter-sample format. Expected a column-oriented '
+        'mapping keyed by explicit parameter names.'
+    )
+
+
+def load_parameter_samples(
+    fn_samples: PathLike,
+    fn_specs: PathLike,
+) -> np.ndarray:
+    fn_samples = Path(fn_samples).resolve()
+    specs = Specs(fn_specs)
+    if fn_samples.suffix != '.yaml':
+        raise ValueError(f'Unsupported sample file {fn_samples}. Expected a .yaml file.')
+
+    raw = load_yaml(fn_samples)
+    if not isinstance(raw, dict):
+        raise ValueError(
+            f'YAML parameter sample file {fn_samples} must contain a mapping.'
+        )
+    samples = _load_yaml_parameter_samples(raw, specs=specs)
+
+    if samples.ndim != 2:
+        raise ValueError(
+            f'Parameter samples must form a 2D array, got shape {samples.shape}.'
+        )
+    expected = len(specs.parameter_names(explicit_only=True))
+    if samples.shape[1] != expected:
+        raise ValueError(
+            f'Expected {expected} explicit parameter values per sample, got {samples.shape[1]}.'
+        )
+    if samples.shape[0] == 0:
+        raise ValueError('No validation parameter samples were found.')
+    return samples

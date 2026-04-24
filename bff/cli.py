@@ -12,13 +12,13 @@ app = typer.Typer(
     add_completion=False,
 )
 
-WorkflowMain = Callable[[Path], None]
+WorkflowMain = Callable[[Path], object]
 WORKFLOW_COMMANDS = (
-    "prepare",
+    "build",
     "reference",
-    "trainset",
-    "qoi",
-    "train",
+    "sample",
+    "analyze",
+    "fit",
     "learn",
     "validate",
     "examples",
@@ -45,7 +45,7 @@ if [ -n "${{BASH_VERSION-}}" ]; then
         fi
 
         case "${{COMP_WORDS[1]}}" in
-            prepare|reference|trainset|qoi|train|learn|validate)
+            build|reference|sample|analyze|fit|learn|validate)
                 COMPREPLY=($(compgen -f -- "$cur"))
                 ;;
             *)
@@ -69,7 +69,7 @@ elif [ -n "${{ZSH_VERSION-}}" ]; then
         fi
 
         case "${{words[2]}}" in
-            prepare|reference|trainset|qoi|train|learn|validate)
+            build|reference|sample|analyze|fit|learn|validate)
                 _files
                 ;;
         esac
@@ -125,12 +125,9 @@ def run_workflow(
     fn_config: Path,
     workflow_main: WorkflowMain,
     workflow_name: str,
-) -> None:
-    """
-    Run a workflow main function with a config path.
-    """
+) -> object:
     try:
-        workflow_main(fn_config)
+        return workflow_main(fn_config)
     except FileNotFoundError as exc:
         raise typer.BadParameter(str(exc), param_hint="fn_config") from exc
     except ValueError as exc:
@@ -151,17 +148,11 @@ def config_argument() -> Path:
 
 @app.callback()
 def init_cli() -> None:
-    """
-    Initialize the CLI environment.
-    """
     _ensure_completion_hooks()
 
 
 @app.command()
 def version() -> None:
-    """
-    Print package version.
-    """
     from importlib import metadata
 
     try:
@@ -196,9 +187,6 @@ def examples(
         help="Replace the output directory if it already exists.",
     ),
 ) -> None:
-    """
-    Download or copy all repository examples.
-    """
     from bff.workflows.examples import fetch_examples
 
     try:
@@ -214,40 +202,56 @@ def examples(
 
 
 @app.command()
-def prepare(fn_config: Path = config_argument()) -> None:
-    """
-    Prepare equilibration, training, and reference assets.
-    """
-    from bff.workflows.prepare import main as prepare_main
+def build(fn_config: Path = config_argument()) -> None:
+    """Build reusable FFMD and reference starting assets."""
+    from bff.workflows.build import main as build_main
 
-    run_workflow(fn_config, prepare_main, "prepare")
+    run_workflow(fn_config, build_main, "build")
 
 
 @app.command()
 def reference(fn_config: Path = config_argument()) -> None:
-    """
-    Run staged CP2K reference calculations locally or through Slurm.
-    """
+    """Run or import reference data into canonical reference assets."""
     from bff.workflows.reference import main as reference_main
 
     run_workflow(fn_config, reference_main, "reference")
 
 
 @app.command()
-def trainset(fn_config: Path = config_argument()) -> None:
-    """
-    Run a sampled molecular-dynamics campaign for training-set generation.
-    """
-    from bff.workflows.trainset import main as trainset_main
+def sample(fn_config: Path = config_argument()) -> None:
+    """Sample force-field parameters and run FFMD training simulations."""
+    from bff.workflows.sample import main as sample_main
 
-    run_workflow(fn_config, trainset_main, "trainset")
+    run_workflow(fn_config, sample_main, "sample")
+
+
+@app.command()
+def analyze(fn_config: Path = config_argument()) -> None:
+    """Analyze reference and FFMD trajectories into matched QoI datasets."""
+    from bff.workflows.analyze import main as analyze_main
+
+    run_workflow(fn_config, analyze_main, "analyze")
+
+
+@app.command()
+def fit(fn_config: Path = config_argument()) -> None:
+    """Fit surrogate models from analyzed QoI datasets."""
+    from bff.workflows.fit import main as fit_main
+
+    run_workflow(fn_config, fit_main, "fit")
+
+
+@app.command()
+def learn(fn_config: Path = config_argument()) -> None:
+    """Run Bayesian posterior learning over force-field parameters."""
+    from bff.workflows.learn import main as learn_main
+
+    run_workflow(fn_config, learn_main, "learn")
 
 
 @app.command()
 def validate(fn_config: Path = config_argument()) -> None:
-    """
-    Run a validation campaign for provided parameter samples.
-    """
+    """Run explicit validation simulations for selected parameter samples."""
     from bff.workflows.validate import main as validate_main
 
     run_workflow(fn_config, validate_main, "validate")
@@ -255,9 +259,7 @@ def validate(fn_config: Path = config_argument()) -> None:
 
 @app.command(hidden=True)
 def md(fn_config: Path = config_argument()) -> None:
-    """
-    Run molecular dynamics from a configuration file.
-    """
+    """Run molecular dynamics from a configuration file."""
     from bff.workflows.md import main as md_main
 
     run_workflow(fn_config, md_main, "md")
@@ -265,50 +267,10 @@ def md(fn_config: Path = config_argument()) -> None:
 
 @app.command(name="reference-job", hidden=True)
 def reference_job(fn_config: Path = config_argument()) -> None:
-    """
-    Run one staged CP2K reference job from a configuration file.
-    """
+    """Run one staged CP2K reference job from a configuration file."""
     from bff.workflows.reference import run_job
 
     run_workflow(fn_config, run_job, "reference-job")
-
-
-@app.command(name="qoi")
-def qoi(fn_config: Path = config_argument()) -> None:
-    """
-    Analyze quantities of interest from simulation data.
-    """
-    from bff.workflows.qoi import main as qoi_main
-
-    run_workflow(fn_config, qoi_main, "qoi")
-
-
-@app.command(name="analyze", hidden=True)
-def analyze_alias(fn_config: Path = config_argument()) -> None:
-    """
-    Hidden compatibility alias for the QoI workflow.
-    """
-    qoi(fn_config)
-
-
-@app.command()
-def train(fn_config: Path = config_argument()) -> None:
-    """
-    Train surrogate models from analyzed QoI datasets.
-    """
-    from bff.workflows.train import main as train_main
-
-    run_workflow(fn_config, train_main, "train")
-
-
-@app.command()
-def learn(fn_config: Path = config_argument()) -> None:
-    """
-    Run posterior learning from trained surrogate models.
-    """
-    from bff.workflows.learn import main as learn_main
-
-    run_workflow(fn_config, learn_main, "learn")
 
 
 if __name__ == "__main__":

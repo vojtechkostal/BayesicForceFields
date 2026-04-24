@@ -1,0 +1,21 @@
+log: ../05-fit/out.log
+datasets:
+  rdf:
+    data: ../04-analyze/qoi-rdf.pt
+    mean: sigmoid
+    observation_scale: 1.0
+  hb:
+    data: ../04-analyze/qoi-hb.pt
+    mean: 0
+    observation_scale: 1.0
+  dist:
+    data: ../04-analyze/qoi-dist.pt
+    mean: 0
+    observation_scale: 1.0
+fit:
+  model_dir: ../05-fit/models
+  reuse_models: true
+  n_hyper_max: 200
+  committee_size: 1
+  test_fraction: 0.2
+  device: cuda

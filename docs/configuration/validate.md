@@ -2,28 +2,26 @@
 
 Source code:
 
-- `bff/workflows/configs.py`
-- `bff/workflows/validate.py`
-- `bff/workflows/runsims.py`
+- `bff/workflows/validate/config.py`
+- `bff/workflows/validate/main.py`
+- `bff/workflows/_shared/campaign.py`
 
 ## Purpose
 
 `bff validate` reruns selected parameter samples, usually drawn from the
 posterior learned by `bff learn`.
 
-The campaign runtime keys intentionally match `bff trainset` as closely as
+The campaign runtime keys intentionally match `bff sample` as closely as
 possible.
 
 ## Minimal Example
 
 ```yaml
-trainset_dir: ./validation-trainset
-parameters: ../05-learning/posterior-samples.yaml
-specs: ../02-training-data/trainset/specs.yaml
+campaign_dir: ./07-validate
+parameters: ../06-learn/posterior-samples.yaml
+specs: ../03-sample-local/specs.yaml
 systems:
-  - assets: ../01-prepare/colvars/ace-colvars/training/system-000
-    n_steps: 1000
-  - assets: ../01-prepare/colvars/ace-colvars/training/system-001
+  - assets: ../01-build-colvars/ffmd/system-000
     n_steps: 1000
 gmx_cmd: gmx
 job_scheduler: local
@@ -31,7 +29,7 @@ job_scheduler: local
 
 ## Top-Level Keys
 
-- `trainset_dir`
+- `campaign_dir`
   Output directory for the validation campaign.
 - `parameters`
   YAML file containing explicit parameter samples.
@@ -50,14 +48,14 @@ job_scheduler: local
 - `cleanup`
   If `true`, remove temporary files after successful runs.
 - `store`
-  Which trajectory outputs to keep. Defaults to `["xtc"]`.
+  Which trajectory outputs to keep. Defaults to `['xtc']`.
 - `slurm`
   Optional Slurm runtime configuration.
 
 ## `systems[]` Keys
 
 - `assets`
-  Directory created by `bff prepare`, for example `training/system-001`.
+  Directory created by `bff build`, for example `ffmd/system-001`.
 - `n_steps`
   Production MD length for this validation run.
 

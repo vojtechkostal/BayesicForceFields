@@ -203,7 +203,7 @@ def normalize_analysis_runtime_config(
     if "routines" in config or "systems" in config:
         raise ValueError(
             "'run' only accepts runtime settings. "
-            "Define routines under each entry in 'refset.systems'."
+            "Define routines under each entry in 'reference.systems'."
         )
 
     maxtasksperchild = int(config.get("maxtasksperchild", 100))

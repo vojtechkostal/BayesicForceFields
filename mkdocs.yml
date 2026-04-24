@@ -33,11 +33,11 @@ nav:
   - Installation: installation.md
   - CLI: cli.md
   - Configuration:
-      - Prepare: configuration/prepare.md
+      - Build: configuration/build.md
       - Reference: configuration/reference.md
-      - Trainset: configuration/trainset.md
-      - QoI: configuration/qoi.md
-      - Train: configuration/train.md
+      - Sample: configuration/sample.md
+      - Analyze: configuration/analyze.md
+      - Fit: configuration/fit.md
       - Learn: configuration/learn.md
       - Validate: configuration/validate.md
   - Example:

@@ -3,8 +3,8 @@
 ## Requirements
 
 - Python 3.10 or newer
-- GROMACS available as `gmx` for `prepare`, `trainset`, and `validate`
-- CP2K only if you want to run the staged reference inputs
+- GROMACS available as `gmx` for `build`, `sample`, and `validate`
+- CP2K only if you want to run staged reference inputs
 - PLUMED only for PLUMED-biased systems
 
 ## Recommended User Install
@@ -16,7 +16,7 @@ mamba create -n bfflearn python=3.10 pip
 mamba activate bfflearn
 ```
 
-Install a matching PyTorch build for your machine before training or learning.
+Install a matching PyTorch build for your machine before fitting or learning.
 Use the official PyTorch selector for the exact command:
 
 https://pytorch.org/get-started/locally/
@@ -70,14 +70,6 @@ If you prefer to start from an existing environment:
 pip install -e ".[dev,docs,notebook]"
 ```
 
-## Direct Pip Installation
-
-If you already have a Python environment and a working PyTorch install:
-
-```bash
-pip install bfflearn
-```
-
 ## Local Docs
 
 Preview the docs locally:
@@ -91,14 +83,3 @@ Build the static site:
 ```bash
 mkdocs build --strict
 ```
-
-## Packaging Metadata
-
-Package metadata lives in `pyproject.toml`. That file defines:
-
-- runtime dependencies
-- optional `dev`, `docs`, and `notebook` extras
-- the `bff` console script
-- Ruff configuration
-- but not PyTorch, which is installed separately to let you choose the
-  appropriate CPU or CUDA build

@@ -28,20 +28,32 @@ site/
 *.xvg
 *.xyz
 
-# Acetate example outputs: keep only notebooks, configs, and example code
+# Acetate example: keep source inputs, configs, notebooks, and helper code
 examples/acetate/**
 !examples/acetate/**/
+!examples/acetate/configs/*.yaml
 !examples/acetate/**/*.ipynb
 !examples/acetate/**/*.md
-!examples/acetate/**/config.yaml
-!examples/acetate/**/config-*.yaml
-!examples/acetate/**/*.py
-!examples/acetate/02-reference-data/inputs/*.inp
-!examples/acetate/02-reference-data/trajectories/*.xtc
-!examples/acetate/01-prepare/common/**
-!examples/acetate/01-prepare/colvars/*.dat
-!examples/acetate/01-prepare/plumed/*.dat
-examples/acetate/01-prepare/common/mdp/mdout.mdp
+!examples/acetate/*.sh
+!examples/acetate/inputs/**/*.py
+!examples/acetate/inputs/common/**
+!examples/acetate/inputs/biases/*.dat
+!examples/acetate/inputs/reference-inputs/*.inp
+!examples/acetate/inputs/reference-trajectories/*.xtc
 
-# Ignore nested trainset directories under the training-data example
-examples/acetate/02-training-data/*/
+# Runtime stage outputs for the acetate walkthrough
+examples/acetate/configs/*/
+examples/acetate/01-build-colvars/
+examples/acetate/01-build-plumed/
+examples/acetate/02-reference-run-local/
+examples/acetate/02-reference-run-slurm/
+examples/acetate/02-reference-import/
+examples/acetate/03-sample-local/
+examples/acetate/03-sample-slurm/
+examples/acetate/04-analyze/
+examples/acetate/05-fit/
+examples/acetate/06-learn/
+examples/acetate/07-validate/
+examples/acetate/notebooks/*.png
+examples/acetate/__pycache__/
+examples/acetate/inputs/__pycache__/

@@ -7,7 +7,7 @@ import torch
 from .kernels import gaussian_kernel
 
 if TYPE_CHECKING:
-    from .learning import InferenceProblem
+    from .learning import LearningProblem
 
 
 def loo_log_likelihood(
@@ -74,7 +74,7 @@ def loo_log_likelihood(
 
 def gaussian_log_likelihood(
     theta: torch.Tensor,
-    problem: InferenceProblem,
+    problem: LearningProblem,
 ) -> torch.Tensor:
 
     """Compute the gaussian log likelihood.
@@ -83,7 +83,7 @@ def gaussian_log_likelihood(
     ----------
     theta : torch.Tensor
         Parameters of the surrogate model, shape (n_samples, n_params + n_sigma).
-    problem : InferenceProblem
+    problem : LearningProblem
         Complete inference problem including surrogates, observations,
         and the optional parameter constraint.
 

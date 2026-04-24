@@ -1,0 +1,13 @@
+mode: import
+reference_dir: ../02-reference-import
+
+systems:
+  - topology: ../01-build-colvars/reference/system-000/system.top
+    coordinates: ../01-build-colvars/reference/system-000/system.gro
+    trajectory: ../inputs/reference-trajectories/pos-000.xtc
+  - topology: ../01-build-colvars/reference/system-001/system.top
+    coordinates: ../01-build-colvars/reference/system-001/system.gro
+    trajectory: ../inputs/reference-trajectories/pos-001.xtc
+  - topology: ../01-build-colvars/reference/system-002/system.top
+    coordinates: ../01-build-colvars/reference/system-002/system.gro
+    trajectory: ../inputs/reference-trajectories/pos-002.xtc

@@ -1,12 +1,12 @@
+from .sample import SampleSet, SimulationSystem, TrajectorySet
 from .specs import Bounds, ChargeConstraint, RandomParamsGenerator, Specs
-from .trainset import SimulationSystem, TrainSetInfo, TrajectorySet
 
 __all__ = [
-    "Bounds",
-    "ChargeConstraint",
-    "RandomParamsGenerator",
-    "SimulationSystem",
-    "Specs",
-    "TrainSetInfo",
-    "TrajectorySet",
+    'Bounds',
+    'ChargeConstraint',
+    'RandomParamsGenerator',
+    'SampleSet',
+    'SimulationSystem',
+    'Specs',
+    'TrajectorySet',
 ]

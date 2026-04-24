@@ -1,0 +1,22 @@
+mol_resname: ACE
+campaign_dir: ../03-sample-local
+systems:
+  - assets: ../01-build-colvars/ffmd/system-000
+    n_steps: 20000
+  - assets: ../01-build-colvars/ffmd/system-001
+    n_steps: 20000
+  - assets: ../01-build-colvars/ffmd/system-002
+    n_steps: 20000
+bounds:
+  charge C2: [0.0, 1.0]
+  charge O1 O2: [-0.8, -0.3]
+  charge C1: [-1.0, 0.3]
+  charge H1 H2 H3: [-0.3, 0.3]
+implicit_atoms: [C2]
+total_charge: -0.80
+n_samples: 20
+compress: false
+cleanup: true
+store: ["xtc"]
+gmx_cmd: gmx
+job_scheduler: local
