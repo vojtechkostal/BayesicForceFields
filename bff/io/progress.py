@@ -1,5 +1,7 @@
 import time
-from typing import Any, Iterable, Iterator, TypeVar
+from typing import Iterable, Iterator, TypeVar
+
+from .logs import Logger
 
 T = TypeVar("T")
 
@@ -20,11 +22,11 @@ def iter_progress(
     iterable: Iterable[T],
     *,
     total: int,
-    logger: Any,
+    logger: Logger,
     label: str,
     stride: int = 1,
 ) -> Iterator[T]:
-    """Yield items while logging coarse progress updates."""
+    """Yield items while logging pytest-style progress updates."""
     if stride < 1:
         raise ValueError("'stride' must be a positive integer.")
     if total < 0:
@@ -33,24 +35,6 @@ def iter_progress(
         return
 
     start_time = time.time()
-    pad = len(str(total))
-    template = (
-        f"{label}: " + "{i:>{pad}}/{total} "
-        "({percent:3.0f}%) | {elapsed} < {eta}"
-    )
-
-    logger.info(
-        template.format(
-            i=0,
-            pad=pad,
-            total=total,
-            percent=0,
-            elapsed="0s",
-            eta="0s",
-        ),
-        level=1,
-        overwrite=True,
-    )
 
     for i, item in enumerate(iterable, start=1):
         yield item
@@ -60,15 +44,11 @@ def iter_progress(
 
         elapsed_time = time.time() - start_time
         eta = 0.0 if i == 0 else (elapsed_time / i) * max(total - i, 0)
-        logger.info(
-            template.format(
-                i=i,
-                pad=pad,
-                total=total,
-                percent=100 * i / total if total else 100,
-                elapsed=format_time(elapsed_time),
-                eta=format_time(eta),
-            ),
-            level=1,
-            overwrite=True,
+        detail = (
+            f"{label}: {i}/{total} | "
+            f"{format_time(elapsed_time)} < {format_time(eta)}"
         )
+        logger.progress_status(detail, i, total, level=0)
+
+    elapsed_time = time.time() - start_time
+    logger.result_summary(total, "completed", elapsed_time)

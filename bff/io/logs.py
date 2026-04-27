@@ -6,14 +6,42 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
-import numpy as np
-
 if TYPE_CHECKING:
+    import numpy as np
+
     from ..mcmc.sampler import Sampler
 
 
 class Logger:
     """Small workflow logger with consistent console and file output."""
+
+    _RESET = "\033[0m"
+    _STYLES = {
+        "bold": "\033[1m",
+        "dim": "\033[2m",
+        "red": "\033[31m",
+        "green": "\033[32m",
+        "yellow": "\033[33m",
+        "blue": "\033[34m",
+        "magenta": "\033[35m",
+        "cyan": "\033[36m",
+        "gray": "\033[90m",
+        "bright_red": "\033[91m",
+        "bright_green": "\033[92m",
+        "bright_yellow": "\033[93m",
+        "bright_blue": "\033[94m",
+        "bright_magenta": "\033[95m",
+        "bright_cyan": "\033[96m",
+    }
+    _TITLE_STYLES = {
+        "build": ("bold", "bright_cyan"),
+        "reference": ("bold", "bright_blue"),
+        "sample": ("bold", "bright_yellow"),
+        "analyze": ("bold", "bright_magenta"),
+        "fit": ("bold", "bright_green"),
+        "learn": ("bold", "cyan"),
+        "validate": ("bold", "bright_red"),
+    }
 
     def __init__(
         self,
@@ -22,12 +50,16 @@ class Logger:
         width: Optional[int] = 100,
         verbose: bool = True,
         mode: str = "a",
+        color: bool | str = "auto",
     ) -> None:
         self.name = name
         self.fn_log = None if fn_log is None else str(Path(fn_log).resolve())
         self.width = width
         self.verbose = verbose
         self._last_console_len = 0
+        if color not in {True, False, "auto"}:
+            raise ValueError("'color' must be True, False, or 'auto'.")
+        self.color = sys.stdout.isatty() if color == "auto" else bool(color)
 
         if mode not in {"a", "w"}:
             raise ValueError("'mode' must be either 'a' or 'w'.")
@@ -54,19 +86,33 @@ class Logger:
         sys.stdout.flush()
         self._last_console_len = 0
 
-    def _write_console(self, line: str, *, overwrite: bool) -> None:
+    def _style(self, text: str, style: str | tuple[str, ...] | None) -> str:
+        if not self.color or not style or not text:
+            return text
+        styles = (style,) if isinstance(style, str) else style
+        prefix = "".join(self._STYLES[item] for item in styles if item in self._STYLES)
+        return f"{prefix}{text}{self._RESET}" if prefix else text
+
+    def _write_console(
+        self,
+        line: str,
+        *,
+        overwrite: bool,
+        style: str | tuple[str, ...] | None = None,
+    ) -> None:
         if not self.verbose:
             return
 
+        console_line = self._style(line, style)
         if overwrite:
             clear = max(self._last_console_len - len(line), 0)
-            sys.stdout.write("\r" + line + (" " * clear))
+            sys.stdout.write("\r" + console_line + (" " * clear))
             sys.stdout.flush()
             self._last_console_len = len(line)
             return
 
         self._clear_console_line()
-        sys.stdout.write(line + "\n")
+        sys.stdout.write(console_line + "\n")
         sys.stdout.flush()
 
     def _write_file(self, line: str) -> None:
@@ -75,11 +121,17 @@ class Logger:
         with Path(self.fn_log).open("a", encoding="utf-8") as handle:
             handle.write(line + "\n")
 
-    def info(self, message: str = "", level: int = 1, overwrite: bool = False) -> None:
+    def info(
+        self,
+        message: str = "",
+        level: int = 1,
+        overwrite: bool = False,
+        style: str | tuple[str, ...] | None = None,
+    ) -> None:
         """Write a formatted log line."""
         line = f"{self._prefix(level)}{message}" if message else ""
         self._write_file(line)
-        self._write_console(line, overwrite=overwrite)
+        self._write_console(line, overwrite=overwrite, style=style)
 
     def blank(self) -> None:
         """Write an empty line."""
@@ -87,8 +139,14 @@ class Logger:
 
     def section(self, title: str) -> None:
         """Write a top-level section header."""
-        self.info(title, level=0)
-        self.info("=" * len(title), level=0)
+        title_line = f"=== {title} ==="
+        self.blank()
+        self.info(
+            title_line,
+            level=0,
+            style=self._TITLE_STYLES.get(self.name, ("bold", "bright_cyan")),
+        )
+        self.blank()
 
     def kv(self, key: str, value: object, *, level: int = 1) -> None:
         """Write one key-value summary line."""
@@ -107,7 +165,7 @@ class Logger:
         message = f"{label}: {state}"
         if detail:
             message += f" | {detail}"
-        self.info(message, level=level, overwrite=overwrite)
+        self.info(message, level=level, overwrite=overwrite, style="magenta")
 
     def done(
         self,
@@ -118,22 +176,80 @@ class Logger:
         overwrite: bool = False,
     ) -> None:
         """Write a completed status line."""
-        self.status(
-            label,
-            "Done.",
-            detail=detail,
-            level=level,
-            overwrite=overwrite,
-        )
+        message = f"{label}: Done."
+        if detail:
+            message += f" | {detail}"
+        self.info(message, level=level, overwrite=overwrite, style=("bold", "green"))
+
+    def failed(
+        self,
+        label: str,
+        *,
+        detail: str | None = None,
+        level: int = 1,
+        overwrite: bool = False,
+    ) -> None:
+        """Write a failed status line."""
+        message = f"{label}: Failed."
+        if detail:
+            message += f" | {detail}"
+        self.info(message, level=level, overwrite=overwrite, style=("bold", "red"))
 
     def warn(self, message: str, *, level: int = 1) -> None:
         """Write a warning line."""
-        self.info(f"Warning: {message}", level=level)
+        self.info(f"Warning: {message}", level=level, style="yellow")
 
-    def warn_if(self, condition: bool, message: str, *, level: int = 1) -> None:
-        """Write a warning line when ``condition`` is true."""
-        if condition:
-            self.warn(message, level=level)
+    def right_status(
+        self,
+        message: str,
+        status: str,
+        *,
+        level: int = 1,
+        overwrite: bool = False,
+        style: str | tuple[str, ...] | None = None,
+    ) -> None:
+        """Write a pytest-style line with a status block right aligned."""
+        prefix = self._prefix(level)
+        width = self.width or 0
+        plain_len = len(prefix) + len(message) + len(status)
+        spacing = " " * max(width - plain_len, 1)
+        line = f"{prefix}{message}{spacing}{status}"
+        self._write_file(line)
+        self._write_console(line, overwrite=overwrite, style=style)
+
+    def progress_status(
+        self,
+        message: str,
+        current: int,
+        total: int,
+        *,
+        level: int = 1,
+        overwrite: bool = False,
+    ) -> None:
+        """Write a pytest-style progress line with ``[ 42%]`` on the right."""
+        percent = 100 if total <= 0 else round(100 * current / total)
+        status = f"[{percent:3d}%]"
+        self.right_status(
+            message,
+            status,
+            level=level,
+            overwrite=overwrite,
+            style="magenta",
+        )
+
+    def result_summary(
+        self,
+        count: int,
+        outcome: str,
+        elapsed: float,
+        *,
+        level: int = 0,
+        style: str | tuple[str, ...] | None = None,
+    ) -> None:
+        """Write a compact terminal completion summary."""
+        if style is None:
+            style = ("bold", "green") if outcome == "completed" else ("bold", "red")
+        self.info(f"Done. Finished in {elapsed:.2f}s", level=level, style=style)
 
 
 def print_progress_mcmc(
@@ -165,7 +281,7 @@ def print_progress_mcmc(
     line = (
         f"Posterior sampling: it. {0:>{total_digits}d}/{total_steps:<{total_digits}d}"
     )
-    logger.info(line, level=1, overwrite=True)
+    logger.info(line, level=1, overwrite=True, style="magenta")
 
     for state in sampler.run(
         p0,
@@ -215,14 +331,15 @@ def print_progress_mcmc(
                 line += f" | acc: {state.acceptance_rate:.3f}"
             if state.it_per_sec is not None:
                 line += f" | {state.it_per_sec:>3.0f} it/s"
-        logger.info(line, level=1, overwrite=True)
+        logger.info(line, level=1, overwrite=True, style="magenta")
 
-    logger.info(line, level=1)
+    logger.info(line, level=1, style="magenta")
     logger.blank()
     if sampler.converged:
         logger.done("Posterior sampling", level=1)
     else:
-        logger.warn(
-            "Posterior sampling failed to converge within the maximum iterations.",
+        logger.failed(
+            "Posterior sampling",
+            detail="failed to converge within the maximum iterations",
             level=1,
         )

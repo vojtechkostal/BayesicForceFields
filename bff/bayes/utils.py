@@ -22,6 +22,7 @@ def smape(y_true: torch.Tensor, y_pred: torch.Tensor) -> float:
 
     return float(torch.mean(abs_diff / norm).item())
 
+
 def initialize_walkers(
     priors,
     n_walkers: int,
@@ -275,6 +276,8 @@ def find_map(
 
     x0 = x0.clone().detach().to(device).requires_grad_(True)
     optimizer = torch.optim.SGD([x0], lr=lr_opt)
+    iter_width = len(str(max_iter))
+    tol_grad_text = f"{tol_grad:g}"
 
     for i in range(max_iter):
         optimizer.zero_grad()
@@ -285,8 +288,9 @@ def find_map(
             logger.status(
                 "MAP search",
                 (
-                    f"it. {i}/{max_iter} | "
-                    f"loss: {loss.item():.3f} | grad: {grad_norm:.3f}/{tol_grad}"
+                    f"it. {i:>{iter_width}d}/{max_iter:<{iter_width}d} | "
+                    f"loss: {loss.item():>10.3f} | "
+                    f"grad: {grad_norm:>8.3f}/{tol_grad_text}"
                 ),
                 level=2,
                 overwrite=True,
