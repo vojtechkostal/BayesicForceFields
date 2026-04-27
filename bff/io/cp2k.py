@@ -272,7 +272,8 @@ def build_cp2k_tree(
         },
     }
     if any(element.lower() in CATIONS for element in elements):
-        force_eval['dft']['xc']['vdw_potential']['pair_potential']['d3_exclude_kind_pair'] = [
+        pair_potential = force_eval['dft']['xc']['vdw_potential']['pair_potential']
+        pair_potential['d3_exclude_kind_pair'] = [
             [i + 1, j + 1]
             for i, element in enumerate(elements)
             if element.lower() in CATIONS
@@ -625,7 +626,9 @@ def write_cp2k_snapshot_extxyz(
     return fn_extxyz
 
 
-def collect_single_atom_energies(single_atom_dirs: Sequence[str | Path]) -> dict[int, float]:
+def collect_single_atom_energies(
+    single_atom_dirs: Sequence[str | Path],
+) -> dict[int, float]:
     """Collect isolated-atom CP2K energies from staged single-atom jobs."""
     energies: dict[int, float] = {}
     for atom_dir in sorted(Path(path) for path in single_atom_dirs):

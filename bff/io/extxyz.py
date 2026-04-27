@@ -118,7 +118,9 @@ def last_xyz_frame(path: PathLike) -> tuple[list[str], list[list[float]]]:
     return symbols, positions
 
 
-def _read_extxyz_properties(comment: str) -> tuple[list[float] | None, float | None, str | None, str | None]:
+def _read_extxyz_properties(
+    comment: str,
+) -> tuple[list[float] | None, float | None, str | None, str | None]:
     lattice = None
     match = _LATTICE_RE.search(comment)
     if match is not None:

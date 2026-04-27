@@ -77,7 +77,7 @@ class PosteriorResults:
         for i, name in enumerate(self.priors.names):
             if name.startswith('log_sigma_'):
                 qoi = name.removeprefix('log_sigma_')
-                labels.append(f'$\sigma_{{\mathrm{{{qoi}}}}}$')
+                labels.append(fr'$\sigma_{{\mathrm{{{qoi}}}}}$')
             else:
                 labels.append(name or f'theta_{i}')
         return labels
