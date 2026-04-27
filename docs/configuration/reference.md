@@ -21,7 +21,7 @@ Supported modes:
 
 ```yaml
 mode: run
-reference_dir: ./02-reference-run-local
+reference_dir: ./
 job_scheduler: local
 cp2k_cmd: cp2k.psmp
 single_atoms: true
@@ -46,7 +46,7 @@ systems:
 
 ```yaml
 mode: import
-reference_dir: ./02-reference-import
+reference_dir: ./
 
 systems:
   - topology: ../01-build-colvars/reference/system-000/system.top

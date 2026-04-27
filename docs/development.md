@@ -1,96 +1,94 @@
-# Development and Release
+# Development
 
-## Source Tree
-
-- package code: `bff/`
-- documentation: `docs/`
-- worked example: `examples/acetate/`
-- GitHub Actions: `.github/workflows/`
-
-## Repository Environment
-
-From the repository root:
+## Get The Code
 
 ```bash
+git clone https://github.com/vojtechkostal/BayesicForceFields.git
+cd BayesicForceFields
 mamba env create -f environment.yaml
 mamba activate bfflearn
 ```
 
-That shared environment installs the package in editable mode together with the
-developer, notebook, and docs extras. Install PyTorch separately afterward if
-you want to run `bff fit`, `bff learn`, or the posterior notebooks.
+The environment installs BFF in editable mode with the developer, docs, and
+notebook extras. Install the PyTorch build that matches your machine before
+running `bff fit`, `bff learn`, or posterior notebooks.
 
-## Local Quality Checks
+## Start A Feature Branch
 
-Suggested checks from the repository root:
+Keep `main` clean and do work on a branch:
 
 ```bash
-python -m compileall bff
+git switch main
+git pull
+git switch -c feature/my-change
+```
+
+Use short branch names that describe the change, for example:
+
+```text
+feature/new-qoi
+fix/slurm-submit
+docs/acetate-example
+```
+
+## Make The Change
+
+Before committing, run the checks that match your change:
+
+```bash
 python -m py_compile $(find bff -name '*.py')
-python -m build
 mkdocs build --strict
 ```
 
-If `ruff` is installed in your environment, also run:
+If tests are available in your environment:
 
 ```bash
-ruff check bff
+python -m pytest -q tests
 ```
 
-## GitHub Actions
+For docs-only changes, `mkdocs build --strict` is usually enough.
 
-Recommended repository workflows:
+## Commit And Push
 
-- `docs.yml`
-  builds and deploys the MkDocs site to GitHub Pages.
-- `checks.yml`
-  runs fast quality checks such as Python compilation, Ruff, package build, and
-  docs build on pushes and pull requests.
-- `publish.yml`
-  builds and publishes wheels and sdists to PyPI through trusted publishing.
+Review what changed:
 
-## Trusted PyPI Publishing
+```bash
+git status
+git diff
+```
 
-The clean GitHub-to-PyPI setup is:
+Commit focused changes:
 
-1. Create a PyPI project for `bfflearn`.
-2. In PyPI, add a trusted publisher for this repository and the
-   `.github/workflows/publish.yml` workflow.
-3. In GitHub, keep the publishing workflow protected by tags or release
-   publication instead of every push to `main`.
+```bash
+git add PATHS_YOU_CHANGED
+git commit -m "Short imperative summary"
+```
 
-The publishing workflow should:
+Push the branch:
 
-- build the sdist and wheel with `python -m build`
-- upload them as workflow artifacts
-- publish them with `pypa/gh-action-pypi-publish`
-- use `permissions: id-token: write`
+```bash
+git push -u origin feature/my-change
+```
 
-## Versioning Strategy
+Open a pull request from your branch into `main`.
 
-Associated publication:
-[Bayesian Learning for Accurate and Robust Biomolecular Force Fields](https://pubs.acs.org/doi/10.1021/acs.jctc.5c02051)
+## Updating A Branch
 
-For the paper snapshot you want to archive as `0.0.1`, the clean approach is:
+If `main` changed while you were working:
 
-1. Identify the exact commit that produced the paper data.
-2. Set the package version on that commit to `0.0.1` if it is not already.
-3. Create an annotated tag such as `v0.0.1` on that exact commit.
-4. Create a GitHub release from the tag and include the paper DOI and URL in
-   the release notes.
-5. Switch the repository default branch to `develop`.
-6. Protect `main` against direct pushes so it becomes the frozen paper branch.
+```bash
+git fetch origin
+git rebase origin/main
+git push --force-with-lease
+```
 
-That keeps `main` aligned with the publication snapshot while active
-development continues on `develop`.
+Use `--force-with-lease`, not plain `--force`, so you do not overwrite someone
+else's pushed work by accident.
 
-## Notes On Main Branch Releases
+## Repository Layout
 
-If you want `main` itself to be the archived paper branch, freeze it after the
-paper tag and move day-to-day development to `develop`. The important GitHub
-steps are:
-
-- set `develop` as the default branch
-- protect `main`
-- create a release from the paper tag
-- keep the paper DOI in the release notes and repository citation metadata
+- `bff/`: package code
+- `docs/`: documentation site
+- `examples/acetate/`: worked example
+- `tests/`: tests
+- `.github/workflows/`: CI and publishing workflows

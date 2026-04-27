@@ -36,8 +36,8 @@ run:
   maxtasksperchild: 100
 
 output:
-  path: ../04-analyze/qoi
-  log: ../04-analyze/out.log
+  path: ./qoi
+  log: ./out.log
   write_raw: true
 ```
 

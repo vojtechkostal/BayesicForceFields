@@ -14,13 +14,13 @@ per QoI.
 ## Minimal Example
 
 ```yaml
-log: ../05-fit/out.log
+log: ./out.log
 datasets:
   rdf:
     data: ../04-analyze/qoi-rdf.pt
     mean: sigmoid
 fit:
-  model_dir: ../05-fit/models
+  model_dir: ./models
   reuse_models: true
   committee_size: 1
   device: cuda

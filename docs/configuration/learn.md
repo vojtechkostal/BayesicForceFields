@@ -15,7 +15,7 @@ the surrogate files themselves, not from the original QoI datasets.
 ## Minimal Example
 
 ```yaml
-log: ../06-learn/out.log
+log: ./out.log
 specs: ../03-sample-local/specs.yaml
 models:
   rdf: ../05-fit/models/rdf.lgp
@@ -23,9 +23,9 @@ models:
 mcmc:
   total_steps: 10000
   warmup: 2000
-  checkpoint: ../06-learn/mcmc-checkpoint.pt
-  posterior: ../06-learn/posterior.pt
-  priors: ../06-learn/priors.pt
+  checkpoint: ./mcmc-checkpoint.pt
+  posterior: ./posterior.pt
+  priors: ./priors.pt
   restart: false
   device: cuda
 ```

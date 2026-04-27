@@ -1,5 +1,5 @@
 mode: run
-reference_dir: ../02-reference-run-slurm
+reference_dir: ./
 job_scheduler: slurm
 cp2k_cmd: cp2k.psmp
 single_atoms: true

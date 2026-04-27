@@ -15,7 +15,7 @@ the corresponding GROMACS jobs.
 
 ```yaml
 mol_resname: ACE
-campaign_dir: ./03-sample-local
+campaign_dir: ./
 systems:
   - assets: ../01-build-colvars/ffmd/system-000
     n_steps: 1000

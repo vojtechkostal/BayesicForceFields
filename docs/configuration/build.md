@@ -18,7 +18,7 @@ Source code:
 
 ```yaml
 project:
-  directory: ./01-build-colvars
+  directory: ./
   log: ./out.log
 
 gromacs:
@@ -33,13 +33,13 @@ reference:
   n_single_point_snapshots: 1000
 
 systems:
-  - topology: ./topol.top
+  - topology: ../inputs/common/topol.top
     templates:
-      ACE: ./ace.gro
+      ACE: ../inputs/common/ace.gro
     mdp:
-      em: ../../../data/mdp/em.mdp
-      npt: ../../../data/mdp/npt.mdp
-      prod: ../../../data/mdp/nvt.mdp
+      em: ../inputs/common/mdp/em.mdp
+      npt: ../inputs/common/mdp/npt.mdp
+      prod: ../inputs/common/mdp/nvt.mdp
     charge: -1
     multiplicity: 1
     box: [15.7107, 15.7107, 15.7107, 90, 90, 90]

@@ -1,12 +1,12 @@
 mol_resname: ACE
-campaign_dir: ../03-sample-slurm
+campaign_dir: ./
 systems:
   - assets: ../01-build-colvars/ffmd/system-000
-    n_steps: 10000
+    n_steps: 5000
   - assets: ../01-build-colvars/ffmd/system-001
-    n_steps: 10000
+    n_steps: 5000
   - assets: ../01-build-colvars/ffmd/system-002
-    n_steps: 10000
+    n_steps: 5000
 bounds:
   charge C2: [0.0, 1.0]
   charge O1 O2: [-0.8, -0.3]
@@ -14,7 +14,7 @@ bounds:
   charge H1 H2 H3: [-0.3, 0.3]
 implicit_atoms: [C2]
 total_charge: -0.80
-n_samples: 10
+n_samples: 20
 compress: false
 cleanup: false
 store: ["xtc"]
@@ -24,7 +24,7 @@ slurm:
   max_parallel_jobs: 1500
   sbatch:
     job_name: ace-sample
-    constraint: gen-a  
+    constraint: gen-a
     nodes: 1
     ntasks_per_node: 1
     cpus_per_task: 1
@@ -37,8 +37,8 @@ slurm:
     - export SLURM_MPI_TYPE=pmix_v3
     - export LD_LIBRARY_PATH=/uochb/soft/core/pmix/pmix-3.2.3/lib/:$LD_LIBRARY_PATH
     - export SUBMIT_DIR="${SLURM_SUBMIT_DIR:-$PWD}"
-    - export WORKDIR="${SLURM_TMPDIR:-${TMPDIR:-}}"
-    - export WORKDIR="${WORKDIR:-$SUBMIT_DIR/work-${SLURM_JOB_ID:-local}}"
+    - export WORKROOT="${SLURM_TMPDIR:-${TMPDIR:-$SUBMIT_DIR}}"
+    - export WORKDIR="$WORKROOT/bff-${SLURM_JOB_ID:-local}"
     - mkdir -p "$WORKDIR"
     - cd "$WORKDIR"
   teardown:

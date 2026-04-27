@@ -117,26 +117,20 @@ pip install -e ".[dev,docs,notebook]"
 
 ## Quick Start
 
-The acetate example in [examples/acetate/](examples/acetate/) keeps runnable
-YAML files under `configs/` and writes generated results into numbered stage
-directories:
+The acetate example in [examples/acetate/](examples/acetate/) keeps config
+templates under `configs/`. Copy each template into its stage directory as
+`config.yaml`, edit it there, and run BFF from inside that directory:
 
 ```bash
 cd examples/acetate
-bff build configs/build-colvars.yaml
-bff reference configs/reference-run-local.yaml
-bff reference configs/reference-import.yaml
-bff sample configs/sample-local.yaml
-bff analyze configs/analyze.yaml
-bff fit configs/fit.yaml
-bff learn configs/learn.yaml
+mkdir -p 01-build-colvars
+cp configs/build-colvars.yaml 01-build-colvars/config.yaml
+cd 01-build-colvars
+bff build config.yaml
 ```
 
-Validation is configured separately:
-
-```bash
-bff validate configs/validate.yaml
-```
+Continue the same pattern for the numbered stages described in the example
+README.
 
 Two notebooks are included in the example:
 
@@ -201,16 +195,20 @@ conda activate bfflearn
 
 After that, `bff <TAB>` should offer the public workflow commands.
 
-## Development and Release
+## Development
 
-Packaging, docs, and deployment configuration live in:
+Development notes are in [docs/development.md](docs/development.md). The short
+version is:
 
-- [pyproject.toml](pyproject.toml)
-- [environment.yaml](environment.yaml)
-- [.github/workflows/](.github/workflows/)
+```bash
+git clone https://github.com/vojtechkostal/BayesicForceFields.git
+cd BayesicForceFields
+mamba env create -f environment.yaml
+mamba activate bfflearn
+git switch -c feature/my-change
+```
 
-The release and publication strategy is documented in
-[docs/development.md](docs/development.md).
+Push work to a feature branch and open a pull request into `main`.
 
 ## License
 

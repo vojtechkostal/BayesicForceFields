@@ -1,116 +1,107 @@
 # Acetate Example
 
-This example keeps committed source assets under `inputs/`, runnable YAML files
-under `configs/`, and generated workflow outputs in numbered stage directories
-at the example root.
+This example uses stage-local configs. For each stage, create the output
+directory, copy the matching template to `config.yaml`, edit it if needed, then
+run BFF from inside that directory. The stage writes its own outputs to `./`.
 
-## Recommended Run Order
+## Run Order
 
 ```bash
 cd examples/acetate
-bff build configs/build-colvars.yaml
-bff reference configs/reference-run-local.yaml
-bff reference configs/reference-import.yaml
-bff sample configs/sample-local.yaml
-bff analyze configs/analyze.yaml
-bff fit configs/fit.yaml
-bff learn configs/learn.yaml
-bff validate configs/validate.yaml
+
+mkdir -p 01-build-colvars
+cp configs/build-colvars.yaml 01-build-colvars/config.yaml
+cd 01-build-colvars
+bff build config.yaml
+cd ..
+
+mkdir -p 02-reference-run-local
+cp configs/reference-run-local.yaml 02-reference-run-local/config.yaml
+cd 02-reference-run-local
+bff reference config.yaml
+cd ..
+
+mkdir -p 02-reference-import
+cp configs/reference-import.yaml 02-reference-import/config.yaml
+cd 02-reference-import
+bff reference config.yaml
+cd ..
+
+mkdir -p 03-sample-local
+cp configs/sample-local.yaml 03-sample-local/config.yaml
+cd 03-sample-local
+bff sample config.yaml
+cd ..
+
+mkdir -p 04-analyze
+cp configs/analyze.yaml 04-analyze/config.yaml
+cd 04-analyze
+bff analyze config.yaml
+cd ..
+
+mkdir -p 05-fit
+cp configs/fit.yaml 05-fit/config.yaml
+cd 05-fit
+bff fit config.yaml
+cd ..
+
+mkdir -p 06-learn
+cp configs/learn.yaml 06-learn/config.yaml
+cd 06-learn
+bff learn config.yaml
+cd ..
+
+mkdir -p 07-validate
+cp configs/validate.yaml 07-validate/config.yaml
+cd 07-validate
+bff validate config.yaml
+cd ..
 ```
 
-The default walkthrough uses the Colvars build plus local execution, and `bff reference` uses the staged GFN1-xTB snapshot MD input by default. Variant
-configs for PLUMED and Slurm are also included.
+The copied config is the record of what was run for that stage. Stage
+directories are runtime outputs and are ignored by git.
 
-## Layout
+## Source Layout
 
 ```text
 examples/acetate/
-  README.md
-  configs/
-    build-colvars.yaml
-    build-plumed.yaml
-    reference-run-local.yaml
-    reference-run-slurm.yaml
-    reference-import.yaml
-    sample-local.yaml
-    sample-slurm.yaml
-    analyze.yaml
-    fit.yaml
-    learn.yaml
-    validate.yaml
-  inputs/
-    common/
-    biases/
-    reference-inputs/
-    reference-trajectories/
-    restraint.py
-  notebooks/
-  01-build-colvars/
-  01-build-plumed/
-  02-reference-run-local/
-  02-reference-run-slurm/
-  02-reference-import/
-  03-sample-local/
-  03-sample-slurm/
-  04-analyze/
-  05-fit/
-  06-learn/
-  07-validate/
+  configs/      config templates copied into stage directories
+  inputs/       committed molecular inputs and reference trajectories
+  notebooks/    optional interactive analysis notebooks
 ```
 
-## Config Files
+## Configs
 
-- [configs/build-colvars.yaml](configs/build-colvars.yaml)
-  stages the default Colvars-biased systems into [01-build-colvars/](01-build-colvars/).
-- [configs/build-plumed.yaml](configs/build-plumed.yaml)
-  stages the same systems with PLUMED bias files into `01-build-plumed/`.
-- [configs/reference-run-local.yaml](configs/reference-run-local.yaml)
-  runs staged CP2K snapshot and single-atom jobs locally into
-  [02-reference-run-local/](02-reference-run-local/).
-- [configs/reference-run-slurm.yaml](configs/reference-run-slurm.yaml)
-  is the Slurm-backed CP2K variant and uses the same staged GFN1-xTB snapshot
-  MD input by default.
-- [configs/reference-import.yaml](configs/reference-import.yaml)
-  canonicalizes external AIMD trajectories into `02-reference-import/` for the
-  analysis stage.
-- [configs/sample-local.yaml](configs/sample-local.yaml)
-  runs the default sampled FFMD campaign into `03-sample-local/`.
-- [configs/sample-slurm.yaml](configs/sample-slurm.yaml)
-  is the Slurm-backed sampling variant.
-- [configs/analyze.yaml](configs/analyze.yaml)
-  compares `03-sample-local/` against `02-reference-import/` and writes QoI
-  datasets under `04-analyze/`.
-- [configs/fit.yaml](configs/fit.yaml)
-  fits surrogate models under `05-fit/`.
-- [configs/learn.yaml](configs/learn.yaml)
-  runs posterior learning under `06-learn/`.
-- [configs/validate.yaml](configs/validate.yaml)
-  reruns selected posterior samples under `07-validate/`.
+- `build-colvars.yaml`: prepares FFMD assets in `./ffmd/` and reference assets
+  in `./reference/`.
+- `reference-run-local.yaml`: runs CP2K on `../01-build-colvars/reference/` and
+  writes `train.extxyz` and `valid.extxyz` into `./`.
+- `reference-import.yaml`: imports committed AIMD trajectories into `./`.
+- `sample-local.yaml`: samples force-field parameters and runs local FFMD into
+  `./`.
+- `analyze.yaml`: compares `../03-sample-local/` against
+  `../02-reference-import/` and writes QoI datasets into `./`.
+- `fit.yaml`: fits surrogate models into `./models/`.
+- `learn.yaml`: learns the posterior and writes outputs into `./`.
+- `validate.yaml`: reruns selected posterior samples into `./`.
+
+## Variants
+
+- `build-plumed.yaml` uses PLUMED restraint files instead of Colvars.
+- `reference-run-slurm.yaml` runs the reference workflow through Slurm.
+- `sample-slurm.yaml` runs the sampling campaign through Slurm.
+
+The Slurm configs keep scheduler setup commands in the YAML. Edit those blocks
+for your cluster before running them.
 
 ## Inputs
 
-- [inputs/common/](inputs/common/)
-  contains the shared topologies, force-field includes, template coordinates,
-  and MDP files used by the build stage.
-- [inputs/biases/](inputs/biases/)
-  contains the Colvars and PLUMED restraint files used by the two build
-  variants.
-- [inputs/reference-inputs/](inputs/reference-inputs/)
-  contains optional CP2K input overrides for customized reference runs; the
-  default acetate configs use the staged GFN1-xTB snapshot MD input instead.
-- [inputs/reference-trajectories/](inputs/reference-trajectories/)
-  contains the external AIMD trajectories imported by `reference-import.yaml`.
-- [inputs/restraint.py](inputs/restraint.py)
-  defines the custom distance-distribution QoI used for the calcium-bound
+- `inputs/common/`: topologies, force-field includes, template coordinates, and
+  GROMACS MDP files.
+- `inputs/biases/`: Colvars and PLUMED restraint files.
+- `inputs/reference-trajectories/`: committed AIMD trajectories imported by
+  `reference-import.yaml`.
+- `inputs/reference-inputs/`: optional CP2K input overrides for customized
+  reference runs.
+- `inputs/restraint.py`: custom distance-distribution QoI for the calcium-bound
   systems.
-
-## Notes
-
-- The build stage writes prepared FFMD assets under `01-build-*/ffmd/` and
-  staged CP2K inputs under `01-build-*/reference/`.
-- `reference-run-*.yaml` produces canonical `train.extxyz` and `valid.extxyz`
-  labels from staged CP2K jobs. By default those snapshot relaxations use the
-  GFN1-xTB `md.inp` staged by `bff build`, while `reference-import.yaml` copies
-  the AIMD trajectories consumed by `bff analyze`.
-- Numbered stage directories are runtime outputs and are ignored by git.
-- Interactive notebooks live in [notebooks/](notebooks/).

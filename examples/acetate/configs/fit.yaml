@@ -1,4 +1,4 @@
-log: ../05-fit/out.log
+log: ./out.log
 datasets:
   rdf:
     data: ../04-analyze/qoi-rdf.pt
@@ -13,7 +13,7 @@ datasets:
     mean: 0
     observation_scale: 1.0
 fit:
-  model_dir: ../05-fit/models
+  model_dir: ./models
   reuse_models: true
   n_hyper_max: 200
   committee_size: 1

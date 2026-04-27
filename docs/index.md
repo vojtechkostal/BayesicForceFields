@@ -1,40 +1,62 @@
 # Bayesic Force Fields
 
-Bayesic Force Fields (BFF) is a workflow-oriented toolkit for learning
-fixed-charge molecular force fields from trajectory-derived observables.
+Bayesic Force Fields (BFF) is a command-line workflow for learning
+fixed-charge molecular force fields from trajectory observables.
 
-Associated publication:
+Publication:
 [Bayesian Learning for Accurate and Robust Biomolecular Force Fields](https://pubs.acs.org/doi/10.1021/acs.jctc.5c02051)
 
 Preprint:
 [arXiv:2511.05398](https://arxiv.org/abs/2511.05398)
 
 For exact reproduction of the published paper data, use the archived Git tag
-`v0.0.1`. The current `bfflearn` release line documents and ships the
-post-paper refactored workflow.
+`v0.0.1`. The current `bfflearn` package is the refactored workflow.
 
-The public interface is intentionally small:
+## What BFF Does
 
-- `bff build` stages reusable FFMD and reference assets.
-- `bff reference` runs or imports canonical reference data.
-- `bff sample` generates sampled FFMD campaigns from prepared assets.
-- `bff analyze` computes quantities of interest from sampled and reference trajectories.
-- `bff fit` fits surrogate models from analyzed QoI datasets.
-- `bff learn` performs posterior learning from trained surrogate models.
-- `bff validate` reruns selected posterior samples with the same campaign machinery used for sampling.
+BFF runs a linear workflow:
 
-## Design Goals
+```text
+build -> reference -> sample -> analyze -> fit -> learn -> validate
+```
 
-- readable YAML configs with one clear job per file
-- minimal hidden behavior between workflow stages
-- reusable prepared assets across multiple downstream runs
-- custom QoI routines that are easy to write
-- packaging and release metadata clean enough for public deployment
+- `build`: prepare reusable GROMACS and reference assets
+- `reference`: run CP2K reference jobs or import reference trajectories
+- `sample`: run sampled force-field MD campaigns
+- `analyze`: compute quantities of interest from sample and reference data
+- `fit`: train surrogate models
+- `learn`: infer posterior force-field parameters
+- `validate`: rerun selected posterior samples
 
-## Where To Start
+## Quick Start
+
+Install BFF, copy the example tree, then run the acetate walkthrough:
+
+```bash
+mamba create -n bfflearn python=3.10 pip
+mamba activate bfflearn
+pip install bfflearn
+
+bff examples
+cd examples/acetate
+```
+
+Each example stage has a config template. Copy it into the stage directory as
+`config.yaml`, edit it there, and run BFF from that directory:
+
+```bash
+mkdir -p 01-build-colvars
+cp configs/build-colvars.yaml 01-build-colvars/config.yaml
+cd 01-build-colvars
+bff build config.yaml
+```
+
+Continue with the stages in the [acetate example](examples/acetate.md).
+
+## Where To Go Next
 
 - [Installation](installation.md)
-- [CLI](cli.md)
-- [Configuration reference](configuration/build.md)
+- [Command-line interface](cli.md)
 - [Acetate example](examples/acetate.md)
-- [Development and release](development.md)
+- [Configuration reference](configuration/build.md)
+- [Development](development.md)

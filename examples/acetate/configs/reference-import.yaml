@@ -1,5 +1,5 @@
 mode: import
-reference_dir: ../02-reference-import
+reference_dir: ./
 
 systems:
   - topology: ../01-build-colvars/reference/system-000/system.top

@@ -17,7 +17,7 @@ possible.
 ## Minimal Example
 
 ```yaml
-campaign_dir: ./07-validate
+campaign_dir: ./
 parameters: ../06-learn/posterior-samples.yaml
 specs: ../03-sample-local/specs.yaml
 systems:

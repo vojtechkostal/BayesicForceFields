@@ -12,33 +12,80 @@ The acetate example optimizes acetate partial charges using three systems:
 - acetate with calcium at contact distance
 - acetate with calcium in a solvent-shared configuration
 
-## Stage Order
+## Stage-Local Workflow
+
+The config files under `configs/` are templates. For each stage, make the stage
+directory, copy the template to `config.yaml`, edit it there, and run BFF from
+inside that directory. Each stage writes its own outputs to `./`.
 
 ```bash
 cd examples/acetate
-bff build configs/build-colvars.yaml
-bff reference configs/reference-run-local.yaml
-bff reference configs/reference-import.yaml
-bff sample configs/sample-local.yaml
-bff analyze configs/analyze.yaml
-bff fit configs/fit.yaml
-bff learn configs/learn.yaml
-bff validate configs/validate.yaml
+
+mkdir -p 01-build-colvars
+cp configs/build-colvars.yaml 01-build-colvars/config.yaml
+cd 01-build-colvars
+bff build config.yaml
+cd ..
+
+mkdir -p 02-reference-run-local
+cp configs/reference-run-local.yaml 02-reference-run-local/config.yaml
+cd 02-reference-run-local
+bff reference config.yaml
+cd ..
+
+mkdir -p 02-reference-import
+cp configs/reference-import.yaml 02-reference-import/config.yaml
+cd 02-reference-import
+bff reference config.yaml
+cd ..
+
+mkdir -p 03-sample-local
+cp configs/sample-local.yaml 03-sample-local/config.yaml
+cd 03-sample-local
+bff sample config.yaml
+cd ..
+
+mkdir -p 04-analyze
+cp configs/analyze.yaml 04-analyze/config.yaml
+cd 04-analyze
+bff analyze config.yaml
+cd ..
+
+mkdir -p 05-fit
+cp configs/fit.yaml 05-fit/config.yaml
+cd 05-fit
+bff fit config.yaml
+cd ..
+
+mkdir -p 06-learn
+cp configs/learn.yaml 06-learn/config.yaml
+cd 06-learn
+bff learn config.yaml
+cd ..
+
+mkdir -p 07-validate
+cp configs/validate.yaml 07-validate/config.yaml
+cd 07-validate
+bff validate config.yaml
+cd ..
 ```
+
+The copied config is the record of what was run for that stage. Stage
+directories are generated outputs and are ignored by git.
 
 ## Layout
 
-The example root keeps committed source assets under `inputs/`, runnable YAML
-files under `configs/`, and generated outputs in numbered stage directories such
-as `01-build-colvars/`, `02-reference-run-local/`, `03-sample-local/`, or
-`06-learn/`. Those stage directories are intentionally ignored by git.
+```text
+examples/acetate/
+  configs/      config templates copied into stage directories
+  inputs/       committed molecular inputs and reference trajectories
+  notebooks/    optional interactive notebooks
+```
 
-## Important Files
+## Main Configs
 
 - Colvars build config:
   [configs/build-colvars.yaml][acetate-build-colvars]
-- PLUMED build config:
-  [configs/build-plumed.yaml][acetate-build-plumed]
 - local CP2K reference-run config:
   [configs/reference-run-local.yaml][acetate-reference-run]
 - imported AIMD reference config:
@@ -54,37 +101,39 @@ as `01-build-colvars/`, `02-reference-run-local/`, `03-sample-local/`, or
 - validate config:
   [configs/validate.yaml][acetate-validate]
 
+## Variants
+
+- PLUMED build config:
+  [configs/build-plumed.yaml][acetate-build-plumed]
+- Slurm reference-run config:
+  [configs/reference-run-slurm.yaml][acetate-reference-slurm]
+- Slurm sampling config:
+  [configs/sample-slurm.yaml][acetate-sample-slurm]
+
+The Slurm configs keep scheduler setup commands in the YAML. Edit those blocks
+for your cluster before running them.
+
 ## Inputs
 
 - shared force-field files, topologies, template coordinates, and MDP inputs:
   `inputs/common/`
 - Colvars and PLUMED restraint files:
   `inputs/biases/`
-- optional CP2K input overrides for customized reference runs:
-  `inputs/reference-inputs/`
 - ab initio reference trajectories imported for QoI analysis:
   `inputs/reference-trajectories/`
+- optional CP2K input overrides for customized reference runs:
+  `inputs/reference-inputs/`
 - custom QoI routine:
   [inputs/restraint.py][acetate-restraint]
-
-## Notes
-
-- The build stage writes prepared FFMD assets under `01-build-*/ffmd/` and
-  staged CP2K assets under `01-build-*/reference/`.
-- `reference-run-*.yaml` produces canonical `train.extxyz` and `valid.extxyz`
-  datasets from staged CP2K jobs. By default the snapshot relaxations use the
-  staged GFN1-xTB `md.inp` from the build stage.
-- `reference-import.yaml` separately copies the AIMD trajectories into the
-  canonical `system.top`, `system.gro`, and `trajectory.*` layout consumed by
-  `bff analyze`.
-- Interactive notebooks live under `notebooks/`.
 
 [acetate-root]: https://github.com/vojtechkostal/BayesicForceFields/tree/main/examples/acetate
 [acetate-build-colvars]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/build-colvars.yaml
 [acetate-build-plumed]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/build-plumed.yaml
 [acetate-reference-run]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/reference-run-local.yaml
+[acetate-reference-slurm]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/reference-run-slurm.yaml
 [acetate-reference-import]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/reference-import.yaml
 [acetate-sample]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/sample-local.yaml
+[acetate-sample-slurm]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/sample-slurm.yaml
 [acetate-analyze]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/analyze.yaml
 [acetate-fit]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/fit.yaml
 [acetate-learn]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/learn.yaml
