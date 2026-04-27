@@ -21,10 +21,7 @@ class SampleConfig(SimulationCampaignConfig):
 
     @classmethod
     def load(cls, fn_config: PathLike) -> 'SampleConfig':
-        _, _, config, common = _load_campaign_common(
-            fn_config,
-            asset_systems=True,
-        )
+        _, _, config, common = _load_campaign_common(fn_config)
 
         required = [
             'mol_resname',

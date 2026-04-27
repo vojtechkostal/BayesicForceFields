@@ -20,6 +20,7 @@ from .scheduler import (
     bff_cli_command,
     build_slurm_cli_job,
     control_jobs,
+    get_job_state_counts,
     wait_for_scheduler_slot,
 )
 
@@ -206,47 +207,6 @@ def build_submission_script(
     )
 
 
-def write_submission_script(
-    *,
-    sample_id: str,
-    fn_config_md: Path,
-    config: SimulationCampaignConfig,
-) -> Path | None:
-    submit_script = build_submission_script(
-        sample_id=sample_id,
-        fn_config_md=fn_config_md,
-        config=config,
-    )
-    if submit_script is None:
-        return None
-
-    fn_submit = config.campaign_dir.resolve() / f'run-{sample_id}.sh'
-    submit_script.save(fn_submit)
-    return fn_submit
-
-
-def dispatch_simulation_job(
-    *,
-    sample_id: str,
-    config: SimulationCampaignConfig,
-) -> int | None:
-    campaign_dir = config.campaign_dir.resolve()
-    fn_config_md = campaign_dir / f'config-{sample_id}.yaml'
-    cmd_run = bff_cli_command('md', fn_config_md)
-    if config.job_scheduler == 'local':
-        subprocess.run(cmd_run, cwd=str(campaign_dir), check=True)
-        return None
-
-    submit_script = build_submission_script(
-        sample_id=sample_id,
-        fn_config_md=fn_config_md,
-        config=config,
-    )
-    assert submit_script is not None
-    fn_submit = campaign_dir / f'run-{sample_id}.sh'
-    return submit_script.submit(fn_submit)
-
-
 def _result_record(sample_id: str, campaign_dir: Path) -> dict[str, Any]:
     fn_result = campaign_dir / f'result-{sample_id}.yaml'
     if fn_result.exists():
@@ -309,14 +269,12 @@ def print_sample_summary(
     logger.kv('Scheduler', config.job_scheduler)
     logger.kv('Dispatch', 'yes' if config.dispatch else 'no (stage only)')
     logger.kv('Stored outputs', ', '.join(config.store) if config.store else 'none')
-    logger.warn_if(
-        not config.dispatch,
-        'Simulation jobs will only be staged; no MD will be submitted.',
-    )
-    logger.warn_if(
-        not config.store,
-        'No simulation outputs are configured to be stored after completion.',
-    )
+    if not config.dispatch:
+        logger.warn('Simulation jobs will only be staged; no MD will be submitted.')
+    if not config.store:
+        logger.warn(
+            'No simulation outputs are configured to be stored after completion.'
+        )
     logger.info('parameters:', level=1)
     for name, bounds in specs.bounds.by_name.items():
         label = f'{name}: {bounds}'
@@ -343,14 +301,12 @@ def print_validate_summary(
     logger.kv('Scheduler', config.job_scheduler)
     logger.kv('Dispatch', 'yes' if config.dispatch else 'no (stage only)')
     logger.kv('Stored outputs', ', '.join(config.store) if config.store else 'none')
-    logger.warn_if(
-        not config.dispatch,
-        'Validation jobs will only be staged; no MD will be submitted.',
-    )
-    logger.warn_if(
-        not config.store,
-        'No validation outputs are configured to be stored after completion.',
-    )
+    if not config.dispatch:
+        logger.warn('Validation jobs will only be staged; no MD will be submitted.')
+    if not config.store:
+        logger.warn(
+            'No validation outputs are configured to be stored after completion.'
+        )
     parameter_source = getattr(config, 'parameters', None)
     if parameter_source is not None:
         logger.kv('Parameter source', Path(parameter_source).resolve())
@@ -371,24 +327,53 @@ def run_campaign(
     pad = len(str(max(n_total, 1)))
     campaign_dir = config.campaign_dir.resolve()
     job_scheduler = config.job_scheduler
-    max_parallel_jobs = None
     action = 'Running MD' if config.dispatch else 'Staging jobs'
     campaign_finished = False
+    count_width = len(str(max(n_total, 1)))
 
     if config.dispatch and job_scheduler not in {'local', *SCHEDULER_CLASSES}:
+        supported = ['local', *SCHEDULER_CLASSES]
         raise NotImplementedError(
-            f"Unsupported scheduler '{job_scheduler}'. Supported: {['local', *SCHEDULER_CLASSES]}"
+            f"Unsupported scheduler '{job_scheduler}'. Supported: {supported}"
+        )
+
+    def log_job_monitor(counts: dict[str, int], *, overwrite: bool = True) -> None:
+        finished_percent = (
+            100 if n_total == 0 else 100 * counts['finished'] / n_total
+        )
+        logger.status(
+            'Scheduler jobs',
+            (
+                f"submitted {counts['submitted']:>{count_width}d}/"
+                f"{n_total:<{count_width}d} | "
+                f"pending {counts['pending']:>{count_width}d} | "
+                f"running {counts['running']:>{count_width}d} | "
+                f"finished {counts['finished']:>{count_width}d} "
+                f"[{finished_percent:3.0f}%]"
+            ),
+            level=1,
+            overwrite=overwrite,
         )
 
     try:
+        max_parallel_jobs = None
+        if config.dispatch and job_scheduler == 'slurm':
+            assert config.slurm is not None
+            max_parallel_jobs = config.slurm.max_parallel_jobs
+            max_parallel_jobs = np.inf if max_parallel_jobs == -1 else max_parallel_jobs
+
         for idx, sample in enumerate(parameter_samples):
             sample_id = f'{idx:0{pad}d}'
-            logger.status(
-                action,
-                f'{idx + 1}/{n_total} ({((idx + 1) / n_total * 100):.0f}%)',
-                level=1,
-                overwrite=True,
-            )
+            if (not config.dispatch) or job_scheduler == 'local':
+                logger.status(
+                    action,
+                    (
+                        f'{idx + 1:>{pad}d}/{n_total:<{pad}d} '
+                        f'[{((idx + 1) / n_total * 100):3.0f}%]'
+                    ),
+                    level=1,
+                    overwrite=True,
+                )
 
             sample = np.asarray(sample, dtype=float).reshape(-1)
             fn_config_md = write_sample_job_config(
@@ -416,47 +401,58 @@ def run_campaign(
                     fn_specs=fn_specs,
                     systems=systems,
                 )
-                write_submission_script(
+                submit_script = build_submission_script(
                     sample_id=sample_id,
                     fn_config_md=fn_config_md,
                     config=config,
                 )
+                if submit_script is not None:
+                    submit_script.save(campaign_dir / f'run-{sample_id}.sh')
                 continue
 
             if job_scheduler == 'local':
-                dispatch_simulation_job(sample_id=sample_id, config=config)
+                subprocess.run(
+                    bff_cli_command('md', fn_config_md),
+                    cwd=str(campaign_dir),
+                    check=True,
+                )
                 continue
 
-            assert config.slurm is not None
-            max_parallel_jobs = config.slurm.max_parallel_jobs
-            max_parallel_jobs = np.inf if max_parallel_jobs == -1 else max_parallel_jobs
-            if max_parallel_jobs > 0:
-                wait_for_scheduler_slot(
-                    job_ids=job_ids,
-                    scheduler=job_scheduler,
-                    max_parallel_jobs=max_parallel_jobs,
-                )
-                job_id = dispatch_simulation_job(sample_id=sample_id, config=config)
-                if job_id is not None:
-                    job_ids.append(job_id)
-                    samples[sample_id]['job_id'] = job_id
+            assert max_parallel_jobs is not None
+            wait_for_scheduler_slot(
+                job_ids=job_ids,
+                scheduler=job_scheduler,
+                max_parallel_jobs=max_parallel_jobs,
+                monitor=log_job_monitor,
+            )
+            submit_script = build_submission_script(
+                sample_id=sample_id,
+                fn_config_md=fn_config_md,
+                config=config,
+            )
+            assert submit_script is not None
+            job_id = submit_script.submit(campaign_dir / f'run-{sample_id}.sh')
+            job_ids.append(job_id)
+            samples[sample_id]['job_id'] = job_id
+            log_job_monitor(get_job_state_counts(job_ids, job_scheduler))
 
-        if (
-            config.dispatch
-            and job_scheduler != 'local'
-            and max_parallel_jobs is not None
-            and max_parallel_jobs > 0
-        ):
-            control_jobs(job_ids, job_scheduler)
+        if config.dispatch and job_scheduler == 'slurm':
+            control_jobs(job_ids, job_scheduler, monitor=log_job_monitor)
+            log_job_monitor(
+                get_job_state_counts(job_ids, job_scheduler),
+                overwrite=False,
+            )
 
         campaign_finished = True
-        logger.done(action, detail=f'{n_total}/{n_total} (100%)', level=1)
+        logger.done(action, detail=f'{n_total}/{n_total} [100%]', level=1)
     finally:
         collect_campaign_metadata(
             samples=samples,
             systems=systems,
             campaign_dir=campaign_dir,
-            compress=config.compress if config.dispatch and campaign_finished else False,
+            compress=(
+                config.compress if config.dispatch and campaign_finished else False
+            ),
             remove=config.cleanup if config.dispatch and campaign_finished else False,
         )
 
@@ -501,7 +497,9 @@ def load_parameter_samples(
     fn_samples = Path(fn_samples).resolve()
     specs = Specs(fn_specs)
     if fn_samples.suffix != '.yaml':
-        raise ValueError(f'Unsupported sample file {fn_samples}. Expected a .yaml file.')
+        raise ValueError(
+            f'Unsupported sample file {fn_samples}. Expected a .yaml file.'
+        )
 
     raw = load_yaml(fn_samples)
     if not isinstance(raw, dict):
@@ -517,7 +515,8 @@ def load_parameter_samples(
     expected = len(specs.parameter_names(explicit_only=True))
     if samples.shape[1] != expected:
         raise ValueError(
-            f'Expected {expected} explicit parameter values per sample, got {samples.shape[1]}.'
+            f'Expected {expected} explicit parameter values per sample, got '
+            f'{samples.shape[1]}.'
         )
     if samples.shape[0] == 0:
         raise ValueError('No validation parameter samples were found.')

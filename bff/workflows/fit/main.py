@@ -1,5 +1,6 @@
 """Workflow entry point for surrogate fitting."""
 
+import time
 from pathlib import Path
 from typing import Union
 
@@ -19,18 +20,8 @@ def _load_datasets(config: FitConfig) -> tuple[QoIDataset, ...]:
     return tuple(datasets)
 
 
-def _dataset_options(
-    config: FitConfig,
-) -> tuple[dict[str, Path | None], dict[str, object], dict[str, float]]:
-    model_paths = {dataset.name: dataset.fn_model for dataset in config.datasets}
-    y_means = {dataset.name: dataset.mean for dataset in config.datasets}
-    observation_scales = {
-        dataset.name: dataset.observation_scale for dataset in config.datasets
-    }
-    return model_paths, y_means, observation_scales
-
-
 def main(fn_config: PathLike) -> None:
+    workflow_start = time.perf_counter()
     try:
         from ...bayes.learning import fit_surrogates
     except ModuleNotFoundError as exc:
@@ -44,7 +35,11 @@ def main(fn_config: PathLike) -> None:
     config = FitConfig.load(fn_config)
     logger = Logger('fit', str(config.log), mode='w')
     datasets = _load_datasets(config)
-    model_paths, y_means, observation_scales = _dataset_options(config)
+    model_paths = {dataset.name: dataset.fn_model for dataset in config.datasets}
+    y_means = {dataset.name: dataset.mean for dataset in config.datasets}
+    observation_scales = {
+        dataset.name: dataset.observation_scale for dataset in config.datasets
+    }
 
     config.fit.model_dir.mkdir(parents=True, exist_ok=True)
 
@@ -54,11 +49,13 @@ def main(fn_config: PathLike) -> None:
     logger.kv('Datasets', len(datasets))
     logger.kv('Model directory', config.fit.model_dir.resolve())
     logger.kv('Device', config.fit.device)
-    logger.warn_if(
-        config.fit.reuse_models
-        and any(path is not None and path.exists() for path in model_paths.values()),
-        'Existing surrogate models may be reused if matching files are present.',
-    )
+    if config.fit.reuse_models and any(
+        path is not None and path.exists()
+        for path in model_paths.values()
+    ):
+        logger.warn(
+            'Existing surrogate models may be reused if matching files are present.'
+        )
     logger.blank()
 
     fit_surrogates(
@@ -74,3 +71,5 @@ def main(fn_config: PathLike) -> None:
         logger=logger,
         **config.fit.opt_kwargs,
     )
+    elapsed = time.perf_counter() - workflow_start
+    logger.done('Surrogate fitting', detail=f'finished in {elapsed:.2f}s', level=1)

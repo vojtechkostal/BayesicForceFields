@@ -149,8 +149,9 @@ def main(fn_config: PathLike) -> None:
     fn_log = campaign_dir / f"gmx-{sample_id}.log"
     success = []
     outputs: list[dict[str, str | None]] = []
-    with open(fn_log, 'a+') as log:
-        try:
+    status = "failed"
+    try:
+        with open(fn_log, 'a+') as log:
             for i, system in enumerate(config.systems):
                 em = system.fn_mdp_em
                 prod = system.fn_mdp_prod
@@ -289,46 +290,39 @@ def main(fn_config: PathLike) -> None:
                         "trajectory": trajectory_name,
                     }
                 )
-        except Exception:
+
+        if np.all(success):
+            status = "completed"
+            if job_scheduler != 'local':
+                for ext in config.store:
+                    for file in run_dir.glob("*." + ext):
+                        shutil.copy(file, campaign_dir / file.name)
+            else:
+                _prune_auxiliary_outputs(run_dir, config.store)
+        else:
             for system_index in range(len(config.systems)):
                 for file in _sample_output_paths(run_dir, sample_id, system_index):
                     file.unlink(missing_ok=True)
-            save_yaml(
-                {
-                    "sample_id": sample_id,
-                    "status": "failed",
-                    "outputs": outputs,
-                },
-                campaign_dir / f"result-{sample_id}.yaml",
-            )
-            raise
 
-    if np.all(success):
-        if job_scheduler != 'local':
-            patterns = ["*." + ext for ext in config.store]
-            files = list(sum((list(run_dir.glob(p)) for p in patterns), []))
-            for file in files:
-                shutil.copy(file, campaign_dir / file.name)
-        else:
-            _prune_auxiliary_outputs(run_dir, config.store)
-        save_yaml(
-            {
-                "sample_id": sample_id,
-                "status": "completed",
-                "outputs": outputs,
-            },
-            campaign_dir / f"result-{sample_id}.yaml",
-        )
-    else:
+    except Exception:
         for system_index in range(len(config.systems)):
             for file in _sample_output_paths(run_dir, sample_id, system_index):
                 file.unlink(missing_ok=True)
         save_yaml(
             {
                 "sample_id": sample_id,
-                "status": "failed",
+                "status": status,
                 "outputs": outputs,
             },
             campaign_dir / f"result-{sample_id}.yaml",
         )
+        raise
 
+    save_yaml(
+        {
+            "sample_id": sample_id,
+            "status": status,
+            "outputs": outputs,
+        },
+        campaign_dir / f"result-{sample_id}.yaml",
+    )

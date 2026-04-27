@@ -288,11 +288,11 @@ def build_equilibrated_topology(
     fn_topol_processed = fn_coord_box.with_suffix(".top")
     topol.write(fn_topol_processed, overwrite=True)
     maxwarn = determine_maxwarn(topol)
-    logger.warn_if(
-        maxwarn > 0,
-        "Non-neutral topology detected; GROMACS preprocessing will use -maxwarn 1.",
-        level=2,
-    )
+    if maxwarn > 0:
+        logger.warn(
+            "Non-neutral topology detected; GROMACS preprocessing will use -maxwarn 1.",
+            level=2,
+        )
 
     deffnm_em = equilibration_dir / f"{topology_label}-em"
     logger.status(
@@ -548,17 +548,17 @@ def main(fn_config: PathLike) -> None:
         "Single-point snapshots per window",
         config.n_single_point_snapshots,
     )
-    logger.warn_if(
-        config.n_single_point_snapshots < 10,
-        "Very few CP2K reference snapshots are requested; train/valid splits "
-        "may be noisy.",
-    )
-    logger.warn_if(
-        any(system.bias.is_biased for system in config.systems),
-        "Bias files are staged verbatim. For strong restraints, supply a "
-        "user-prepared ramp-up stage or starting structures already near the "
-        "intended region.",
-    )
+    if config.n_single_point_snapshots < 10:
+        logger.warn(
+            "Very few CP2K reference snapshots are requested; train/valid splits "
+            "may be noisy.",
+        )
+    if any(system.bias.is_biased for system in config.systems):
+        logger.warn(
+            "Bias files are staged verbatim. For strong restraints, supply a "
+            "user-prepared ramp-up stage or starting structures already near the "
+            "intended region.",
+        )
     if config.fn_log is not None:
         logger.kv("Log file", config.fn_log.resolve())
     logger.blank()
@@ -607,7 +607,10 @@ def main(fn_config: PathLike) -> None:
         fn_topol_local.write_text(topology_state.fn_topol_processed.read_text())
 
         fn_bias_input = None
-        if system.bias.input_file is not None and system.bias.input_filename is not None:
+        if (
+            system.bias.input_file is not None
+            and system.bias.input_filename is not None
+        ):
             fn_bias_input = (
                 equilibration_dir / f"{system_label}.{system.bias.input_filename}"
             )
@@ -676,4 +679,3 @@ def main(fn_config: PathLike) -> None:
             logger=logger,
         )
         logger.blank()
-

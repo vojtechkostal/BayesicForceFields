@@ -5,7 +5,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from ...io.schedulers import Slurm
 
@@ -13,6 +13,8 @@ PathLike = str | Path
 SCHEDULER_CLASSES = {
     'slurm': Slurm,
 }
+PENDING_SLURM_STATES = {'PD', 'CF', 'CONFIGURING'}
+RUNNING_SLURM_STATES = {'R', 'CG', 'COMPLETING', 'S', 'ST', 'STOPPED'}
 
 
 def bff_cli_command(command: str, *args: PathLike) -> list[str]:
@@ -50,16 +52,31 @@ def build_slurm_cli_job(
     return submit_script
 
 
-def get_active_jobs(ids: list[int], scheduler: str, chunk_size: int = 1000) -> int:
-    """Count active jobs for the supported scheduler."""
+def get_job_state_counts(
+    ids: list[int],
+    scheduler: str,
+    chunk_size: int = 1000,
+) -> dict[str, int]:
+    """Count submitted, pending, running, finished, and unknown jobs."""
     if scheduler != 'slurm':
         raise NotImplementedError
+
+    counts = {
+        'submitted': len(ids),
+        'pending': 0,
+        'running': 0,
+        'finished': 0,
+        'active': 0,
+        'unknown': 0,
+    }
+    if not ids:
+        return counts
 
     def chunks(values: list[int], n: int):
         for i in range(0, len(values), n):
             yield values[i:i + n]
 
-    n_active = 0
+    active_ids: set[int] = set()
     for chunk in chunks(ids, chunk_size):
         ids_str = ','.join(map(str, chunk))
         res = subprocess.run(
@@ -69,10 +86,31 @@ def get_active_jobs(ids: list[int], scheduler: str, chunk_size: int = 1000) -> i
             check=False,
         )
         output = res.stdout.strip()
-        if output:
-            n_active += len(output.splitlines())
+        for line in output.splitlines():
+            raw_job_id, _, raw_state = line.partition(',')
+            try:
+                job_id = int(raw_job_id.split('_', 1)[0])
+            except ValueError:
+                counts['unknown'] += 1
+                continue
 
-    return n_active
+            state = raw_state.strip()
+            active_ids.add(job_id)
+            if state in PENDING_SLURM_STATES:
+                counts['pending'] += 1
+            elif state in RUNNING_SLURM_STATES:
+                counts['running'] += 1
+            else:
+                counts['unknown'] += 1
+
+    counts['active'] = counts['pending'] + counts['running'] + counts['unknown']
+    counts['finished'] = max(len(set(ids)) - len(active_ids), 0)
+    return counts
+
+
+def get_active_jobs(ids: list[int], scheduler: str, chunk_size: int = 1000) -> int:
+    """Count active jobs for the supported scheduler."""
+    return get_job_state_counts(ids, scheduler, chunk_size)['active']
 
 
 def wait_for_scheduler_slot(
@@ -80,13 +118,31 @@ def wait_for_scheduler_slot(
     job_ids: list[int],
     scheduler: str,
     max_parallel_jobs: float,
+    monitor: Callable[[dict[str, int]], None] | None = None,
+    poll_interval: float = 5.0,
 ) -> None:
     """Wait until the scheduler has capacity for one more submitted job."""
-    while get_active_jobs(job_ids, scheduler) >= max_parallel_jobs:
-        time.sleep(5)
+    while True:
+        counts = get_job_state_counts(job_ids, scheduler)
+        if monitor is not None:
+            monitor(counts)
+        if counts['active'] < max_parallel_jobs:
+            return
+        time.sleep(poll_interval)
 
 
-def control_jobs(job_ids: list[int], scheduler: str) -> None:
+def control_jobs(
+    job_ids: list[int],
+    scheduler: str,
+    *,
+    monitor: Callable[[dict[str, int]], None] | None = None,
+    poll_interval: float = 5.0,
+) -> None:
     """Block until all submitted jobs finish."""
-    while get_active_jobs(job_ids, scheduler) != 0:
-        time.sleep(5)
+    while True:
+        counts = get_job_state_counts(job_ids, scheduler)
+        if monitor is not None:
+            monitor(counts)
+        if counts['active'] == 0:
+            return
+        time.sleep(poll_interval)

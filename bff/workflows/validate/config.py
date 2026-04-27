@@ -18,10 +18,7 @@ class ValidateConfig(SimulationCampaignConfig):
 
     @classmethod
     def load(cls, fn_config: PathLike) -> 'ValidateConfig':
-        _, base_dir, config, common = _load_campaign_common(
-            fn_config,
-            asset_systems=True,
-        )
+        _, base_dir, config, common = _load_campaign_common(fn_config)
 
         if 'specs' not in config:
             raise ValueError("Validation mode requires 'specs'.")

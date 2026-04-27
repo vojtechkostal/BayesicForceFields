@@ -116,20 +116,6 @@ def analyze_trajectory_set(
     return results
 
 
-def _maybe_collect_garbage(
-    completed: int,
-    total: int,
-    *,
-    gc_collect: bool,
-    progress_stride: int,
-) -> None:
-    """Run the garbage collector at coarse progress intervals when requested."""
-    if not gc_collect:
-        return
-    if (completed % progress_stride == 0) or (completed == total):
-        gc.collect()
-
-
 def _iter_analyzed_sets(
     trajectory_sets: Sequence[TrajectorySet],
     *,
@@ -200,10 +186,9 @@ def analyze_trajectory_sets(
         start=1,
     ):
         qoi.append(result)
-        _maybe_collect_garbage(
-            completed,
-            n_sets,
-            gc_collect=gc_collect,
-            progress_stride=progress_stride,
-        )
+        if gc_collect and (
+            completed % progress_stride == 0
+            or completed == n_sets
+        ):
+            gc.collect()
     return qoi

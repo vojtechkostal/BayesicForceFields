@@ -1,7 +1,8 @@
 """Workflow entry point for posterior learning from trained surrogates."""
 
+import time
 from pathlib import Path
-from typing import Mapping, Union
+from typing import Union
 
 from ...domain.specs import ChargeConstraint
 from ...io.logs import Logger
@@ -22,25 +23,6 @@ def _import_learning_stack():
             ) from exc
         raise
     return LGPCommittee, LearningProblem
-
-
-def load_models(model_paths: Mapping[str, PathLike]) -> dict[str, object]:
-    lgp_committee_type, _ = _import_learning_stack()
-    return {
-        name: lgp_committee_type.load(path)
-        for name, path in model_paths.items()
-    }
-
-
-def build_problem(
-    *,
-    specs: PathLike,
-    model_paths: Mapping[str, PathLike],
-):
-    _, learning_problem_type = _import_learning_stack()
-    constraint = ChargeConstraint(specs)
-    models = load_models(model_paths)
-    return learning_problem_type.from_models(models, constraint=constraint)
 
 
 def _write_default_plots(results, config: LearnConfig, logger: Logger) -> None:
@@ -70,6 +52,7 @@ def _write_default_plots(results, config: LearnConfig, logger: Logger) -> None:
 
 
 def main(fn_config: PathLike):
+    workflow_start = time.perf_counter()
     config = LearnConfig.load(fn_config)
     logger = Logger('learn', str(config.log), mode='w')
     logger.section('Posterior Learning')
@@ -78,17 +61,23 @@ def main(fn_config: PathLike):
     logger.kv('Specs', Path(config.specs).resolve())
     logger.kv('Models', len(config.models))
     logger.kv('Device', config.mcmc.device)
-    logger.warn_if(
+    if (
         config.mcmc.restart
         and config.mcmc.checkpoint is not None
-        and Path(config.mcmc.checkpoint).resolve().exists(),
-        'Posterior learning is configured to reuse an existing checkpoint if one is found.',
-    )
+        and Path(config.mcmc.checkpoint).resolve().exists()
+    ):
+        logger.warn(
+            'Posterior learning is configured to reuse an existing checkpoint '
+            'if one is found.'
+        )
     logger.blank()
-    problem = build_problem(
-        specs=config.specs,
-        model_paths=config.models,
-    )
+    lgp_committee_type, learning_problem_type = _import_learning_stack()
+    constraint = ChargeConstraint(config.specs)
+    models = {
+        name: lgp_committee_type.load(path)
+        for name, path in config.models.items()
+    }
+    problem = learning_problem_type.from_models(models, constraint=constraint)
     results = problem.learn(
         priors_disttype=config.mcmc.priors_disttype,
         total_steps=config.mcmc.total_steps,
@@ -107,4 +96,6 @@ def main(fn_config: PathLike):
         include_implicit_charge=config.mcmc.include_implicit_charge,
     )
     _write_default_plots(results, config, logger)
+    elapsed = time.perf_counter() - workflow_start
+    logger.done('Posterior learning', detail=f'finished in {elapsed:.2f}s', level=1)
     return results

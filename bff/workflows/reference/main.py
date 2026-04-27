@@ -143,10 +143,8 @@ def print_reference_summary(config: ReferenceConfig, logger: Logger) -> None:
     logger.kv("Collection wait", f"{config.collection_wait_seconds:g} s")
     if config.job_scheduler == "slurm" and config.slurm is not None:
         logger.kv("Max parallel jobs", config.slurm.max_parallel_jobs)
-    logger.warn_if(
-        not config.single_atoms,
-        "Single-atom reference energies are disabled for this run.",
-    )
+    if not config.single_atoms:
+        logger.warn("Single-atom reference energies are disabled for this run.")
     logger.blank()
 
 
@@ -530,12 +528,13 @@ def collect_snapshot_splits(
         detail=f"{n_collected}/{n_total} frames -> train {n_train}, valid {n_valid}",
         level=2,
     )
-    logger.warn_if(
-        n_collected != n_total,
-        "Only "
-        f"{n_collected} of {n_total} snapshot runs produced usable sp.extxyz files.",
-        level=2,
-    )
+    if n_collected != n_total:
+        logger.warn(
+            "Only "
+            f"{n_collected} of {n_total} snapshot runs produced usable "
+            "sp.extxyz files.",
+            level=2,
+        )
     return collected_run_dirs
 
 
@@ -556,7 +555,9 @@ def collect_system_outputs(
 
     if config.single_atoms:
         single_atom_root = system_dir / "single-atoms"
-        single_atom_dirs = sorted(path for path in single_atom_root.iterdir() if path.is_dir())
+        single_atom_dirs = sorted(
+            path for path in single_atom_root.iterdir() if path.is_dir()
+        )
         energies = collect_single_atom_energies(single_atom_dirs)
         save_yaml(energies, system_dir / "single-atoms.yaml")
         logger.done(
@@ -677,7 +678,9 @@ def main(fn_config: str) -> None:
     if config.mode == "import":
         for index, system in enumerate(config.systems, start=1):
             if not isinstance(system, ImportedReferenceSystemConfig):
-                raise TypeError(f"Expected imported reference system, got {type(system)}")
+                raise TypeError(
+                    f"Expected imported reference system, got {type(system)}"
+                )
             logger.info(f"System {index}/{len(config.systems)}", level=1)
             import_reference_system(system, config.reference_dir.resolve(), logger)
             logger.blank()

@@ -1,4 +1,5 @@
 from pathlib import Path
+import time
 
 import numpy as np
 
@@ -81,89 +82,6 @@ def _dataset_labels(
     )
 
 
-def _write_qoi_datasets(
-    *,
-    fn_out,
-    inputs,
-    qoi_sample: list[list[dict[str, QoI]]],
-    qoi_ref: list[dict[str, QoI]],
-) -> None:
-    qoi_names = sorted({name for sample in qoi_ref for name in sample})
-
-    for qoi_name in qoi_names:
-        fn_qoi = _qoi_output_path(fn_out, qoi_name)
-        system_indices = [i for i, sample in enumerate(qoi_ref) if qoi_name in sample]
-        ref_blocks = [qoi_ref[i][qoi_name] for i in system_indices]
-        sample_blocks = [
-            [sample[i][qoi_name] for i in system_indices]
-            for sample in qoi_sample
-        ]
-
-        _validate_qoi_blocks(ref_blocks, context='reference QoI blocks')
-        reference = ref_blocks[0] if ref_blocks else None
-        outputs_ref = _stack_qoi_blocks(ref_blocks, context='reference QoI blocks')
-        outputs = []
-        for i, blocks in enumerate(sample_blocks):
-            if reference is not None and blocks:
-                _validate_qoi_blocks(
-                    [reference, *blocks],
-                    context=f'sample QoI blocks for sample {i}',
-                )
-            outputs.append(
-                _stack_qoi_blocks(
-                    blocks,
-                    context=f'sample QoI blocks for sample {i}',
-                )
-            )
-
-        if outputs_ref.size == 0:
-            if fn_qoi.exists():
-                fn_qoi.unlink()
-            continue
-
-        settings: dict[str, object] = {}
-        metadata: dict[str, object] = {'system_indices': system_indices}
-        values_per_label = 1
-        if reference is not None:
-            settings_by_block = [dict(block.settings) for block in ref_blocks]
-            if settings_by_block:
-                shared_settings = settings_by_block[0]
-                if all(
-                    block_settings == shared_settings
-                    for block_settings in settings_by_block[1:]
-                ):
-                    settings = dict(shared_settings)
-                else:
-                    metadata['settings_by_block'] = settings_by_block
-
-            metadata_by_block = [dict(block.metadata) for block in ref_blocks]
-            if metadata_by_block:
-                shared_metadata = metadata_by_block[0]
-                if all(
-                    block_metadata == shared_metadata
-                    for block_metadata in metadata_by_block[1:]
-                ):
-                    metadata = dict(shared_metadata) | metadata
-                else:
-                    metadata['metadata_by_block'] = metadata_by_block
-
-            labels = _dataset_labels(ref_blocks, system_indices)
-            values_per_label = reference.values_per_label
-
-        dataset = QoIDataset(
-            name=qoi_name,
-            inputs=inputs,
-            outputs=outputs,
-            outputs_ref=outputs_ref,
-            labels=labels,
-            values_per_label=values_per_label,
-            nuisance=None,
-            settings=settings,
-            metadata=metadata,
-        )
-        dataset.write(fn_qoi)
-
-
 def main(fn_config: str) -> None:
     config = AnalyzeConfig.load(fn_config)
     sample_cfg = config.sample
@@ -193,10 +111,8 @@ def main(fn_config: str) -> None:
     logger.kv('Sampling campaign', sample_cfg.dir.resolve())
     logger.kv('Reference systems', len(ref_cfg.systems))
     logger.kv('Samples', len(sample_set.samples))
-    logger.warn_if(
-        output_cfg.write_raw,
-        'Raw QoI export is enabled and may create a large JSON file.',
-    )
+    if output_cfg.write_raw:
+        logger.warn('Raw QoI export is enabled and may create a large JSON file.')
     logger.blank()
 
     qoi_ref = analyze_trajectory_sets(
@@ -232,13 +148,88 @@ def main(fn_config: str) -> None:
 
     logger.blank()
     logger.status('Saving QoI data', 'in progress...', level=1, overwrite=True)
-    _write_qoi_datasets(
-        fn_out=output_cfg.path,
-        inputs=sample_set.inputs,
-        qoi_sample=qoi_sample,
-        qoi_ref=qoi_ref,
+    save_start = time.perf_counter()
+    qoi_names = sorted({name for sample in qoi_ref for name in sample})
+    for qoi_name in qoi_names:
+        fn_qoi = _qoi_output_path(output_cfg.path, qoi_name)
+        system_indices = [i for i, sample in enumerate(qoi_ref) if qoi_name in sample]
+        ref_blocks = [qoi_ref[i][qoi_name] for i in system_indices]
+        sample_blocks = [
+            [sample[i][qoi_name] for i in system_indices]
+            for sample in qoi_sample
+        ]
+
+        _validate_qoi_blocks(ref_blocks, context='reference QoI blocks')
+        reference = ref_blocks[0] if ref_blocks else None
+        outputs_ref = _stack_qoi_blocks(ref_blocks, context='reference QoI blocks')
+        outputs = []
+        for i, blocks in enumerate(sample_blocks):
+            if reference is not None and blocks:
+                _validate_qoi_blocks(
+                    [reference, *blocks],
+                    context=f'sample QoI blocks for sample {i}',
+                )
+            outputs.append(
+                _stack_qoi_blocks(
+                    blocks,
+                    context=f'sample QoI blocks for sample {i}',
+                )
+            )
+
+        if outputs_ref.size == 0:
+            if fn_qoi.exists():
+                fn_qoi.unlink()
+            continue
+
+        settings: dict[str, object] = {}
+        metadata: dict[str, object] = {'system_indices': system_indices}
+        labels = None
+        values_per_label = 1
+        if reference is not None:
+            settings_by_block = [dict(block.settings) for block in ref_blocks]
+            if settings_by_block:
+                shared_settings = settings_by_block[0]
+                if all(
+                    block_settings == shared_settings
+                    for block_settings in settings_by_block[1:]
+                ):
+                    settings = dict(shared_settings)
+                else:
+                    metadata['settings_by_block'] = settings_by_block
+
+            metadata_by_block = [dict(block.metadata) for block in ref_blocks]
+            if metadata_by_block:
+                shared_metadata = metadata_by_block[0]
+                if all(
+                    block_metadata == shared_metadata
+                    for block_metadata in metadata_by_block[1:]
+                ):
+                    metadata = dict(shared_metadata) | metadata
+                else:
+                    metadata['metadata_by_block'] = metadata_by_block
+
+            labels = _dataset_labels(ref_blocks, system_indices)
+            values_per_label = reference.values_per_label
+
+        dataset = QoIDataset(
+            name=qoi_name,
+            inputs=sample_set.inputs,
+            outputs=outputs,
+            outputs_ref=outputs_ref,
+            labels=labels,
+            values_per_label=values_per_label,
+            nuisance=None,
+            settings=settings,
+            metadata=metadata,
+        )
+        dataset.write(fn_qoi)
+    save_elapsed = time.perf_counter() - save_start
+    logger.done(
+        'Saving QoI data',
+        detail=f'finished in {save_elapsed:.2f}s',
+        level=1,
+        overwrite=True,
     )
-    logger.done('Saving QoI data', level=1, overwrite=True)
     logger.blank()
 
     if output_cfg.write_raw:
@@ -248,6 +239,7 @@ def main(fn_config: str) -> None:
             level=1,
             overwrite=True,
         )
+        raw_save_start = time.perf_counter()
         save_json(
             {
                 'reference': [
@@ -264,4 +256,10 @@ def main(fn_config: str) -> None:
             },
             _qoi_output_path(output_cfg.path, raw=True),
         )
-        logger.done('Saving raw QoI data', level=1, overwrite=True)
+        raw_save_elapsed = time.perf_counter() - raw_save_start
+        logger.done(
+            'Saving raw QoI data',
+            detail=f'finished in {raw_save_elapsed:.2f}s',
+            level=1,
+            overwrite=True,
+        )

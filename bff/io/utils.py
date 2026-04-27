@@ -9,11 +9,6 @@ import yaml
 PathLike = Union[str, Path]
 
 
-def path_to_str(path: PathLike) -> str:
-    """Convert a Path object to a string."""
-    return str(path)
-
-
 class NumpyYAMLEncoder(yaml.SafeDumper):
     """YAML encoder for numpy arrays and numpy scalar types."""
 
@@ -42,7 +37,7 @@ def save_yaml(data: dict, fn: PathLike) -> None:
 
 def load_yaml(fn: PathLike) -> dict:
     """Load .yaml file into a dictionary"""
-    fn = path_to_str(fn) if isinstance(fn, Path) else fn
+    fn = str(fn)
     with open(fn, "r") as f:
         file = yaml.safe_load(f)
     return file
@@ -81,7 +76,7 @@ def save_json(data: dict, fn: PathLike) -> None:
 
 def load_json(fn: PathLike) -> dict:
     """Save a dictionary as JSON to a file."""
-    fn = path_to_str(fn) if isinstance(fn, Path) else fn
+    fn = str(fn)
     with open(fn, "r") as f:
         file = json.load(f)
     return file
@@ -148,7 +143,7 @@ def compress_results(source_dir: PathLike) -> None:
 
 def extract_tarball(fn: PathLike) -> None:
     """Extract a tarball file into a directory."""
-    fn = path_to_str(fn) if isinstance(fn, Path) else fn
+    fn = Path(fn)
     with tarfile.open(fn, "r:gz") as tar:
         tar.extractall(path=fn.parent)
 

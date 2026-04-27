@@ -182,6 +182,23 @@ def _load_simulation_systems(
     for i, system in enumerate(systems_raw):
         if not isinstance(system, dict):
             raise ValueError(f"{key}[{i}] must be a mapping.")
+        if "assets" in system:
+            if "n_steps" not in system:
+                raise ValueError(f"{key}[{i}] must define 'n_steps'.")
+            training_assets = _resolve_path(
+                base_dir,
+                system["assets"],
+                kind=f"{key}[{i}] assets directory",
+            )
+            systems.append(
+                _load_prepared_simulation_system(
+                    training_assets,
+                    int(system["n_steps"]),
+                    system_id=f"{i:03d}",
+                )
+            )
+            continue
+
         for required_key in ("topology", "coordinates", "mdp", "index", "n_steps"):
             if required_key not in system:
                 raise ValueError(
@@ -287,36 +304,6 @@ def _load_prepared_simulation_system(
     )
 
 
-def _load_simulation_asset_systems(
-    base_dir: Path,
-    systems_raw: Any,
-) -> list[SimulationSystemConfig]:
-    if not isinstance(systems_raw, list) or not systems_raw:
-        raise ValueError("'systems' must be a non-empty list.")
-
-    systems: list[SimulationSystemConfig] = []
-    for index, system in enumerate(systems_raw):
-        if not isinstance(system, dict):
-            raise ValueError(f"systems[{index}] must be a mapping.")
-        if "assets" not in system or "n_steps" not in system:
-            raise ValueError(
-                f"systems[{index}] must define 'assets' and 'n_steps'."
-            )
-        training_assets = _resolve_path(
-            base_dir,
-            system["assets"],
-            kind=f"systems[{index}] assets directory",
-        )
-        systems.append(
-            _load_prepared_simulation_system(
-                training_assets,
-                int(system["n_steps"]),
-                system_id=f"{index:03d}",
-            )
-        )
-    return systems
-
-
 @dataclass(frozen=True, kw_only=True)
 class SimulationCampaignConfig:
     fn_config: Path
@@ -336,13 +323,11 @@ class SimulationCampaignConfig:
         cls,
         fn_config: PathLike,
     ) -> tuple[Path, Path, dict[str, Any], dict[str, Any]]:
-        return _load_campaign_common(fn_config, asset_systems=False)
+        return _load_campaign_common(fn_config)
 
 
 def _load_campaign_common(
     fn_config: PathLike,
-    *,
-    asset_systems: bool,
 ) -> tuple[Path, Path, dict[str, Any], dict[str, Any]]:
     fn_config = Path(fn_config).resolve()
     base_dir = fn_config.parent
@@ -363,10 +348,7 @@ def _load_campaign_common(
             "'local' and 'slurm'."
         )
 
-    if asset_systems:
-        systems = _load_simulation_asset_systems(base_dir, config["systems"])
-    else:
-        systems = _load_simulation_systems(base_dir, config["systems"], key="systems")
+    systems = _load_simulation_systems(base_dir, config["systems"], key="systems")
 
     slurm = None
     if scheduler == "slurm":
