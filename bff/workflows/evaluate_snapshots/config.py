@@ -14,17 +14,16 @@ from .._shared.config import (
     _resolve_path,
 )
 
-ReferenceMode = Literal['run', 'import']
+EvaluateMode = Literal['run', 'import']
 
 
 @dataclass(frozen=True)
-class ReferenceSystemConfig:
+class SnapshotSystemConfig:
     system_id: str
     assets_dir: Path
     fn_system_top: Path
     fn_system_gro: Path
     fn_system_xyz: Path
-    md_dir: Path
     snapshots_dir: Path
     snapshot_xyz_dir: Path
     single_atoms_dir: Path
@@ -33,20 +32,20 @@ class ReferenceSystemConfig:
 
 
 @dataclass(frozen=True)
-class ImportedReferenceSystemConfig:
+class ImportedSnapshotSystemConfig:
     system_id: str
     fn_topol: Path
     fn_gro: Path
     fn_trj: Path
 
 
-def _load_reference_asset_system(
+def _load_snapshot_asset_system(
     assets_dir: Path,
     *,
     system_id: str,
     fn_snapshot_md: Path | None = None,
     fn_snapshot_sp: Path | None = None,
-) -> ReferenceSystemConfig:
+) -> SnapshotSystemConfig:
     fn_system_top = assets_dir / 'system.top'
     fn_system_gro = assets_dir / 'system.gro'
     fn_system_xyz = assets_dir / 'system.xyz'
@@ -61,7 +60,7 @@ def _load_reference_asset_system(
         (fn_system_top, 'system topology'),
         (fn_system_gro, 'system coordinates'),
         (fn_system_xyz, 'system XYZ'),
-        (md_dir, 'reference MD directory'),
+        (md_dir, 'staged MD directory'),
         (snapshots_dir, 'snapshot directory'),
         (single_atoms_dir, 'single-atom directory'),
         (snapshot_xyz_dir, 'snapshot XYZ directory'),
@@ -70,15 +69,14 @@ def _load_reference_asset_system(
     ]
     for path, kind in required_paths:
         if not path.exists():
-            raise FileNotFoundError(f'Reference {kind} not found: {path}')
+            raise FileNotFoundError(f'Required {kind} not found: {path}')
 
-    return ReferenceSystemConfig(
+    return SnapshotSystemConfig(
         system_id=system_id,
         assets_dir=assets_dir,
         fn_system_top=fn_system_top,
         fn_system_gro=fn_system_gro,
         fn_system_xyz=fn_system_xyz,
-        md_dir=md_dir,
         snapshots_dir=snapshots_dir,
         snapshot_xyz_dir=snapshot_xyz_dir,
         single_atoms_dir=single_atoms_dir,
@@ -87,14 +85,14 @@ def _load_reference_asset_system(
     )
 
 
-def _load_reference_asset_systems(
+def _load_snapshot_asset_systems(
     base_dir: Path,
     systems_raw: Any,
-) -> list[ReferenceSystemConfig]:
+) -> list[SnapshotSystemConfig]:
     if not isinstance(systems_raw, list) or not systems_raw:
         raise ValueError("'systems' must be a non-empty list.")
 
-    systems: list[ReferenceSystemConfig] = []
+    systems: list[SnapshotSystemConfig] = []
     for index, system in enumerate(systems_raw):
         fn_snapshot_md = None
         fn_snapshot_sp = None
@@ -122,10 +120,10 @@ def _load_reference_asset_systems(
         assets_dir = _resolve_path(
             base_dir,
             assets_raw,
-            kind=f'systems[{index}] reference assets directory',
+            kind=f'systems[{index}] snapshot assets directory',
         )
         systems.append(
-            _load_reference_asset_system(
+            _load_snapshot_asset_system(
                 assets_dir,
                 system_id=f'{index:03d}',
                 fn_snapshot_md=fn_snapshot_md,
@@ -140,14 +138,14 @@ def _require_suffix(path: Path, suffix: str, *, kind: str) -> None:
         raise ValueError(f'{kind} must be a {suffix} file, got {path}.')
 
 
-def _load_imported_reference_systems(
+def _load_imported_snapshot_systems(
     base_dir: Path,
     systems_raw: Any,
-) -> list[ImportedReferenceSystemConfig]:
+) -> list[ImportedSnapshotSystemConfig]:
     if not isinstance(systems_raw, list) or not systems_raw:
         raise ValueError("'systems' must be a non-empty list.")
 
-    systems: list[ImportedReferenceSystemConfig] = []
+    systems: list[ImportedSnapshotSystemConfig] = []
     for index, system in enumerate(systems_raw):
         if not isinstance(system, Mapping):
             raise ValueError(f'systems[{index}] must be a mapping.')
@@ -172,11 +170,11 @@ def _load_imported_reference_systems(
             system['trajectory'],
             kind=f'systems[{index}] trajectory file',
         )
-        _require_suffix(fn_topol, '.top', kind='Imported reference topology')
-        _require_suffix(fn_gro, '.gro', kind='Imported reference coordinates')
+        _require_suffix(fn_topol, '.top', kind='Imported snapshot topology')
+        _require_suffix(fn_gro, '.gro', kind='Imported snapshot coordinates')
 
         systems.append(
-            ImportedReferenceSystemConfig(
+            ImportedSnapshotSystemConfig(
                 system_id=f'{index:03d}',
                 fn_topol=fn_topol,
                 fn_gro=fn_gro,
@@ -187,11 +185,11 @@ def _load_imported_reference_systems(
 
 
 @dataclass(frozen=True, kw_only=True)
-class ReferenceConfig:
+class EvaluateSnapshotsConfig:
     fn_config: Path
-    mode: ReferenceMode
-    reference_dir: Path
-    systems: list[ReferenceSystemConfig | ImportedReferenceSystemConfig]
+    mode: EvaluateMode
+    output_dir: Path
+    systems: list[SnapshotSystemConfig | ImportedSnapshotSystemConfig]
     cp2k_cmd: str | None = None
     job_scheduler: SchedulerName | None = None
     single_atoms: bool = True
@@ -203,38 +201,44 @@ class ReferenceConfig:
     slurm: Optional[SlurmConfig] = None
 
     @classmethod
-    def load(cls, fn_config: PathLike) -> 'ReferenceConfig':
+    def load(cls, fn_config: PathLike) -> 'EvaluateSnapshotsConfig':
         fn_config = Path(fn_config).resolve()
         base_dir = fn_config.parent
         config = load_yaml(fn_config)
+        if not isinstance(config, Mapping):
+            raise ValueError(
+                "Evaluate-snapshots configuration must contain a mapping."
+            )
 
         mode = str(config.get('mode', 'run'))
         if mode not in {'run', 'import'}:
             raise ValueError("'mode' must be either 'run' or 'import'.")
 
-        reference_dir = _resolve_path(
+        output_dir = _resolve_path(
             base_dir,
-            config.get('reference_dir', './reference-assets'),
+            config.get('output_dir', './'),
             must_exist=False,
-            kind='reference directory',
+            kind='output directory',
         )
 
         if 'systems' not in config:
-            raise ValueError("Missing required reference configuration key 'systems'.")
+            raise ValueError(
+                "Missing required evaluate-snapshots configuration key 'systems'."
+            )
 
         if mode == 'import':
             return cls(
                 fn_config=fn_config,
                 mode='import',
-                reference_dir=reference_dir,
-                systems=_load_imported_reference_systems(base_dir, config['systems']),
+                output_dir=output_dir,
+                systems=_load_imported_snapshot_systems(base_dir, config['systems']),
             )
 
         required = ['job_scheduler', 'cp2k_cmd']
         missing = [key for key in required if key not in config]
         if missing:
             raise ValueError(
-                'Missing required reference configuration key(s): '
+                'Missing required evaluate-snapshots configuration key(s): '
                 + ', '.join(repr(key) for key in missing)
             )
 
@@ -267,10 +271,10 @@ class ReferenceConfig:
         return cls(
             fn_config=fn_config,
             mode='run',
-            reference_dir=reference_dir,
+            output_dir=output_dir,
             cp2k_cmd=str(config['cp2k_cmd']),
             job_scheduler=scheduler,
-            systems=_load_reference_asset_systems(base_dir, config['systems']),
+            systems=_load_snapshot_asset_systems(base_dir, config['systems']),
             single_atoms=bool(config.get('single_atoms', True)),
             snapshot_md_steps=snapshot_md_steps,
             train_fraction=train_fraction,

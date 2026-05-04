@@ -35,7 +35,8 @@ class Logger:
     }
     _TITLE_STYLES = {
         "build": ("bold", "bright_cyan"),
-        "reference": ("bold", "bright_blue"),
+        "prepare-assets": ("bold", "bright_cyan"),
+        "evaluate-snapshots": ("bold", "bright_blue"),
         "sample": ("bold", "bright_yellow"),
         "analyze": ("bold", "bright_magenta"),
         "fit": ("bold", "bright_green"),

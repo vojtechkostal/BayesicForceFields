@@ -10,6 +10,7 @@ from bff.workflows.build.config import BuildConfig
 from bff.workflows.fit.config import FitConfig
 from bff.workflows.learn.config import LearnConfig
 from bff.workflows.md.config import MDJobConfig
+from bff.workflows.prepare_assets.config import PrepareAssetsConfig
 from bff.workflows.sample.config import SampleConfig
 from bff.workflows.validate.config import ValidateConfig
 
@@ -20,7 +21,7 @@ def _write(path: Path, text: str = "\n") -> Path:
     return path
 
 
-def _make_prepared_system(asset_dir: Path, stem: str = "window-000") -> Path:
+def _make_prepared_system(asset_dir: Path, stem: str = "system-000") -> Path:
     asset_dir.mkdir(parents=True, exist_ok=True)
     _write(asset_dir / f"{stem}.top", "; topology\n")
     _write(asset_dir / f"{stem}.gro", "dummy gro\n")
@@ -28,6 +29,54 @@ def _make_prepared_system(asset_dir: Path, stem: str = "window-000") -> Path:
     _write(asset_dir / f"{stem}.mdp", "integrator = md\n")
     _write(asset_dir / f"{stem}.ndx", "[ System ]\n1\n")
     return asset_dir
+
+
+def _make_build_manifest(project_dir: Path) -> Path:
+    eq = project_dir / "equilibration"
+    eq.mkdir(parents=True, exist_ok=True)
+    for system_id in ("000", "001"):
+        for suffix in ("top", "gro", "ndx", "em.mdp", "npt.mdp", "mdp"):
+            _write(eq / f"system-{system_id}.{suffix}", f"{suffix}\n")
+        _write(eq / f"system-{system_id}-prod.gro", "prod gro\n")
+        _write(eq / f"system-{system_id}-prod.xtc", "prod xtc\n")
+
+    fn_manifest = project_dir / "build-manifest.yaml"
+    fn_manifest.write_text(
+        yaml.safe_dump(
+            {
+                "version": 1,
+                "gmx_cmd": "gmx",
+                "systems": [
+                    {
+                        "system_id": system_id,
+                        "topology": f"equilibration/system-{system_id}.top",
+                        "coordinates": f"equilibration/system-{system_id}.gro",
+                        "index": f"equilibration/system-{system_id}.ndx",
+                        "mdp": {
+                            "em": f"equilibration/system-{system_id}.em.mdp",
+                            "npt": f"equilibration/system-{system_id}.npt.mdp",
+                            "prod": f"equilibration/system-{system_id}.mdp",
+                        },
+                        "charge": -1,
+                        "multiplicity": 1,
+                        "box": [10.0, 10.0, 10.0, 90.0, 90.0, 90.0],
+                        "maxwarn": 0,
+                        "production": {
+                            "coordinates": (
+                                f"equilibration/system-{system_id}-prod.gro"
+                            ),
+                            "trajectory": (
+                                f"equilibration/system-{system_id}-prod.xtc"
+                            ),
+                            "n_steps": 1000,
+                        },
+                    }
+                    for system_id in ("000", "001")
+                ],
+            }
+        )
+    )
+    return fn_manifest
 
 
 def test_build_config_loads_minimal_config(tmp_path: Path) -> None:
@@ -65,6 +114,46 @@ def test_build_config_loads_minimal_config(tmp_path: Path) -> None:
     assert config.gmx_cmd == "gmx"
     assert config.project_dir == (tmp_path / "project").resolve()
     assert len(config.systems) == 1
+
+
+def test_prepare_assets_config_loads_manifest(tmp_path: Path) -> None:
+    fn_manifest = _make_build_manifest(tmp_path / "project")
+    fn_config = tmp_path / "prepare-assets.yaml"
+    fn_config.write_text(
+        yaml.safe_dump(
+            {
+                "manifest": str(fn_manifest),
+                "ffmd_dir": "./ffmd",
+                "reference_dir": "./reference",
+            }
+        )
+    )
+
+    config = PrepareAssetsConfig.load(fn_config)
+
+    assert config.ffmd_dir == (tmp_path / "ffmd").resolve()
+    assert config.reference_dir == (tmp_path / "reference").resolve()
+    assert len(config.systems) == 2
+    assert config.systems[0].fn_prod_coord.name == "system-000-prod.gro"
+
+
+def test_prepare_assets_config_selects_systems(tmp_path: Path) -> None:
+    fn_manifest = _make_build_manifest(tmp_path / "project")
+    fn_config = tmp_path / "prepare-assets.yaml"
+    fn_config.write_text(
+        yaml.safe_dump(
+            {
+                "manifest": str(fn_manifest),
+                "n_single_point_snapshots": 25,
+                "systems": ["system-001"],
+            }
+        )
+    )
+
+    config = PrepareAssetsConfig.load(fn_config)
+
+    assert config.n_single_point_snapshots == 25
+    assert [system.system_id for system in config.systems] == ["001"]
 
 
 def test_analyze_config_loads_minimal_config(

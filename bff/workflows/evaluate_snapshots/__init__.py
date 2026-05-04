@@ -8,4 +8,4 @@ def run_job(*args, **kwargs):
     return _run_job(*args, **kwargs)
 
 
-__all__ = ['main', 'run_job']
+__all__ = ["main", "run_job"]

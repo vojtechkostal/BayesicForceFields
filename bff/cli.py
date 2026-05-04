@@ -15,7 +15,8 @@ app = typer.Typer(
 WorkflowMain = Callable[[Path], object]
 WORKFLOW_COMMANDS = (
     "build",
-    "reference",
+    "prepare-assets",
+    "evaluate-snapshots",
     "sample",
     "analyze",
     "fit",
@@ -23,6 +24,10 @@ WORKFLOW_COMMANDS = (
     "validate",
     "examples",
 )
+WORKFLOW_FILE_COMMANDS = tuple(
+    command for command in WORKFLOW_COMMANDS if command != "examples"
+)
+WORKFLOW_FILE_COMMAND_PATTERN = "|".join(WORKFLOW_FILE_COMMANDS)
 
 _COMPLETION_ACTIVATE = f"""# Managed automatically by Bayesic Force Fields.
 if [ -n "${{BASH_VERSION-}}" ]; then
@@ -45,7 +50,7 @@ if [ -n "${{BASH_VERSION-}}" ]; then
         fi
 
         case "${{COMP_WORDS[1]}}" in
-            build|reference|sample|analyze|fit|learn|validate)
+            {WORKFLOW_FILE_COMMAND_PATTERN})
                 COMPREPLY=($(compgen -f -- "$cur"))
                 ;;
             *)
@@ -69,7 +74,7 @@ elif [ -n "${{ZSH_VERSION-}}" ]; then
         fi
 
         case "${{words[2]}}" in
-            build|reference|sample|analyze|fit|learn|validate)
+            {WORKFLOW_FILE_COMMAND_PATTERN})
                 _files
                 ;;
         esac
@@ -207,18 +212,26 @@ def examples(
 
 @app.command()
 def build(fn_config: Path = config_argument()) -> None:
-    """Build reusable FFMD and reference starting assets."""
+    """Build equilibrated systems and seeded production trajectories."""
     from bff.workflows.build import main as build_main
 
     run_workflow(fn_config, build_main, "build")
 
 
-@app.command()
-def reference(fn_config: Path = config_argument()) -> None:
-    """Run or import reference data into canonical reference assets."""
-    from bff.workflows.reference import main as reference_main
+@app.command(name="prepare-assets")
+def prepare_assets(fn_config: Path = config_argument()) -> None:
+    """Prepare FFMD and snapshot evaluation assets from a build manifest."""
+    from bff.workflows.prepare_assets import main as prepare_main
 
-    run_workflow(fn_config, reference_main, "reference")
+    run_workflow(fn_config, prepare_main, "prepare-assets")
+
+
+@app.command(name="evaluate-snapshots")
+def evaluate_snapshots(fn_config: Path = config_argument()) -> None:
+    """Evaluate staged CP2K snapshots or import trajectory datasets."""
+    from bff.workflows.evaluate_snapshots import main as evaluate_main
+
+    run_workflow(fn_config, evaluate_main, "evaluate-snapshots")
 
 
 @app.command()
@@ -269,12 +282,12 @@ def md(fn_config: Path = config_argument()) -> None:
     run_workflow(fn_config, md_main, "md")
 
 
-@app.command(name="reference-job", hidden=True)
-def reference_job(fn_config: Path = config_argument()) -> None:
-    """Run one staged CP2K reference job from a configuration file."""
-    from bff.workflows.reference import run_job
+@app.command(name="evaluate-snapshot-job", hidden=True)
+def evaluate_snapshot_job(fn_config: Path = config_argument()) -> None:
+    """Run one staged CP2K snapshot job from a configuration file."""
+    from bff.workflows.evaluate_snapshots import run_job
 
-    run_workflow(fn_config, run_job, "reference-job")
+    run_workflow(fn_config, run_job, "evaluate-snapshot-job")
 
 
 if __name__ == "__main__":

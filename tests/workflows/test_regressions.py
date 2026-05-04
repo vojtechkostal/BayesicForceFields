@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-
 import pytest
 import yaml
 
@@ -12,10 +11,10 @@ from bff.io.cp2k import (
     collect_single_atom_energies,
     strip_cp2k_gfn_type,
 )
+from bff.workflows.evaluate_snapshots.config import EvaluateSnapshotsConfig
 from bff.workflows.learn.config import LearnConfig
 from bff.workflows.learn.main import _write_default_plots
 from bff.workflows.md.main import check_success
-from bff.workflows.reference.config import ReferenceConfig
 
 
 def test_strip_cp2k_gfn_type_removes_keyword(tmp_path: Path) -> None:
@@ -56,7 +55,7 @@ def test_collect_single_atom_energies_uses_atomic_numbers(tmp_path: Path) -> Non
     assert energies[20] == pytest.approx(-1.25 * HARTREE_TO_EV)
 
 
-def test_reference_import_config_requires_top_gro_and_trajectory(
+def test_evaluate_import_config_requires_top_gro_and_trajectory(
     tmp_path: Path,
 ) -> None:
     fn_top = tmp_path / "system.top"
@@ -66,12 +65,12 @@ def test_reference_import_config_requires_top_gro_and_trajectory(
     fn_gro.write_text("dummy gro\n")
     fn_trj.write_text("trajectory\n")
 
-    fn_config = tmp_path / "reference.yaml"
+    fn_config = tmp_path / "evaluate-snapshots.yaml"
     fn_config.write_text(
         yaml.safe_dump(
             {
                 "mode": "import",
-                "reference_dir": "./reference-assets",
+                "output_dir": "./evaluated-snapshots",
                 "systems": [
                     {
                         "topology": str(fn_top),
@@ -83,9 +82,10 @@ def test_reference_import_config_requires_top_gro_and_trajectory(
         )
     )
 
-    config = ReferenceConfig.load(fn_config)
+    config = EvaluateSnapshotsConfig.load(fn_config)
 
     assert config.mode == "import"
+    assert config.output_dir == (tmp_path / "evaluated-snapshots").resolve()
     assert len(config.systems) == 1
     system = config.systems[0]
     assert system.fn_topol == fn_top.resolve()
@@ -93,7 +93,7 @@ def test_reference_import_config_requires_top_gro_and_trajectory(
     assert system.fn_trj == fn_trj.resolve()
 
 
-def test_reference_import_config_rejects_wrong_topology_suffix(
+def test_evaluate_import_config_rejects_wrong_topology_suffix(
     tmp_path: Path,
 ) -> None:
     fn_top = tmp_path / "system.itp"
@@ -103,12 +103,12 @@ def test_reference_import_config_rejects_wrong_topology_suffix(
     fn_gro.write_text("dummy gro\n")
     fn_trj.write_text("trajectory\n")
 
-    fn_config = tmp_path / "reference.yaml"
+    fn_config = tmp_path / "evaluate-snapshots.yaml"
     fn_config.write_text(
         yaml.safe_dump(
             {
                 "mode": "import",
-                "reference_dir": "./reference-assets",
+                "output_dir": "./evaluated-snapshots",
                 "systems": [
                     {
                         "topology": str(fn_top),
@@ -121,7 +121,7 @@ def test_reference_import_config_rejects_wrong_topology_suffix(
     )
 
     with pytest.raises(ValueError, match=r"\.top file"):
-        ReferenceConfig.load(fn_config)
+        EvaluateSnapshotsConfig.load(fn_config)
 
 
 def test_check_success_uses_expected_saved_frame_count(

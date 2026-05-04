@@ -31,7 +31,6 @@ class BuildConfig:
     gmx_cmd: str
     fn_log: Optional[Path]
     systems: list[BuildSystemConfig]
-    n_single_point_snapshots: int = 1000
 
     @classmethod
     def load(cls, fn_config: PathLike) -> 'BuildConfig':
@@ -192,28 +191,16 @@ class BuildConfig:
                 )
             )
 
-        reference = config.get('reference', {})
-        if reference is None:
-            reference = {}
-        if not isinstance(reference, dict):
-            raise ValueError("'reference' must be a mapping.")
-
         resolved_log = None if fn_log_raw is None else _resolve_path(
             base_dir,
             fn_log_raw,
             must_exist=False,
             kind='log file',
         )
-        n_single_point_snapshots = int(reference.get('n_single_point_snapshots', 1000))
-        if n_single_point_snapshots <= 0:
-            raise ValueError(
-                "'reference.n_single_point_snapshots' must be a positive integer."
-            )
         return cls(
             fn_config=fn_config,
             project_dir=project_dir,
             gmx_cmd=str(gromacs['command']),
             fn_log=resolved_log,
             systems=systems,
-            n_single_point_snapshots=n_single_point_snapshots,
         )

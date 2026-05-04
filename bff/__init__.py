@@ -21,7 +21,8 @@ _INTERNAL_MODULES = {
 __all__ = [
     "Project",
     "build",
-    "reference",
+    "prepare_assets",
+    "evaluate_snapshots",
     "sample",
     "analyze",
     "fit",
@@ -42,8 +43,12 @@ def build(fn_config: str | Path):
     return _run_workflow("bff.workflows.build", fn_config)
 
 
-def reference(fn_config: str | Path):
-    return _run_workflow("bff.workflows.reference", fn_config)
+def prepare_assets(fn_config: str | Path):
+    return _run_workflow("bff.workflows.prepare_assets", fn_config)
+
+
+def evaluate_snapshots(fn_config: str | Path):
+    return _run_workflow("bff.workflows.evaluate_snapshots", fn_config)
 
 
 def sample(fn_config: str | Path):
@@ -79,8 +84,11 @@ class Project:
     def build(self, fn_config: str | Path):
         return build(self._resolve(fn_config))
 
-    def reference(self, fn_config: str | Path):
-        return reference(self._resolve(fn_config))
+    def prepare_assets(self, fn_config: str | Path):
+        return prepare_assets(self._resolve(fn_config))
+
+    def evaluate_snapshots(self, fn_config: str | Path):
+        return evaluate_snapshots(self._resolve(fn_config))
 
     def sample(self, fn_config: str | Path):
         return sample(self._resolve(fn_config))

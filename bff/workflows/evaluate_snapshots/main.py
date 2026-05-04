@@ -1,4 +1,4 @@
-"""Workflow entry point for canonical reference-data generation."""
+"""Workflow entry point for canonical snapshot evaluation."""
 
 from __future__ import annotations
 
@@ -29,19 +29,19 @@ from .._shared.scheduler import (
     wait_for_scheduler_slot,
 )
 from .config import (
-    ImportedReferenceSystemConfig,
-    ReferenceConfig,
-    ReferenceSystemConfig,
+    EvaluateSnapshotsConfig,
+    ImportedSnapshotSystemConfig,
+    SnapshotSystemConfig,
 )
 
-ReferenceJobKind = Literal["snapshot", "single_atom"]
+SnapshotJobKind = Literal["snapshot", "single_atom"]
 
-REFERENCE_JOBS = {
+SNAPSHOT_JOBS = {
     "snapshot": {
         "steps": (("md.inp", "md.out"), ("sp.inp", "sp.out")),
         "label": "Snapshot jobs",
         "submit_label": "Submitting snapshot jobs",
-        "job_name_prefix": "bff-ref",
+        "job_name_prefix": "bff-snap",
         "script_name": ".bff-snapshot.sbatch.sh",
     },
     "single_atom": {
@@ -55,28 +55,31 @@ REFERENCE_JOBS = {
 
 
 @dataclass(frozen=True)
-class ReferenceJobConfig:
-    kind: ReferenceJobKind
+class EvaluateSnapshotJobConfig:
+    kind: SnapshotJobKind
     run_dir: Path
     cp2k_cmd: str
 
     @classmethod
-    def load(cls, fn_config: str | Path) -> "ReferenceJobConfig":
+    def load(cls, fn_config: str | Path) -> "EvaluateSnapshotJobConfig":
         data = load_yaml(fn_config)
         if not isinstance(data, dict):
-            raise ValueError("Reference job config must contain a mapping.")
+            raise ValueError("Snapshot job config must contain a mapping.")
 
         kind = data.get("kind")
-        if kind not in REFERENCE_JOBS:
+        if kind not in SNAPSHOT_JOBS:
             raise ValueError(
-                "Reference job config 'kind' must be 'snapshot' or 'single_atom'."
+                "Snapshot job config 'kind' must be 'snapshot' or 'single_atom'."
             )
+        for key in ("run_dir", "cp2k_cmd"):
+            if key not in data:
+                raise ValueError(f"Snapshot job config is missing {key!r}.")
 
-        run_dir = Path(data.get("run_dir", "")).resolve()
+        run_dir = Path(data["run_dir"]).resolve()
         if not run_dir.is_dir():
-            raise FileNotFoundError(f"Reference job directory not found: {run_dir}")
+            raise FileNotFoundError(f"Snapshot job directory not found: {run_dir}")
 
-        cp2k_cmd = str(data.get("cp2k_cmd", "cp2k.psmp"))
+        cp2k_cmd = str(data["cp2k_cmd"])
         parts = shlex.split(cp2k_cmd)
         if len(parts) != 1:
             raise ValueError("'cp2k_cmd' must be a single executable name or path.")
@@ -111,11 +114,11 @@ def check_cp2k_available(cp2k_cmd: str) -> str:
     return resolved
 
 
-def print_reference_summary(config: ReferenceConfig, logger: Logger) -> None:
-    """Print a concise reference-workflow summary."""
-    logger.section("Reference Data")
+def print_evaluate_summary(config: EvaluateSnapshotsConfig, logger: Logger) -> None:
+    """Print a concise snapshot evaluation workflow summary."""
+    logger.section("Evaluate Snapshots")
     logger.kv("Mode", config.mode)
-    logger.kv("Reference directory", config.reference_dir.resolve())
+    logger.kv("Output directory", config.output_dir.resolve())
     logger.kv("Systems", len(config.systems))
     if config.mode == "import":
         logger.info(
@@ -144,17 +147,17 @@ def print_reference_summary(config: ReferenceConfig, logger: Logger) -> None:
     if config.job_scheduler == "slurm" and config.slurm is not None:
         logger.kv("Max parallel jobs", config.slurm.max_parallel_jobs)
     if not config.single_atoms:
-        logger.warn("Single-atom reference energies are disabled for this run.")
+        logger.warn("Single-atom energies are disabled for this run.")
     logger.blank()
 
 
-def import_reference_system(
-    system: ImportedReferenceSystemConfig,
-    reference_dir: Path,
+def import_snapshot_system(
+    system: ImportedSnapshotSystemConfig,
+    output_dir: Path,
     logger: Logger,
 ) -> Path:
-    """Copy one externally generated reference trajectory into canonical assets."""
-    system_dir = reference_dir / f"system-{system.system_id}"
+    """Copy one externally generated trajectory into canonical snapshot assets."""
+    system_dir = output_dir / f"system-{system.system_id}"
     system_dir.mkdir(parents=True, exist_ok=True)
 
     fn_topol = system_dir / "system.top"
@@ -217,11 +220,11 @@ def _write_snapshot_md_input(
 
 
 def stage_system(
-    system: ReferenceSystemConfig,
-    config: ReferenceConfig,
+    system: SnapshotSystemConfig,
+    config: EvaluateSnapshotsConfig,
 ) -> tuple[Path, list[Path], list[Path]]:
-    """Stage one prepared reference system into the output tree."""
-    system_dir = config.reference_dir.resolve() / system.assets_dir.name
+    """Stage one prepared snapshot system into the output tree."""
+    system_dir = config.output_dir.resolve() / system.assets_dir.name
     system_dir.mkdir(parents=True, exist_ok=True)
     for stale in (system_dir / "train.extxyz", system_dir / "valid.extxyz"):
         if stale.exists():
@@ -316,8 +319,8 @@ def _remove_cp2k_restart_files(run_dir: Path) -> None:
             path.unlink()
 
 
-def run_reference_job(
-    kind: ReferenceJobKind,
+def run_snapshot_job(
+    kind: SnapshotJobKind,
     run_dir: Path,
     cp2k_cmd: str,
 ) -> None:
@@ -325,7 +328,7 @@ def run_reference_job(
     if kind == "snapshot" and cp2k_supports_gfn_type(cp2k_cmd) is False:
         strip_cp2k_gfn_type(run_dir / "md.inp")
 
-    for fn_input, fn_output in REFERENCE_JOBS[kind]["steps"]:
+    for fn_input, fn_output in SNAPSHOT_JOBS[kind]["steps"]:
         _run_cp2k(
             cp2k_cmd=cp2k_cmd,
             fn_input=fn_input,
@@ -337,11 +340,11 @@ def run_reference_job(
         write_cp2k_snapshot_extxyz(run_dir)
 
 
-def submit_reference_job(
+def submit_snapshot_job(
     *,
-    kind: ReferenceJobKind,
+    kind: SnapshotJobKind,
     run_dir: Path,
-    config: ReferenceConfig,
+    config: EvaluateSnapshotsConfig,
     job_name: str,
     script_name: str,
 ) -> int:
@@ -360,7 +363,7 @@ def submit_reference_job(
     submit_specs.setdefault("job_name", job_name)
     submit_specs.setdefault("output", (run_dir / "slurm-%j.out").resolve())
     submit = build_slurm_cli_job(
-        command=bff_cli_command("reference-job", fn_job.resolve()),
+        command=bff_cli_command("evaluate-snapshot-job", fn_job.resolve()),
         slurm_config=config.slurm,
         sbatch=submit_specs,
         cwd=run_dir,
@@ -494,7 +497,7 @@ def cleanup_collected_snapshot_dirs(
 def collect_snapshot_splits(
     snapshot_run_dirs: list[Path],
     system_dir: Path,
-    config: ReferenceConfig,
+    config: EvaluateSnapshotsConfig,
     logger: Logger,
 ) -> list[Path]:
     wait_for_snapshot_outputs(
@@ -540,7 +543,7 @@ def collect_snapshot_splits(
 
 def collect_system_outputs(
     system_dir: Path,
-    config: ReferenceConfig,
+    config: EvaluateSnapshotsConfig,
     logger: Logger,
 ) -> None:
     snapshot_run_dirs = sorted(
@@ -576,15 +579,15 @@ def collect_system_outputs(
             shutil.rmtree(single_atom_root)
 
 
-def _enabled_job_kinds(include_single_atoms: bool) -> tuple[ReferenceJobKind, ...]:
+def _enabled_job_kinds(include_single_atoms: bool) -> tuple[SnapshotJobKind, ...]:
     if include_single_atoms:
         return ("snapshot", "single_atom")
     return ("snapshot",)
 
 
 def process_system(
-    system: ReferenceSystemConfig,
-    config: ReferenceConfig,
+    system: SnapshotSystemConfig,
+    config: EvaluateSnapshotsConfig,
     logger: Logger,
     *,
     job_ids: list[int] | None = None,
@@ -604,13 +607,13 @@ def process_system(
     if not is_local:
         assert config.slurm is not None
         if job_ids is None:
-            raise ValueError("job_ids are required for Slurm reference jobs.")
+            raise ValueError("job_ids are required for Slurm snapshot jobs.")
         max_parallel_jobs = config.slurm.max_parallel_jobs
 
     for kind in _enabled_job_kinds(config.single_atoms):
         run_dirs = run_dirs_by_kind[kind]
         if is_local:
-            label = REFERENCE_JOBS[kind]["label"]
+            label = SNAPSHOT_JOBS[kind]["label"]
             for index, run_dir in enumerate(run_dirs, start=1):
                 logger.status(
                     label,
@@ -619,11 +622,11 @@ def process_system(
                     level=2,
                     overwrite=True,
                 )
-                run_reference_job(kind, run_dir, config.cp2k_cmd)
+                run_snapshot_job(kind, run_dir, config.cp2k_cmd)
             logger.done(label, detail=f"{len(run_dirs)}/{len(run_dirs)}", level=2)
             continue
 
-        job = REFERENCE_JOBS[kind]
+        job = SNAPSHOT_JOBS[kind]
         submit_label = job["submit_label"]
         job_name_prefix = job["job_name_prefix"]
         script_name = job["script_name"]
@@ -642,7 +645,7 @@ def process_system(
                 overwrite=True,
             )
             job_ids.append(
-                submit_reference_job(
+                submit_snapshot_job(
                     kind=kind,
                     run_dir=run_dir,
                     config=config,
@@ -662,27 +665,27 @@ def process_system(
 
 
 def run_job(fn_config: str | Path) -> None:
-    """Run one staged snapshot or isolated-atom reference job."""
-    job = ReferenceJobConfig.load(fn_config)
-    run_reference_job(job.kind, job.run_dir, job.cp2k_cmd)
+    """Run one staged snapshot or isolated-atom CP2K job."""
+    job = EvaluateSnapshotJobConfig.load(fn_config)
+    run_snapshot_job(job.kind, job.run_dir, job.cp2k_cmd)
 
 
 def main(fn_config: str) -> None:
-    """Run staged CP2K jobs or import external reference trajectories."""
-    config = ReferenceConfig.load(fn_config)
-    config.reference_dir.resolve().mkdir(parents=True, exist_ok=True)
+    """Run staged CP2K jobs or import external snapshot trajectories."""
+    config = EvaluateSnapshotsConfig.load(fn_config)
+    config.output_dir.resolve().mkdir(parents=True, exist_ok=True)
 
-    logger = Logger("reference")
-    print_reference_summary(config, logger)
+    logger = Logger("evaluate-snapshots")
+    print_evaluate_summary(config, logger)
 
     if config.mode == "import":
         for index, system in enumerate(config.systems, start=1):
-            if not isinstance(system, ImportedReferenceSystemConfig):
+            if not isinstance(system, ImportedSnapshotSystemConfig):
                 raise TypeError(
-                    f"Expected imported reference system, got {type(system)}"
+                    f"Expected imported snapshot system, got {type(system)}"
                 )
             logger.info(f"System {index}/{len(config.systems)}", level=1)
-            import_reference_system(system, config.reference_dir.resolve(), logger)
+            import_snapshot_system(system, config.output_dir.resolve(), logger)
             logger.blank()
         return
 
@@ -695,8 +698,8 @@ def main(fn_config: str) -> None:
     job_ids: list[int] = []
     staged_system_dirs: list[Path] = []
     for index, system in enumerate(config.systems, start=1):
-        if not isinstance(system, ReferenceSystemConfig):
-            raise TypeError(f"Expected staged reference system, got {type(system)}")
+        if not isinstance(system, SnapshotSystemConfig):
+            raise TypeError(f"Expected staged snapshot system, got {type(system)}")
         logger.info(f"System {index}/{len(config.systems)}", level=1)
         staged_system_dirs.append(
             process_system(
