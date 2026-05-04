@@ -12,10 +12,11 @@ observables. It combines system building, reference-data handling, sampled MD
 campaigns, QoI analysis, surrogate fitting, and posterior learning in one
 toolchain.
 
-The public CLI is centered around seven workflows:
+The public CLI is centered around the main workflow commands:
 
 - `bff build`
-- `bff reference`
+- `bff prepare-assets`
+- `bff evaluate-snapshots`
 - `bff sample`
 - `bff analyze`
 - `bff fit`
@@ -94,7 +95,7 @@ Use `v0.0.1` for exact reproduction of the published paper data. The current
 External tools are still required for full workflows:
 
 - [Gromacs](https://www.gromacs.org) for `build`, `sample`, and `validate`
-- [CP2K](https://www.cp2k.org) for `reference` and staged ab initio inputs
+- [CP2K](https://www.cp2k.org) for `evaluate-snapshots` and staged ab initio inputs
 - [PLUMED](https://www.plumed.org) only for PLUMED-biased systems
 - [PyTorch](https://pytorch.org) installed separately for `fit`, `learn`, and posterior notebooks
 
@@ -118,15 +119,17 @@ pip install -e ".[dev,docs,notebook]"
 ## Quick Start
 
 The acetate example in [examples/acetate/](examples/acetate/) keeps config
-templates under `configs/`. Copy each template into its stage directory as
-`config.yaml`, edit it there, and run BFF from inside that directory:
+templates under `configs/`. Copy the needed template files into the stage
+directory, edit them there, and run BFF from inside that directory:
 
 ```bash
 cd examples/acetate
 mkdir -p 01-build-colvars
 cp configs/build-colvars.yaml 01-build-colvars/config.yaml
+cp configs/prepare-assets.yaml 01-build-colvars/config-assets.yaml
 cd 01-build-colvars
 bff build config.yaml
+bff prepare-assets config-assets.yaml
 ```
 
 Continue the same pattern for the numbered stages described in the example
@@ -147,11 +150,11 @@ bff examples
 cd examples/acetate
 ```
 
-The reference workflow itself writes the final `train.extxyz` and
-`valid.extxyz` files, so the normal path is simply:
+After `bff prepare-assets` has staged CP2K inputs, the snapshot evaluation
+workflow writes the final `train.extxyz` and `valid.extxyz` files:
 
 ```bash
-bff reference CONFIG.yaml
+bff evaluate-snapshots CONFIG.yaml
 ```
 
 ## Repository Layout

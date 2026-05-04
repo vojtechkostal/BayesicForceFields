@@ -1,14 +1,18 @@
-# Reference Configuration
+# Evaluate Snapshots Configuration
 
 Source code:
 
-- `bff/workflows/reference/config.py`
-- `bff/workflows/reference/main.py`
+- `bff/workflows/evaluate_snapshots/config.py`
+- `bff/workflows/evaluate_snapshots/main.py`
 
 ## Purpose
 
-`bff reference` either runs staged CP2K reference jobs or imports externally
-generated reference trajectories into BFF's canonical layout.
+`bff evaluate-snapshots` either runs staged CP2K snapshot jobs or imports
+externally generated trajectories into BFF's canonical evaluated-snapshot
+layout.
+
+In `run` mode, the staged assets normally come from
+`bff prepare-assets`.
 
 Supported modes:
 
@@ -21,7 +25,7 @@ Supported modes:
 
 ```yaml
 mode: run
-reference_dir: ./
+output_dir: ./
 job_scheduler: local
 cp2k_cmd: cp2k.psmp
 single_atoms: true
@@ -33,7 +37,8 @@ systems:
   - assets: ../01-build-colvars/reference/system-000
 ```
 
-The staged snapshot `md.inp` uses GFN1-xTB by default. Per-system CP2K input overrides are optional:
+The staged snapshot `md.inp` uses GFN1-xTB by default. Per-system CP2K input
+overrides are optional:
 
 ```yaml
 systems:
@@ -46,7 +51,7 @@ systems:
 
 ```yaml
 mode: import
-reference_dir: ./
+output_dir: ./
 
 systems:
   - topology: ../01-build-colvars/reference/system-000/system.top
@@ -64,8 +69,8 @@ Import mode requires all three files for each system:
 
 - `mode`
   Either `run` or `import`.
-- `reference_dir`
-  Output directory written by `bff reference`.
+- `output_dir`
+  Output directory written by `bff evaluate-snapshots`.
 - `systems`
   Non-empty list of systems to run or import.
 - `job_scheduler`
@@ -93,7 +98,8 @@ Import mode requires all three files for each system:
 ## `systems[]` Keys In `run` Mode
 
 - `assets`
-  Path to one staged reference system directory under `build/reference/system-XXX/`.
+  Path to one staged reference system directory, usually
+  `reference/system-XXX/` written by `bff prepare-assets`.
 - `md`
   Optional CP2K MD input override for this system.
 - `sp`
@@ -110,7 +116,7 @@ Import mode requires all three files for each system:
 
 ## Outputs
 
-In `run` mode, `bff reference` writes or refreshes:
+In `run` mode, `bff evaluate-snapshots` writes or refreshes:
 
 - `snapshots/snapshot-XXXX/`
 - `train.extxyz`

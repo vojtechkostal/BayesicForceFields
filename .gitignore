@@ -38,14 +38,15 @@ examples/acetate/**
 !examples/acetate/inputs/biases/*.dat
 !examples/acetate/inputs/reference-inputs/*.inp
 !examples/acetate/inputs/reference-trajectories/*.xtc
+examples/acetate/inputs/common/mdp/mdout.mdp
 
 # Runtime stage outputs for the acetate walkthrough
 examples/acetate/configs/*/
 examples/acetate/01-build-colvars/
 examples/acetate/01-build-plumed/
-examples/acetate/02-reference-run-local/
-examples/acetate/02-reference-run-slurm/
-examples/acetate/02-reference-import/
+examples/acetate/02-evaluate-run-local/
+examples/acetate/02-evaluate-run-slurm/
+examples/acetate/02-evaluate-import/
 examples/acetate/03-sample-local/
 examples/acetate/03-sample-slurm/
 examples/acetate/04-analyze/

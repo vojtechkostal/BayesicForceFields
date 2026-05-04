@@ -4,7 +4,7 @@
 
 - Python 3.10 or newer
 - GROMACS available as `gmx` for `build`, `sample`, and `validate`
-- CP2K only if you want to run staged reference inputs
+- CP2K only if you want to run staged snapshot evaluation inputs
 - PLUMED only for PLUMED-biased systems
 
 ## Recommended User Install

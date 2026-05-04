@@ -63,7 +63,7 @@ job_scheduler: local
 ## `systems[]` Keys
 
 - `assets`
-  Directory created by `bff build`, for example `ffmd/system-000`.
+  Directory created by `bff prepare-assets`, for example `ffmd/system-000`.
 - `n_steps`
   Production MD length for this prepared system within the sampled campaign.
 

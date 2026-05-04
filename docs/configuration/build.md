@@ -8,11 +8,13 @@ Source code:
 
 ## Purpose
 
-`bff build` stages everything needed for downstream workflows:
+`bff build` prepares equilibrated systems and runs one seeded production
+trajectory for each system. `bff prepare-assets` packages that seed into FFMD
+and CP2K reference assets.
 
 - equilibrated GROMACS systems under `equilibration/`
-- reusable FFMD assets under `ffmd/system-XXX/`
-- staged CP2K reference assets under `reference/system-XXX/`
+- seeded production outputs under `equilibration/system-XXX-prod.*`
+- a `build-manifest.yaml` handoff file consumed by asset-preparation workflows
 
 ## Minimal Example
 
@@ -28,9 +30,6 @@ defaults:
   nsteps:
     npt: 0
     prod: 100000
-
-reference:
-  n_single_point_snapshots: 1000
 
 systems:
   - topology: ../inputs/common/topol.top
@@ -50,7 +49,7 @@ systems:
 - `project`
   Project output settings. A string is accepted as shorthand for `project.directory`.
 - `project.directory`
-  Output directory for `equilibration/`, `ffmd/`, and `reference/`.
+  Output directory for `equilibration/` and `build-manifest.yaml`.
 - `project.log`
   Optional workflow log file.
 - `gromacs.command`
@@ -58,9 +57,7 @@ systems:
 - `defaults.nsteps.npt`
   Default NpT equilibration length for systems that do not override it.
 - `defaults.nsteps.prod`
-  Default production-preparation run length for systems that do not override it.
-- `reference.n_single_point_snapshots`
-  Number of evenly spaced snapshots staged for CP2K single-point and short-MD jobs.
+  Default seeded production run length for systems that do not override it.
 - `systems`
   Non-empty list of systems to build.
 
@@ -81,28 +78,21 @@ systems:
 - `nsteps.npt`
   Optional per-system NpT override.
 - `nsteps.prod`
-  Optional per-system production-preparation override.
+  Optional per-system seeded production run length. The seed trajectory is used
+  later by `bff prepare-assets`.
 - `mdp.em`
   Energy minimization MDP file.
 - `mdp.npt`
   NpT equilibration MDP file.
 - `mdp.prod`
-  Production MDP file staged into the downstream FFMD assets.
+  Production MDP file used for the seeded run and downstream FFMD assets.
 
 ## Outputs
 
-The most important downstream output is `PROJECT/ffmd/system-XXX/`.
-Each such directory contains one prepared system with topology, coordinates,
-index file, staged MDP files, and an optional copied bias file.
+The main downstream output is `PROJECT/build-manifest.yaml`. It records the
+prepared topology, index, MDP files, copied bias input, seeded production
+coordinate file, seeded production trajectory, CP2K charge/multiplicity, and
+box for each system.
 
-The reference tree is system-centered:
-
-- `PROJECT/reference/system-XXX/system.gro`
-- `PROJECT/reference/system-XXX/system.top`
-- `PROJECT/reference/system-XXX/system.xyz`
-- `PROJECT/reference/system-XXX/md/`
-- `PROJECT/reference/system-XXX/single-atoms/`
-- `PROJECT/reference/system-XXX/snapshots/`
-
-`bff build` only stages these reusable assets. Canonical `train.extxyz` and
-`valid.extxyz` files are created later by `bff reference`.
+After a successful build, run `bff prepare-assets` to write the `ffmd/` and
+`reference/` asset trees.

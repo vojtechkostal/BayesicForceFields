@@ -17,11 +17,13 @@ For exact reproduction of the published paper data, use the archived Git tag
 BFF runs a linear workflow:
 
 ```text
-build -> reference -> sample -> analyze -> fit -> learn -> validate
+build -> prepare-assets -> evaluate-snapshots
+                       -> sample -> analyze -> fit -> learn -> validate
 ```
 
-- `build`: prepare reusable GROMACS and reference assets
-- `reference`: run CP2K reference jobs or import reference trajectories
+- `build`: equilibrate systems and run seeded production trajectories
+- `prepare-assets`: package FFMD starts and stage CP2K snapshot assets
+- `evaluate-snapshots`: run CP2K snapshot jobs or import trajectories
 - `sample`: run sampled force-field MD campaigns
 - `analyze`: compute quantities of interest from sample and reference data
 - `fit`: train surrogate models
@@ -41,14 +43,16 @@ bff examples
 cd examples/acetate
 ```
 
-Each example stage has a config template. Copy it into the stage directory as
-`config.yaml`, edit it there, and run BFF from that directory:
+Each example stage has config templates. Copy the needed files into the stage
+directory, edit them there, and run BFF from that directory:
 
 ```bash
 mkdir -p 01-build-colvars
 cp configs/build-colvars.yaml 01-build-colvars/config.yaml
+cp configs/prepare-assets.yaml 01-build-colvars/config-assets.yaml
 cd 01-build-colvars
 bff build config.yaml
+bff prepare-assets config-assets.yaml
 ```
 
 Continue with the stages in the [acetate example](examples/acetate.md).

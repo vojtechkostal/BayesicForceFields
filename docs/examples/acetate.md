@@ -15,28 +15,30 @@ The acetate example optimizes acetate partial charges using three systems:
 ## Stage-Local Workflow
 
 The config files under `configs/` are templates. For each stage, make the stage
-directory, copy the template to `config.yaml`, edit it there, and run BFF from
-inside that directory. Each stage writes its own outputs to `./`.
+directory, copy the needed template files into it, edit them there, and run BFF
+from inside that directory. Each stage writes its own outputs to `./`.
 
 ```bash
 cd examples/acetate
 
 mkdir -p 01-build-colvars
 cp configs/build-colvars.yaml 01-build-colvars/config.yaml
+cp configs/prepare-assets.yaml 01-build-colvars/config-assets.yaml
 cd 01-build-colvars
 bff build config.yaml
+bff prepare-assets config-assets.yaml
 cd ..
 
-mkdir -p 02-reference-run-local
-cp configs/reference-run-local.yaml 02-reference-run-local/config.yaml
-cd 02-reference-run-local
-bff reference config.yaml
+mkdir -p 02-evaluate-run-local
+cp configs/evaluate-run-local.yaml 02-evaluate-run-local/config.yaml
+cd 02-evaluate-run-local
+bff evaluate-snapshots config.yaml
 cd ..
 
-mkdir -p 02-reference-import
-cp configs/reference-import.yaml 02-reference-import/config.yaml
-cd 02-reference-import
-bff reference config.yaml
+mkdir -p 02-evaluate-import
+cp configs/evaluate-import.yaml 02-evaluate-import/config.yaml
+cd 02-evaluate-import
+bff evaluate-snapshots config.yaml
 cd ..
 
 mkdir -p 03-sample-local
@@ -86,10 +88,12 @@ examples/acetate/
 
 - Colvars build config:
   [configs/build-colvars.yaml][acetate-build-colvars]
-- local CP2K reference-run config:
-  [configs/reference-run-local.yaml][acetate-reference-run]
-- imported AIMD reference config:
-  [configs/reference-import.yaml][acetate-reference-import]
+- asset-preparation config:
+  [configs/prepare-assets.yaml][acetate-prepare-assets]
+- local CP2K snapshot evaluation config:
+  [configs/evaluate-run-local.yaml][acetate-evaluate-run]
+- imported AIMD trajectory config:
+  [configs/evaluate-import.yaml][acetate-evaluate-import]
 - local sampling config:
   [configs/sample-local.yaml][acetate-sample]
 - analyze config:
@@ -105,8 +109,8 @@ examples/acetate/
 
 - PLUMED build config:
   [configs/build-plumed.yaml][acetate-build-plumed]
-- Slurm reference-run config:
-  [configs/reference-run-slurm.yaml][acetate-reference-slurm]
+- Slurm snapshot evaluation config:
+  [configs/evaluate-run-slurm.yaml][acetate-evaluate-slurm]
 - Slurm sampling config:
   [configs/sample-slurm.yaml][acetate-sample-slurm]
 
@@ -129,9 +133,10 @@ for your cluster before running them.
 [acetate-root]: https://github.com/vojtechkostal/BayesicForceFields/tree/main/examples/acetate
 [acetate-build-colvars]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/build-colvars.yaml
 [acetate-build-plumed]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/build-plumed.yaml
-[acetate-reference-run]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/reference-run-local.yaml
-[acetate-reference-slurm]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/reference-run-slurm.yaml
-[acetate-reference-import]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/reference-import.yaml
+[acetate-prepare-assets]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/prepare-assets.yaml
+[acetate-evaluate-run]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/evaluate-run-local.yaml
+[acetate-evaluate-slurm]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/evaluate-run-slurm.yaml
+[acetate-evaluate-import]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/evaluate-import.yaml
 [acetate-sample]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/sample-local.yaml
 [acetate-sample-slurm]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/sample-slurm.yaml
 [acetate-analyze]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/analyze.yaml

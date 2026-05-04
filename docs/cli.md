@@ -5,9 +5,11 @@ The CLI entry point is implemented in `bff/cli.py`.
 ## Public Commands
 
 - `bff build CONFIG.yaml`
-  Build reusable FFMD and reference starting assets.
-- `bff reference CONFIG.yaml`
-  Run or import canonical reference datasets.
+  Build equilibrated systems and seeded production trajectories.
+- `bff prepare-assets CONFIG.yaml`
+  Package seeded FFMD assets and staged CP2K snapshot assets.
+- `bff evaluate-snapshots CONFIG.yaml`
+  Evaluate staged CP2K snapshots or import trajectory datasets.
 - `bff sample CONFIG.yaml`
   Sample force-field parameters and run FFMD campaigns.
 - `bff analyze CONFIG.yaml`
@@ -26,14 +28,15 @@ The CLI entry point is implemented in `bff/cli.py`.
 Hidden internal commands also exist for scheduled jobs:
 
 - `bff md CONFIG.yaml`
-- `bff reference-job CONFIG.yaml`
+- `bff evaluate-snapshot-job CONFIG.yaml`
 
 ## Config Philosophy
 
 Each top-level workflow uses one focused config file:
 
-- build config: how to stage reusable FFMD and reference assets
-- reference config: how to run or import canonical reference data
+- build config: how to equilibrate and seed production trajectories
+- prepare-assets config: how to package FFMD starts and stage CP2K inputs
+- evaluate-snapshots config: how to run CP2K snapshots or import trajectories
 - sample config: how to turn prepared assets into a sampled FFMD campaign
 - analyze config: how to compute observables from trajectories
 - fit config: how to train surrogates
@@ -59,7 +62,8 @@ conda activate bfflearn
 After that, `bff <TAB>` should offer:
 
 - `build`
-- `reference`
+- `prepare-assets`
+- `evaluate-snapshots`
 - `sample`
 - `analyze`
 - `fit`

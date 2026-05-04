@@ -1,8 +1,9 @@
 # Acetate Example
 
 This example uses stage-local configs. For each stage, create the output
-directory, copy the matching template to `config.yaml`, edit it if needed, then
-run BFF from inside that directory. The stage writes its own outputs to `./`.
+directory, copy the needed template files into that directory, edit them if
+needed, then run BFF from inside the stage directory. The stage writes its own
+outputs to `./`.
 
 ## Run Order
 
@@ -11,20 +12,22 @@ cd examples/acetate
 
 mkdir -p 01-build-colvars
 cp configs/build-colvars.yaml 01-build-colvars/config.yaml
+cp configs/prepare-assets.yaml 01-build-colvars/config-assets.yaml
 cd 01-build-colvars
 bff build config.yaml
+bff prepare-assets config-assets.yaml
 cd ..
 
-mkdir -p 02-reference-run-local
-cp configs/reference-run-local.yaml 02-reference-run-local/config.yaml
-cd 02-reference-run-local
-bff reference config.yaml
+mkdir -p 02-evaluate-run-local
+cp configs/evaluate-run-local.yaml 02-evaluate-run-local/config.yaml
+cd 02-evaluate-run-local
+bff evaluate-snapshots config.yaml
 cd ..
 
-mkdir -p 02-reference-import
-cp configs/reference-import.yaml 02-reference-import/config.yaml
-cd 02-reference-import
-bff reference config.yaml
+mkdir -p 02-evaluate-import
+cp configs/evaluate-import.yaml 02-evaluate-import/config.yaml
+cd 02-evaluate-import
+bff evaluate-snapshots config.yaml
 cd ..
 
 mkdir -p 03-sample-local
@@ -72,15 +75,18 @@ examples/acetate/
 
 ## Configs
 
-- `build-colvars.yaml`: prepares FFMD assets in `./ffmd/` and reference assets
-  in `./reference/`.
-- `reference-run-local.yaml`: runs CP2K on `../01-build-colvars/reference/` and
-  writes `train.extxyz` and `valid.extxyz` into `./`.
-- `reference-import.yaml`: imports committed AIMD trajectories into `./`.
+- `build-colvars.yaml`: equilibrates systems and runs seeded production
+  trajectories recorded in `./build-manifest.yaml`.
+- `prepare-assets.yaml`: packages `./ffmd/` and stages `./reference/` from the
+  build manifest.
+- `evaluate-run-local.yaml`: runs CP2K snapshot evaluation on
+  `../01-build-colvars/reference/` and writes `train.extxyz` and `valid.extxyz`
+  into `./`.
+- `evaluate-import.yaml`: imports committed AIMD trajectories into `./`.
 - `sample-local.yaml`: samples force-field parameters and runs local FFMD into
   `./`.
 - `analyze.yaml`: compares `../03-sample-local/` against
-  `../02-reference-import/` and writes QoI datasets into `./`.
+  `../02-evaluate-import/` and writes QoI datasets into `./`.
 - `fit.yaml`: fits surrogate models into `./models/`.
 - `learn.yaml`: learns the posterior and writes outputs into `./`.
 - `validate.yaml`: reruns selected posterior samples into `./`.
@@ -88,7 +94,7 @@ examples/acetate/
 ## Variants
 
 - `build-plumed.yaml` uses PLUMED restraint files instead of Colvars.
-- `reference-run-slurm.yaml` runs the reference workflow through Slurm.
+- `evaluate-run-slurm.yaml` runs snapshot evaluation through Slurm.
 - `sample-slurm.yaml` runs the sampling campaign through Slurm.
 
 The Slurm configs keep scheduler setup commands in the YAML. Edit those blocks
@@ -100,7 +106,7 @@ for your cluster before running them.
   GROMACS MDP files.
 - `inputs/biases/`: Colvars and PLUMED restraint files.
 - `inputs/reference-trajectories/`: committed AIMD trajectories imported by
-  `reference-import.yaml`.
+  `evaluate-import.yaml`.
 - `inputs/reference-inputs/`: optional CP2K input overrides for customized
   reference runs.
 - `inputs/restraint.py`: custom distance-distribution QoI for the calcium-bound

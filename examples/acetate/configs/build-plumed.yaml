@@ -9,9 +9,6 @@ defaults:
     npt: 0
     prod: 100000
 
-reference:
-  n_single_point_snapshots: 1000
-
 systems:
   - topology: ../inputs/common/topol.top
     templates:

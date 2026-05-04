@@ -34,7 +34,8 @@ nav:
   - CLI: cli.md
   - Configuration:
       - Build: configuration/build.md
-      - Reference: configuration/reference.md
+      - Prepare Assets: configuration/prepare-assets.md
+      - Evaluate Snapshots: configuration/evaluate-snapshots.md
       - Sample: configuration/sample.md
       - Analyze: configuration/analyze.md
       - Fit: configuration/fit.md

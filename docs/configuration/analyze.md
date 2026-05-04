@@ -21,9 +21,9 @@ sample:
 
 reference:
   systems:
-    - coordinates: ../02-reference-import/system-000/system.gro
-      topology: ../02-reference-import/system-000/system.top
-      trajectory: ../02-reference-import/system-000/trajectory.xtc
+    - coordinates: ../02-evaluate-import/system-000/system.gro
+      topology: ../02-evaluate-import/system-000/system.top
+      trajectory: ../02-evaluate-import/system-000/trajectory.xtc
       routines:
         - routine: rdf
           mol_resname: ACE

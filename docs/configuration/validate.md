@@ -55,7 +55,7 @@ job_scheduler: local
 ## `systems[]` Keys
 
 - `assets`
-  Directory created by `bff build`, for example `ffmd/system-001`.
+  Directory created by `bff prepare-assets`, for example `ffmd/system-001`.
 - `n_steps`
   Production MD length for this validation run.
 
