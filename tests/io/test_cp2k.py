@@ -2,6 +2,8 @@ from pathlib import Path
 
 import pytest
 
+from _fake_mdanalysis import install as install_fake_mdanalysis
+
 from bff.io.cp2k import (
     HARTREE_PER_BOHR_TO_EV_PER_ANGSTROM,
     HARTREE_TO_EV,
@@ -9,6 +11,7 @@ from bff.io.cp2k import (
     get_cp2k_kind_defaults,
     get_cp2k_single_atom_directory_name,
     get_cp2k_single_atom_multiplicity,
+    make_cp2k_isolated_atom_input,
     read_cp2k_energy,
     read_cp2k_forces,
 )
@@ -51,6 +54,49 @@ def test_cp2k_lookup_helpers_report_known_and_unknown_elements() -> None:
         get_cp2k_single_atom_directory_name("Xe")
     with pytest.raises(ValueError, match="multiplicity"):
         get_cp2k_single_atom_multiplicity("Xe")
+
+
+@pytest.mark.parametrize(
+    ("element", "symbol", "multiplicity", "basis_set"),
+    [
+        ("o", "O", 3, "TZV2P-GTH-q6"),
+        ("k", "K", 2, "TZV2P-MOLOPT-SR-GTH-q9"),
+    ],
+)
+def test_make_cp2k_isolated_atom_input(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    element: str,
+    symbol: str,
+    multiplicity: int,
+    basis_set: str,
+) -> None:
+    fn_input = tmp_path / "input.inp"
+    install_fake_mdanalysis(monkeypatch)
+
+    make_cp2k_isolated_atom_input(element, fn_input)
+
+    text = fn_input.read_text()
+    xyz = (tmp_path / "pos.xyz").read_text().splitlines()
+
+    assert xyz == [
+        "1",
+        f"{symbol} isolated in vacuum",
+        f"{symbol} 5.000000 5.000000 5.000000",
+    ]
+    assert f"PROJECT_NAME {symbol}_vacuum" in text
+    assert "RUN_TYPE ENERGY" in text
+    assert "PREFERRED_FFT_LIBRARY FFTW" in text
+    assert "SCF_GUESS ATOMIC" in text
+    assert f"MULTIPLICITY {multiplicity}" in text
+    assert "UKS .TRUE." in text
+    assert "COORD_FILE_NAME pos.xyz" in text
+    assert "ABC [angstrom] 10.0 10.0 10.0" in text
+    assert "PERIODIC NONE" in text
+    assert "PSOLVER MT" in text
+    assert f"BASIS_SET {basis_set}" in text
+    assert "&MOTION" not in text
+    assert "VDW_POTENTIAL" not in text
 
 
 def test_read_cp2k_energy_converts_hartree_to_ev(tmp_path: Path) -> None:

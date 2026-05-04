@@ -10,6 +10,21 @@ __pycache__/
 /dist/
 /site/
 
+# Local scratch artifacts from old/manual test workflow runs
+tests/acetate-test/
+tests/workflow-test/
+tests/version-2.0/
+tests/results/
+tests/analyze-c36-ecc80.yaml
+tests/autocorr_time.npy
+tests/backend*.h5
+tests/dmp-*.json
+tests/mso4-*.json
+tests/*-hyper.yaml
+tests/priors.yaml
+tests/specs.yaml
+tests/tau.npy
+
 # Common runtime artifacts
 *.log
 *.out
