@@ -16,7 +16,7 @@ the surrogate files themselves, not from the original QoI datasets.
 
 ```yaml
 log: ./out.log
-specs: ../03-sample-local/specs.yaml
+specs: ../03-sample/specs.yaml
 models:
   rdf: ../05-fit/models/rdf.lgp
   hb: ../05-fit/models/hb.lgp

@@ -1,5 +1,4 @@
-mode: run
-output_dir: ./
+output_dir: ./snapshots
 job_scheduler: local
 cp2k_cmd: cp2k.psmp
 single_atoms: true
@@ -8,6 +7,6 @@ train_fraction: 0.8
 seed: 2026
 
 systems:
-  - assets: ../01-build-colvars/reference/system-000
-  - assets: ../01-build-colvars/reference/system-001
-  - assets: ../01-build-colvars/reference/system-002
+  - assets: ../02-assets/reference/system-000
+  - assets: ../02-assets/reference/system-001
+  - assets: ../02-assets/reference/system-002

@@ -9,7 +9,7 @@ The CLI entry point is implemented in `bff/cli.py`.
 - `bff prepare-assets CONFIG.yaml`
   Package seeded FFMD assets and staged CP2K snapshot assets.
 - `bff evaluate-snapshots CONFIG.yaml`
-  Evaluate staged CP2K snapshots or import trajectory datasets.
+  Evaluate staged CP2K snapshots.
 - `bff sample CONFIG.yaml`
   Sample force-field parameters and run FFMD campaigns.
 - `bff analyze CONFIG.yaml`
@@ -36,7 +36,7 @@ Each top-level workflow uses one focused config file:
 
 - build config: how to equilibrate and seed production trajectories
 - prepare-assets config: how to package FFMD starts and stage CP2K inputs
-- evaluate-snapshots config: how to run CP2K snapshots or import trajectories
+- evaluate-snapshots config: how to run CP2K snapshot jobs
 - sample config: how to turn prepared assets into a sampled FFMD campaign
 - analyze config: how to compute observables from trajectories
 - fit config: how to train surrogates

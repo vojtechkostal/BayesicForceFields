@@ -124,12 +124,16 @@ directory, edit them there, and run BFF from inside that directory:
 
 ```bash
 cd examples/acetate
-mkdir -p 01-build-colvars
-cp configs/build-colvars.yaml 01-build-colvars/config.yaml
-cp configs/prepare-assets.yaml 01-build-colvars/config-assets.yaml
-cd 01-build-colvars
+mkdir -p 01-build
+cp configs/build-colvars.yaml 01-build/config.yaml
+cd 01-build
 bff build config.yaml
-bff prepare-assets config-assets.yaml
+cd ..
+
+mkdir -p 02-assets
+cp configs/prepare-assets.yaml 02-assets/config.yaml
+cd 02-assets
+bff prepare-assets config.yaml
 ```
 
 Continue the same pattern for the numbered stages described in the example
@@ -150,8 +154,14 @@ bff examples
 cd examples/acetate
 ```
 
-After `bff prepare-assets` has staged CP2K inputs, the snapshot evaluation
-workflow writes the final `train.extxyz` and `valid.extxyz` files:
+After `bff prepare-assets` has staged CP2K inputs, the snapshot-evaluation
+configs `evaluate-run-local.yaml` and `evaluate-run-slurm.yaml` write
+`train.extxyz` and `valid.extxyz` files under `03-reference/snapshots/`.
+Reference MD trajectory generation for analysis is then up to you: run AIMD
+from the staged CP2K MD inputs, or train a machine-learning potential from
+evaluated snapshots and use it to generate the trajectories. The separate
+`03-reference/trajectories/` directory is a good place to put those generated
+reference trajectories before running `bff analyze`.
 
 ```bash
 bff evaluate-snapshots CONFIG.yaml

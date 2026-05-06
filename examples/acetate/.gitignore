@@ -1,4 +1,14 @@
 # Generated stage outputs
+01-build/
+02-assets/
+03-reference/
+03-sample/
+04-analyze/
+05-fit/
+06-learn/
+07-validate/
+
+# Legacy generated stage outputs
 01-build-colvars/
 01-build-plumed/
 02-evaluate-run-local/
@@ -6,10 +16,6 @@
 02-evaluate-import/
 03-sample-local/
 03-sample-slurm/
-04-analyze/
-05-fit/
-06-learn/
-07-validate/
 
 # Legacy generated outputs kept out of version control
 configs/*/

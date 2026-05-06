@@ -1,4 +1,4 @@
-manifest: ./build-manifest.yaml
+manifest: ../01-build/build-manifest.yaml
 ffmd_dir: ./ffmd
 reference_dir: ./reference
 n_single_point_snapshots: 5

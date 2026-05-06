@@ -21,29 +21,29 @@ from inside that directory. Each stage writes its own outputs to `./`.
 ```bash
 cd examples/acetate
 
-mkdir -p 01-build-colvars
-cp configs/build-colvars.yaml 01-build-colvars/config.yaml
-cp configs/prepare-assets.yaml 01-build-colvars/config-assets.yaml
-cd 01-build-colvars
+mkdir -p 01-build
+cp configs/build-colvars.yaml 01-build/config.yaml
+cd 01-build
 bff build config.yaml
-bff prepare-assets config-assets.yaml
 cd ..
 
-mkdir -p 02-evaluate-run-local
-cp configs/evaluate-run-local.yaml 02-evaluate-run-local/config.yaml
-cd 02-evaluate-run-local
-bff evaluate-snapshots config.yaml
+mkdir -p 02-assets
+cp configs/prepare-assets.yaml 02-assets/config.yaml
+cd 02-assets
+bff prepare-assets config.yaml
 cd ..
 
-mkdir -p 02-evaluate-import
-cp configs/evaluate-import.yaml 02-evaluate-import/config.yaml
-cd 02-evaluate-import
-bff evaluate-snapshots config.yaml
+mkdir -p 03-reference
+cp configs/evaluate-run-local.yaml 03-reference/config-snapshots.yaml
+cd 03-reference
+bff evaluate-snapshots config-snapshots.yaml
+mkdir -p trajectories
+# Generate or place reference trajectories under trajectories/system-*/.
 cd ..
 
-mkdir -p 03-sample-local
-cp configs/sample-local.yaml 03-sample-local/config.yaml
-cd 03-sample-local
+mkdir -p 03-sample
+cp configs/sample-local.yaml 03-sample/config.yaml
+cd 03-sample
 bff sample config.yaml
 cd ..
 
@@ -75,12 +75,21 @@ cd ..
 The copied config is the record of what was run for that stage. Stage
 directories are generated outputs and are ignored by git.
 
+The `03-reference` stage keeps snapshot datasets and analysis trajectories as
+sibling directories:
+
+```text
+03-reference/
+  snapshots/system-*/
+  trajectories/system-*/
+```
+
 ## Layout
 
 ```text
 examples/acetate/
   configs/      config templates copied into stage directories
-  inputs/       committed molecular inputs and reference trajectories
+  inputs/       committed molecular inputs and optional reference trajectories
   notebooks/    optional interactive notebooks
 ```
 
@@ -92,8 +101,6 @@ examples/acetate/
   [configs/prepare-assets.yaml][acetate-prepare-assets]
 - local CP2K snapshot evaluation config:
   [configs/evaluate-run-local.yaml][acetate-evaluate-run]
-- imported AIMD trajectory config:
-  [configs/evaluate-import.yaml][acetate-evaluate-import]
 - local sampling config:
   [configs/sample-local.yaml][acetate-sample]
 - analyze config:
@@ -123,7 +130,7 @@ for your cluster before running them.
   `inputs/common/`
 - Colvars and PLUMED restraint files:
   `inputs/biases/`
-- ab initio reference trajectories imported for QoI analysis:
+- optional ab initio reference trajectories for QoI analysis:
   `inputs/reference-trajectories/`
 - optional CP2K input overrides for customized reference runs:
   `inputs/reference-inputs/`
@@ -136,7 +143,6 @@ for your cluster before running them.
 [acetate-prepare-assets]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/prepare-assets.yaml
 [acetate-evaluate-run]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/evaluate-run-local.yaml
 [acetate-evaluate-slurm]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/evaluate-run-slurm.yaml
-[acetate-evaluate-import]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/evaluate-import.yaml
 [acetate-sample]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/sample-local.yaml
 [acetate-sample-slurm]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/sample-slurm.yaml
 [acetate-analyze]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/analyze.yaml

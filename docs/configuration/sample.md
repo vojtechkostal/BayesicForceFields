@@ -17,7 +17,7 @@ the corresponding GROMACS jobs.
 mol_resname: ACE
 campaign_dir: ./
 systems:
-  - assets: ../01-build-colvars/ffmd/system-000
+  - assets: ../02-assets/ffmd/system-000
     n_steps: 1000
 bounds:
   charge C2: [0.0, 1.0]

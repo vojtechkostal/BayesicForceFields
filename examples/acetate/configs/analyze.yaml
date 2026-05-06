@@ -1,5 +1,5 @@
 sample:
-  dir: ../03-sample-local
+  dir: ../03-sample
   start: 1
   stop: -1
   step: 1
@@ -10,9 +10,9 @@ reference:
   stop: -1
   step: 1
   systems:
-    - coordinates: ../02-evaluate-import/system-000/system.gro
-      topology: ../02-evaluate-import/system-000/system.top
-      trajectory: ../02-evaluate-import/system-000/trajectory.xtc
+    - coordinates: ../03-reference/trajectories/system-000/system.gro
+      topology: ../03-reference/trajectories/system-000/system.top
+      trajectory: ../03-reference/trajectories/system-000/trajectory.xtc
       routines:
         - routine: rdf
           mol_resname: ACE
@@ -20,9 +20,9 @@ reference:
           smooth: false
         - routine: hb
           mol_resname: ACE
-    - coordinates: ../02-evaluate-import/system-001/system.gro
-      topology: ../02-evaluate-import/system-001/system.top
-      trajectory: ../02-evaluate-import/system-001/trajectory.xtc
+    - coordinates: ../03-reference/trajectories/system-001/system.gro
+      topology: ../03-reference/trajectories/system-001/system.top
+      trajectory: ../03-reference/trajectories/system-001/trajectory.xtc
       routines:
         - routine: rdf
           mol_resname: ACE
@@ -33,9 +33,9 @@ reference:
         - routine: ../inputs/restraint.py:distance_distribution
           atom_pair: [C2, CAL]
           r_range: [2.0, 5.0]
-    - coordinates: ../02-evaluate-import/system-002/system.gro
-      topology: ../02-evaluate-import/system-002/system.top
-      trajectory: ../02-evaluate-import/system-002/trajectory.xtc
+    - coordinates: ../03-reference/trajectories/system-002/system.gro
+      topology: ../03-reference/trajectories/system-002/system.top
+      trajectory: ../03-reference/trajectories/system-002/trajectory.xtc
       routines:
         - routine: rdf
           mol_resname: ACE

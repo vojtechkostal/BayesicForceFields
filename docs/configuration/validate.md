@@ -19,9 +19,9 @@ possible.
 ```yaml
 campaign_dir: ./
 parameters: ../06-learn/posterior-samples.yaml
-specs: ../03-sample-local/specs.yaml
+specs: ../03-sample/specs.yaml
 systems:
-  - assets: ../01-build-colvars/ffmd/system-000
+  - assets: ../02-assets/ffmd/system-000
     n_steps: 1000
 gmx_cmd: gmx
 job_scheduler: local

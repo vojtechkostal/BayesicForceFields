@@ -7,25 +7,13 @@ Source code:
 
 ## Purpose
 
-`bff evaluate-snapshots` either runs staged CP2K snapshot jobs or imports
-externally generated trajectories into BFF's canonical evaluated-snapshot
-layout.
-
-In `run` mode, the staged assets normally come from
-`bff prepare-assets`.
-
-Supported modes:
-
-- `mode: run`
-  execute the staged CP2K snapshot and optional single-atom jobs
-- `mode: import`
-  copy externally generated `.top`, `.gro`, and trajectory files into canonical assets
+`bff evaluate-snapshots` runs staged CP2K snapshot jobs. The staged assets
+normally come from `bff prepare-assets`.
 
 ## Run Example
 
 ```yaml
-mode: run
-output_dir: ./
+output_dir: ./snapshots
 job_scheduler: local
 cp2k_cmd: cp2k.psmp
 single_atoms: true
@@ -34,7 +22,7 @@ train_fraction: 0.8
 seed: 2026
 
 systems:
-  - assets: ../01-build-colvars/reference/system-000
+  - assets: ../02-assets/reference/system-000
 ```
 
 The staged snapshot `md.inp` uses GFN1-xTB by default. Per-system CP2K input
@@ -42,41 +30,21 @@ overrides are optional:
 
 ```yaml
 systems:
-  - assets: ../01-build-colvars/reference/system-000
+  - assets: ../02-assets/reference/system-000
     md: ../inputs/reference-inputs/md-0.inp
     sp: ../inputs/reference-inputs/revpbe0-sp.inp
 ```
 
-## Import Example
-
-```yaml
-mode: import
-output_dir: ./
-
-systems:
-  - topology: ../01-build-colvars/reference/system-000/system.top
-    coordinates: ../01-build-colvars/reference/system-000/system.gro
-    trajectory: ../inputs/reference-trajectories/pos-000.xtc
-```
-
-Import mode requires all three files for each system:
-
-- `topology`: a `.top` file
-- `coordinates`: a `.gro` file
-- `trajectory`: a trajectory file such as `.xtc`
-
 ## Top-Level Keys
 
-- `mode`
-  Either `run` or `import`.
 - `output_dir`
   Output directory written by `bff evaluate-snapshots`.
 - `systems`
-  Non-empty list of systems to run or import.
+  Non-empty list of systems to evaluate.
 - `job_scheduler`
-  Required in `run` mode. Either `local` or `slurm`.
+  Either `local` or `slurm`.
 - `cp2k_cmd`
-  Required in `run` mode. CP2K executable used for local execution.
+  CP2K executable used for local execution.
 - `single_atoms`
   Whether to also run isolated single-atom reference jobs. Defaults to `true`.
 - `snapshot_md_steps`
@@ -95,7 +63,7 @@ Import mode requires all three files for each system:
 - `slurm`
   Required when `job_scheduler: slurm`.
 
-## `systems[]` Keys In `run` Mode
+## `systems[]` Keys
 
 - `assets`
   Path to one staged reference system directory, usually
@@ -105,27 +73,16 @@ Import mode requires all three files for each system:
 - `sp`
   Optional CP2K single-point input override for this system.
 
-## `systems[]` Keys In `import` Mode
-
-- `topology`
-  Topology file for the imported system. Must be `.top`.
-- `coordinates`
-  Coordinate file for the imported system. Must be `.gro`.
-- `trajectory`
-  Trajectory file copied into the canonical `trajectory.*` asset name.
-
 ## Outputs
 
-In `run` mode, `bff evaluate-snapshots` writes or refreshes:
+`bff evaluate-snapshots` writes or refreshes one directory per system under
+`output_dir`, for example `snapshots/system-000/`, containing:
 
 - `snapshots/snapshot-XXXX/`
 - `train.extxyz`
 - `valid.extxyz`
 - optional `single-atoms.yaml` with atomic-number keys
 
-In `import` mode, it writes one canonical directory per system containing:
-
-- `system.top`
-- `system.gro`
-- `trajectory.*`
-- `imported.yaml`
+Reference trajectories for `bff analyze` are user-provided. A convenient
+convention is to place them under `03-reference/trajectories/system-*/`
+alongside matching `system.top` and `system.gro` files.

@@ -17,13 +17,13 @@ Source code:
 
 ```yaml
 sample:
-  dir: ../03-sample-local
+  dir: ../03-sample
 
 reference:
   systems:
-    - coordinates: ../02-evaluate-import/system-000/system.gro
-      topology: ../02-evaluate-import/system-000/system.top
-      trajectory: ../02-evaluate-import/system-000/trajectory.xtc
+    - coordinates: ../03-reference/trajectories/system-000/system.gro
+      topology: ../03-reference/trajectories/system-000/system.top
+      trajectory: ../03-reference/trajectories/system-000/trajectory.xtc
       routines:
         - routine: rdf
           mol_resname: ACE

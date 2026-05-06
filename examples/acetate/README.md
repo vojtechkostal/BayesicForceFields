@@ -10,29 +10,29 @@ outputs to `./`.
 ```bash
 cd examples/acetate
 
-mkdir -p 01-build-colvars
-cp configs/build-colvars.yaml 01-build-colvars/config.yaml
-cp configs/prepare-assets.yaml 01-build-colvars/config-assets.yaml
-cd 01-build-colvars
+mkdir -p 01-build
+cp configs/build-colvars.yaml 01-build/config.yaml
+cd 01-build
 bff build config.yaml
-bff prepare-assets config-assets.yaml
 cd ..
 
-mkdir -p 02-evaluate-run-local
-cp configs/evaluate-run-local.yaml 02-evaluate-run-local/config.yaml
-cd 02-evaluate-run-local
-bff evaluate-snapshots config.yaml
+mkdir -p 02-assets
+cp configs/prepare-assets.yaml 02-assets/config.yaml
+cd 02-assets
+bff prepare-assets config.yaml
 cd ..
 
-mkdir -p 02-evaluate-import
-cp configs/evaluate-import.yaml 02-evaluate-import/config.yaml
-cd 02-evaluate-import
-bff evaluate-snapshots config.yaml
+mkdir -p 03-reference
+cp configs/evaluate-run-slurm.yaml 03-reference/config-snapshots.yaml
+cd 03-reference
+bff evaluate-snapshots config-snapshots.yaml
+mkdir -p trajectories
+# Generate or place reference trajectories under trajectories/system-*/.
 cd ..
 
-mkdir -p 03-sample-local
-cp configs/sample-local.yaml 03-sample-local/config.yaml
-cd 03-sample-local
+mkdir -p 03-sample
+cp configs/sample-local.yaml 03-sample/config.yaml
+cd 03-sample
 bff sample config.yaml
 cd ..
 
@@ -69,7 +69,7 @@ directories are runtime outputs and are ignored by git.
 ```text
 examples/acetate/
   configs/      config templates copied into stage directories
-  inputs/       committed molecular inputs and reference trajectories
+  inputs/       committed molecular inputs and optional reference trajectories
   notebooks/    optional interactive analysis notebooks
 ```
 
@@ -77,24 +77,45 @@ examples/acetate/
 
 - `build-colvars.yaml`: equilibrates systems and runs seeded production
   trajectories recorded in `./build-manifest.yaml`.
-- `prepare-assets.yaml`: packages `./ffmd/` and stages `./reference/` from the
-  build manifest.
+- `prepare-assets.yaml`: reads `../01-build/build-manifest.yaml`, packages
+  `./ffmd/`, and stages CP2K inputs under `./reference/`.
 - `evaluate-run-local.yaml`: runs CP2K snapshot evaluation on
-  `../01-build-colvars/reference/` and writes `train.extxyz` and `valid.extxyz`
-  into `./`.
-- `evaluate-import.yaml`: imports committed AIMD trajectories into `./`.
+  `../02-assets/reference/` and writes `train.extxyz` and `valid.extxyz`
+  into `./snapshots/`.
+- `evaluate-run-slurm.yaml`: same snapshot-evaluation stage through Slurm.
 - `sample-local.yaml`: samples force-field parameters and runs local FFMD into
   `./`.
-- `analyze.yaml`: compares `../03-sample-local/` against
-  `../02-evaluate-import/` and writes QoI datasets into `./`.
+- `analyze.yaml`: compares `../03-sample/` against reference trajectories in
+  `../03-reference/trajectories/` and writes QoI datasets into `./`.
 - `fit.yaml`: fits surrogate models into `./models/`.
 - `learn.yaml`: learns the posterior and writes outputs into `./`.
 - `validate.yaml`: reruns selected posterior samples into `./`.
 
+## Reference Trajectories
+
+`bff evaluate-snapshots` evaluates short CP2K snapshot jobs and writes
+`train.extxyz` and `valid.extxyz`; it does not generate the reference MD
+trajectories used by `bff analyze`. After the snapshots are evaluated, generate
+those trajectories yourself. You can run AIMD directly from the CP2K inputs in
+`02-assets/reference/system-*/md/`, or train a machine-learning potential of
+your choice from the evaluated snapshots and use that potential to run the
+reference trajectories.
+
+Keep evaluated snapshot datasets in `03-reference/snapshots/`. A good place for
+the generated reference trajectories is
+`03-reference/trajectories/system-*/trajectory.xtc`, alongside `system.top` and
+`system.gro`. The `system.top` and `system.gro` files can be copied from the
+matching `02-assets/reference/system-*/` directory.
+
+```text
+03-reference/
+  snapshots/system-*/      evaluated snapshot datasets
+  trajectories/system-*/   reference trajectories for analysis
+```
+
 ## Variants
 
 - `build-plumed.yaml` uses PLUMED restraint files instead of Colvars.
-- `evaluate-run-slurm.yaml` runs snapshot evaluation through Slurm.
 - `sample-slurm.yaml` runs the sampling campaign through Slurm.
 
 The Slurm configs keep scheduler setup commands in the YAML. Edit those blocks
@@ -105,8 +126,8 @@ for your cluster before running them.
 - `inputs/common/`: topologies, force-field includes, template coordinates, and
   GROMACS MDP files.
 - `inputs/biases/`: Colvars and PLUMED restraint files.
-- `inputs/reference-trajectories/`: committed AIMD trajectories imported by
-  `evaluate-import.yaml`.
+- `inputs/reference-trajectories/`: optional committed AIMD trajectories that
+  can be copied into `03-reference/trajectories/`.
 - `inputs/reference-inputs/`: optional CP2K input overrides for customized
   reference runs.
 - `inputs/restraint.py`: custom distance-distribution QoI for the calcium-bound

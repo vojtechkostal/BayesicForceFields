@@ -23,7 +23,7 @@ build -> prepare-assets -> evaluate-snapshots
 
 - `build`: equilibrate systems and run seeded production trajectories
 - `prepare-assets`: package FFMD starts and stage CP2K snapshot assets
-- `evaluate-snapshots`: run CP2K snapshot jobs or import trajectories
+- `evaluate-snapshots`: run CP2K snapshot jobs
 - `sample`: run sampled force-field MD campaigns
 - `analyze`: compute quantities of interest from sample and reference data
 - `fit`: train surrogate models
@@ -47,12 +47,16 @@ Each example stage has config templates. Copy the needed files into the stage
 directory, edit them there, and run BFF from that directory:
 
 ```bash
-mkdir -p 01-build-colvars
-cp configs/build-colvars.yaml 01-build-colvars/config.yaml
-cp configs/prepare-assets.yaml 01-build-colvars/config-assets.yaml
-cd 01-build-colvars
+mkdir -p 01-build
+cp configs/build-colvars.yaml 01-build/config.yaml
+cd 01-build
 bff build config.yaml
-bff prepare-assets config-assets.yaml
+cd ..
+
+mkdir -p 02-assets
+cp configs/prepare-assets.yaml 02-assets/config.yaml
+cd 02-assets
+bff prepare-assets config.yaml
 ```
 
 Continue with the stages in the [acetate example](examples/acetate.md).
