@@ -11,7 +11,7 @@ import subprocess
 import time
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Literal
+from typing import Callable, Literal
 
 from ...io.cp2k import (
     collect_single_atom_energies,
@@ -26,11 +26,11 @@ from .._shared.scheduler import (
     bff_cli_command,
     build_slurm_cli_job,
     control_jobs,
+    get_job_state_counts,
     wait_for_scheduler_slot,
 )
 from .config import (
     EvaluateSnapshotsConfig,
-    ImportedSnapshotSystemConfig,
     SnapshotSystemConfig,
 )
 
@@ -117,18 +117,8 @@ def check_cp2k_available(cp2k_cmd: str) -> str:
 def print_evaluate_summary(config: EvaluateSnapshotsConfig, logger: Logger) -> None:
     """Print a concise snapshot evaluation workflow summary."""
     logger.section("Evaluate Snapshots")
-    logger.kv("Mode", config.mode)
     logger.kv("Output directory", config.output_dir.resolve())
     logger.kv("Systems", len(config.systems))
-    if config.mode == "import":
-        logger.info(
-            "Imported trajectories are copied verbatim as canonical system.top, "
-            "system.gro, and trajectory.* assets.",
-            level=1,
-        )
-        logger.blank()
-        return
-
     logger.kv("Scheduler", config.job_scheduler)
     logger.kv("CP2K command", config.cp2k_cmd)
     logger.kv("Single-atom energies", "yes" if config.single_atoms else "no")
@@ -151,33 +141,49 @@ def print_evaluate_summary(config: EvaluateSnapshotsConfig, logger: Logger) -> N
     logger.blank()
 
 
-def import_snapshot_system(
-    system: ImportedSnapshotSystemConfig,
-    output_dir: Path,
-    logger: Logger,
-) -> Path:
-    """Copy one externally generated trajectory into canonical snapshot assets."""
-    system_dir = output_dir / f"system-{system.system_id}"
-    system_dir.mkdir(parents=True, exist_ok=True)
+def count_scheduler_jobs(config: EvaluateSnapshotsConfig) -> int:
+    """Count Slurm jobs that will be submitted for snapshot evaluation."""
+    total = 0
+    for system in config.systems:
+        total += len(list(system.snapshot_xyz_dir.glob("snapshot-*.xyz")))
+        if config.single_atoms:
+            total += sum(
+                1 for path in system.single_atoms_dir.iterdir() if path.is_dir()
+            )
+    return total
 
-    fn_topol = system_dir / "system.top"
-    fn_gro = system_dir / "system.gro"
-    fn_trj = system_dir / f"trajectory{system.fn_trj.suffix}"
-    shutil.copy2(system.fn_topol, fn_topol)
-    shutil.copy2(system.fn_gro, fn_gro)
-    shutil.copy2(system.fn_trj, fn_trj)
-    save_yaml(
-        {
-            "mode": "import",
-            "topology": fn_topol.name,
-            "coordinates": fn_gro.name,
-            "trajectory": fn_trj.name,
-        },
-        system_dir / "imported.yaml",
-    )
-    logger.kv("Output directory", system_dir.resolve(), level=2)
-    logger.kv("Imported trajectory", fn_trj.name, level=2)
-    return system_dir
+
+def build_scheduler_monitor(
+    *,
+    total_jobs: int,
+    logger: Logger,
+) -> Callable[..., None]:
+    """Build a Slurm status logger matching the sampling campaign monitor."""
+    count_width = len(str(max(total_jobs, 1)))
+
+    def log_job_monitor(
+        counts: dict[str, int],
+        *,
+        overwrite: bool = True,
+    ) -> None:
+        finished_percent = (
+            100 if total_jobs == 0 else 100 * counts["finished"] / total_jobs
+        )
+        logger.status(
+            "Scheduler jobs",
+            (
+                f"submitted {counts['submitted']:>{count_width}d}/"
+                f"{total_jobs:<{count_width}d} | "
+                f"pending {counts['pending']:>{count_width}d} | "
+                f"running {counts['running']:>{count_width}d} | "
+                f"finished {counts['finished']:>{count_width}d} "
+                f"[{finished_percent:3.0f}%]"
+            ),
+            level=1,
+            overwrite=overwrite,
+        )
+
+    return log_job_monitor
 
 
 def _write_snapshot_md_input(
@@ -591,6 +597,7 @@ def process_system(
     logger: Logger,
     *,
     job_ids: list[int] | None = None,
+    job_monitor: Callable[..., None] | None = None,
 ) -> Path:
     system_dir, snapshot_run_dirs, single_atom_dirs = stage_system(system, config)
 
@@ -636,6 +643,7 @@ def process_system(
                     job_ids=job_ids,
                     scheduler="slurm",
                     max_parallel_jobs=max_parallel_jobs,
+                    monitor=job_monitor,
                 )
             logger.status(
                 submit_label,
@@ -653,6 +661,8 @@ def process_system(
                     script_name=script_name,
                 )
             )
+            if job_monitor is not None:
+                job_monitor(get_job_state_counts(job_ids, "slurm"))
         logger.done(
             submit_label,
             detail=f"{len(run_dirs)}/{len(run_dirs)}",
@@ -671,35 +681,28 @@ def run_job(fn_config: str | Path) -> None:
 
 
 def main(fn_config: str) -> None:
-    """Run staged CP2K jobs or import external snapshot trajectories."""
+    """Run staged CP2K snapshot jobs."""
     config = EvaluateSnapshotsConfig.load(fn_config)
     config.output_dir.resolve().mkdir(parents=True, exist_ok=True)
 
     logger = Logger("evaluate-snapshots")
     print_evaluate_summary(config, logger)
 
-    if config.mode == "import":
-        for index, system in enumerate(config.systems, start=1):
-            if not isinstance(system, ImportedSnapshotSystemConfig):
-                raise TypeError(
-                    f"Expected imported snapshot system, got {type(system)}"
-                )
-            logger.info(f"System {index}/{len(config.systems)}", level=1)
-            import_snapshot_system(system, config.output_dir.resolve(), logger)
-            logger.blank()
-        return
-
-    if config.cp2k_cmd is None or config.job_scheduler is None:
-        raise ValueError("Run mode requires both 'cp2k_cmd' and 'job_scheduler'.")
-
     if config.job_scheduler == "local":
         config = replace(config, cp2k_cmd=check_cp2k_available(config.cp2k_cmd))
 
     job_ids: list[int] = []
     staged_system_dirs: list[Path] = []
+    job_monitor = None
+    n_scheduler_jobs = 0
+    if config.job_scheduler == "slurm":
+        n_scheduler_jobs = count_scheduler_jobs(config)
+        job_monitor = build_scheduler_monitor(
+            total_jobs=n_scheduler_jobs,
+            logger=logger,
+        )
+
     for index, system in enumerate(config.systems, start=1):
-        if not isinstance(system, SnapshotSystemConfig):
-            raise TypeError(f"Expected staged snapshot system, got {type(system)}")
         logger.info(f"System {index}/{len(config.systems)}", level=1)
         staged_system_dirs.append(
             process_system(
@@ -707,6 +710,7 @@ def main(fn_config: str) -> None:
                 config,
                 logger,
                 job_ids=job_ids if config.job_scheduler == "slurm" else None,
+                job_monitor=job_monitor,
             )
         )
         logger.blank()
@@ -715,9 +719,16 @@ def main(fn_config: str) -> None:
         return
 
     if job_ids:
-        logger.status("Waiting for Slurm jobs", f"{len(job_ids)} submitted", level=1)
-        control_jobs(job_ids, "slurm")
-        logger.done("Waiting for Slurm jobs", detail="all jobs finished", level=1)
+        if job_monitor is not None:
+            job_monitor(get_job_state_counts(job_ids, "slurm"))
+        control_jobs(job_ids, "slurm", monitor=job_monitor)
+        if job_monitor is not None:
+            job_monitor(get_job_state_counts(job_ids, "slurm"), overwrite=False)
+        logger.done(
+            "Scheduler jobs",
+            detail=f"{len(job_ids)}/{n_scheduler_jobs} [100%]",
+            level=1,
+        )
 
     for index, system_dir in enumerate(staged_system_dirs, start=1):
         logger.info(f"Collecting system {index}/{len(staged_system_dirs)}", level=1)

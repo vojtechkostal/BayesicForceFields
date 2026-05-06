@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, Mapping, Optional
+from typing import Any, Mapping, Optional
 
 from ...io.utils import load_yaml
 from .._shared.config import (
@@ -13,8 +13,6 @@ from .._shared.config import (
     _resolve_optional_path,
     _resolve_path,
 )
-
-EvaluateMode = Literal['run', 'import']
 
 
 @dataclass(frozen=True)
@@ -29,14 +27,6 @@ class SnapshotSystemConfig:
     single_atoms_dir: Path
     fn_snapshot_md: Path
     fn_snapshot_sp: Path
-
-
-@dataclass(frozen=True)
-class ImportedSnapshotSystemConfig:
-    system_id: str
-    fn_topol: Path
-    fn_gro: Path
-    fn_trj: Path
 
 
 def _load_snapshot_asset_system(
@@ -133,65 +123,13 @@ def _load_snapshot_asset_systems(
     return systems
 
 
-def _require_suffix(path: Path, suffix: str, *, kind: str) -> None:
-    if path.suffix.lower() != suffix:
-        raise ValueError(f'{kind} must be a {suffix} file, got {path}.')
-
-
-def _load_imported_snapshot_systems(
-    base_dir: Path,
-    systems_raw: Any,
-) -> list[ImportedSnapshotSystemConfig]:
-    if not isinstance(systems_raw, list) or not systems_raw:
-        raise ValueError("'systems' must be a non-empty list.")
-
-    systems: list[ImportedSnapshotSystemConfig] = []
-    for index, system in enumerate(systems_raw):
-        if not isinstance(system, Mapping):
-            raise ValueError(f'systems[{index}] must be a mapping.')
-        for key in ('topology', 'coordinates', 'trajectory'):
-            if key not in system:
-                raise ValueError(
-                    f"systems[{index}] is missing required key {key!r}."
-                )
-
-        fn_topol = _resolve_path(
-            base_dir,
-            system['topology'],
-            kind=f'systems[{index}] topology file',
-        )
-        fn_gro = _resolve_path(
-            base_dir,
-            system['coordinates'],
-            kind=f'systems[{index}] coordinates file',
-        )
-        fn_trj = _resolve_path(
-            base_dir,
-            system['trajectory'],
-            kind=f'systems[{index}] trajectory file',
-        )
-        _require_suffix(fn_topol, '.top', kind='Imported snapshot topology')
-        _require_suffix(fn_gro, '.gro', kind='Imported snapshot coordinates')
-
-        systems.append(
-            ImportedSnapshotSystemConfig(
-                system_id=f'{index:03d}',
-                fn_topol=fn_topol,
-                fn_gro=fn_gro,
-                fn_trj=fn_trj,
-            )
-        )
-    return systems
-
-
 @dataclass(frozen=True, kw_only=True)
 class EvaluateSnapshotsConfig:
     fn_config: Path
-    mode: EvaluateMode
     output_dir: Path
-    systems: list[SnapshotSystemConfig | ImportedSnapshotSystemConfig]
-    cp2k_cmd: str | None = None
-    job_scheduler: SchedulerName | None = None
+    systems: list[SnapshotSystemConfig]
+    cp2k_cmd: str
+    job_scheduler: SchedulerName
     single_atoms: bool = True
     snapshot_md_steps: int | None = None
     train_fraction: float = 0.8
@@ -210,9 +148,13 @@ class EvaluateSnapshotsConfig:
                 "Evaluate-snapshots configuration must contain a mapping."
             )
 
-        mode = str(config.get('mode', 'run'))
-        if mode not in {'run', 'import'}:
-            raise ValueError("'mode' must be either 'run' or 'import'.")
+        if 'mode' in config:
+            raise ValueError(
+                "'mode' is no longer supported in evaluate-snapshots configs. "
+                "This workflow only runs staged CP2K snapshot evaluation; "
+                "reference trajectories should be generated and placed in the "
+                "analysis directory by the user."
+            )
 
         output_dir = _resolve_path(
             base_dir,
@@ -224,14 +166,6 @@ class EvaluateSnapshotsConfig:
         if 'systems' not in config:
             raise ValueError(
                 "Missing required evaluate-snapshots configuration key 'systems'."
-            )
-
-        if mode == 'import':
-            return cls(
-                fn_config=fn_config,
-                mode='import',
-                output_dir=output_dir,
-                systems=_load_imported_snapshot_systems(base_dir, config['systems']),
             )
 
         required = ['job_scheduler', 'cp2k_cmd']
@@ -270,7 +204,6 @@ class EvaluateSnapshotsConfig:
 
         return cls(
             fn_config=fn_config,
-            mode='run',
             output_dir=output_dir,
             cp2k_cmd=str(config['cp2k_cmd']),
             job_scheduler=scheduler,

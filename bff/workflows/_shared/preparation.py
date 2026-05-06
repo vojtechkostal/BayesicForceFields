@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,13 @@ from ...io.utils import load_yaml
 from .config import _resolve_path
 
 PathLike = str | Path
+
+# MDAnalysis emits this while transitioning ITP element guessing APIs.
+warnings.filterwarnings(
+    "ignore",
+    category=DeprecationWarning,
+    module=r"MDAnalysis\.topology\.ITPParser",
+)
 
 
 @dataclass(frozen=True, slots=True)

@@ -55,72 +55,21 @@ def test_collect_single_atom_energies_uses_atomic_numbers(tmp_path: Path) -> Non
     assert energies[20] == pytest.approx(-1.25 * HARTREE_TO_EV)
 
 
-def test_evaluate_import_config_requires_top_gro_and_trajectory(
+def test_evaluate_snapshots_rejects_import_mode(
     tmp_path: Path,
 ) -> None:
-    fn_top = tmp_path / "system.top"
-    fn_gro = tmp_path / "system.gro"
-    fn_trj = tmp_path / "traj.xtc"
-    fn_top.write_text("; topology\n")
-    fn_gro.write_text("dummy gro\n")
-    fn_trj.write_text("trajectory\n")
-
     fn_config = tmp_path / "evaluate-snapshots.yaml"
     fn_config.write_text(
         yaml.safe_dump(
             {
                 "mode": "import",
-                "output_dir": "./evaluated-snapshots",
-                "systems": [
-                    {
-                        "topology": str(fn_top),
-                        "coordinates": str(fn_gro),
-                        "trajectory": str(fn_trj),
-                    }
-                ],
+                "output_dir": "./trajectories",
+                "systems": [],
             }
         )
     )
 
-    config = EvaluateSnapshotsConfig.load(fn_config)
-
-    assert config.mode == "import"
-    assert config.output_dir == (tmp_path / "evaluated-snapshots").resolve()
-    assert len(config.systems) == 1
-    system = config.systems[0]
-    assert system.fn_topol == fn_top.resolve()
-    assert system.fn_gro == fn_gro.resolve()
-    assert system.fn_trj == fn_trj.resolve()
-
-
-def test_evaluate_import_config_rejects_wrong_topology_suffix(
-    tmp_path: Path,
-) -> None:
-    fn_top = tmp_path / "system.itp"
-    fn_gro = tmp_path / "system.gro"
-    fn_trj = tmp_path / "traj.xtc"
-    fn_top.write_text("; wrong suffix\n")
-    fn_gro.write_text("dummy gro\n")
-    fn_trj.write_text("trajectory\n")
-
-    fn_config = tmp_path / "evaluate-snapshots.yaml"
-    fn_config.write_text(
-        yaml.safe_dump(
-            {
-                "mode": "import",
-                "output_dir": "./evaluated-snapshots",
-                "systems": [
-                    {
-                        "topology": str(fn_top),
-                        "coordinates": str(fn_gro),
-                        "trajectory": str(fn_trj),
-                    }
-                ],
-            }
-        )
-    )
-
-    with pytest.raises(ValueError, match=r"\.top file"):
+    with pytest.raises(ValueError, match="'mode' is no longer supported"):
         EvaluateSnapshotsConfig.load(fn_config)
 
 

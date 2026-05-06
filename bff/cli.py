@@ -228,7 +228,7 @@ def prepare_assets(fn_config: Path = config_argument()) -> None:
 
 @app.command(name="evaluate-snapshots")
 def evaluate_snapshots(fn_config: Path = config_argument()) -> None:
-    """Evaluate staged CP2K snapshots or import trajectory datasets."""
+    """Evaluate staged CP2K snapshots."""
     from bff.workflows.evaluate_snapshots import main as evaluate_main
 
     run_workflow(fn_config, evaluate_main, "evaluate-snapshots")

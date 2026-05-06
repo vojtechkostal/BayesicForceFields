@@ -291,4 +291,4 @@ def main(fn_config: PathLike) -> None:
         },
         fn_manifest,
     )
-    logger.done("Build manifest", detail=str(fn_manifest), level=1)
+    logger.done("Build manifest", level=1)
