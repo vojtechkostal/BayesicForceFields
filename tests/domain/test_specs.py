@@ -7,15 +7,20 @@ from bff.domain.specs import Bounds, ChargeConstraint, RandomParamsGenerator, Sp
 
 def _spec_data() -> dict:
     return {
-        "mol_resname": "ACE",
         "bounds": {
             "charge A": [-1.0, 1.0],
             "charge B": [-0.5, 0.5],
             "sigma C": [0.1, 2.0],
         },
-        "total_charge": 0.0,
-        "charge_target": 0.0,
-        "implicit_atoms": ["B"],
+        "charge_constraints": [
+            {
+                "selection": "name A B",
+                "target": 0.0,
+                "scope": "residue",
+                "implicit": "charge B",
+                "coefficients": {"charge A": 1.0, "charge B": 1.0},
+            }
+        ],
     }
 
 
@@ -33,17 +38,88 @@ def test_bounds_are_sorted_and_validate_limits() -> None:
 def test_specs_charge_helpers() -> None:
     specs = Specs(_spec_data())
 
-    assert specs.implicit_param == "charge B"
-    assert specs.implicit_param_index == 1
+    assert specs.implicit_params == ("charge B",)
     assert specs.parameter_names(explicit_only=True) == ("charge A", "sigma C")
-    assert specs.explicit_charge_coefficients.tolist() == [1, 0]
-    assert specs.implicit_charge([[0.2, 1.0]]).tolist() == [-0.2]
-    assert specs.with_implicit_charge([[0.2, 1.0]]).tolist() == [[0.2, -0.2, 1.0]]
+    assert specs.constraint_matrix.tolist() == [[1.0, 1.0, 0.0]]
+    assert specs.with_implicit_charges([[0.2, 1.0]]).tolist() == [[0.2, -0.2, 1.0]]
 
 
 def test_specs_rejects_missing_required_fields() -> None:
     with pytest.raises(ValueError, match="Missing required"):
-        Specs({"bounds": {}, "implicit_atoms": []})
+        Specs({"bounds": {}})
+
+
+def test_specs_reconstruct_nested_constraints_from_smallest_group_outward() -> None:
+    specs = Specs(
+        {
+            "bounds": {
+                "charge A": [-1.0, 1.0],
+                "charge B": [-1.0, 1.0],
+                "charge C": [0.0, 2.0],
+            },
+            "charge_constraints": [
+                {
+                    "selection": "name A B C",
+                    "target": 1.0,
+                    "scope": "residue",
+                    "implicit": "charge C",
+                    "coefficients": {
+                        "charge A": 1.0,
+                        "charge B": 1.0,
+                        "charge C": 1.0,
+                    },
+                },
+                {
+                    "selection": "name A B",
+                    "target": 0.0,
+                    "scope": "residue",
+                    "implicit": "charge B",
+                    "coefficients": {"charge A": 1.0, "charge B": 1.0},
+                },
+            ],
+        }
+    )
+
+    assert specs.reconstruction_order == (1, 0)
+    assert specs.with_implicit_charges([[0.2]]).tolist() == [[0.2, -0.2, 1.0]]
+
+
+def test_specs_reject_infeasible_constraints() -> None:
+    with pytest.raises(ValueError, match="incompatible"):
+        Specs(
+            {
+                "bounds": {"charge A": [0.0, 1.0], "charge B": [0.0, 1.0]},
+                "charge_constraints": [
+                    {
+                        "selection": "name A B",
+                        "target": 3.0,
+                        "scope": "system",
+                        "implicit": "charge B",
+                        "coefficients": {"charge A": 1.0, "charge B": 1.0},
+                    }
+                ],
+            }
+        )
+
+
+def test_specs_reconstruct_multi_atom_implicit_parameter_per_atom() -> None:
+    specs = Specs(
+        {
+            "bounds": {"charge A": [-1.0, 1.0], "charge B C": [-0.5, 0.5]},
+            "charge_constraints": [
+                {
+                    "selection": "name A B C",
+                    "target": 0.0,
+                    "scope": "residue",
+                    "implicit": "charge B C",
+                    "coefficients": {"charge A": 1.0, "charge B C": 2.0},
+                }
+            ],
+        }
+    )
+
+    assert specs.with_implicit_charges([[0.6]]).tolist() == [[0.6, -0.3]]
+    assert ChargeConstraint(specs)([[0.6]]).tolist() == [True]
 
 
 def test_charge_constraint_accepts_numpy_and_torch_inputs() -> None:
@@ -81,3 +157,26 @@ def test_random_params_generator_handles_zero_and_negative_counts() -> None:
     assert generator(0).shape == (0, 1)
     with pytest.raises(ValueError, match="non-negative"):
         generator(-1)
+
+
+def test_random_params_generator_handles_fully_constrained_parameters() -> None:
+    specs = Specs(
+        {
+            "bounds": {"charge A": [-1.0, 1.0]},
+            "charge_constraints": [
+                {
+                    "selection": "name A",
+                    "target": 0.0,
+                    "scope": "system",
+                    "implicit": "charge A",
+                    "coefficients": {"charge A": 1.0},
+                }
+            ],
+        }
+    )
+    constraint = ChargeConstraint(specs)
+
+    samples = RandomParamsGenerator(constraint.explicit_bounds, constraint)(3)
+
+    assert samples.shape == (3, 0)
+    assert specs.with_implicit_charges(samples).tolist() == [[0.0], [0.0], [0.0]]

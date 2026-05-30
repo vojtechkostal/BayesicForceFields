@@ -159,10 +159,8 @@ def test_write_default_plots_writes_expected_pngs(
 
     specs = tmp_path / "specs.yaml"
     specs.write_text(
-        "mol_resname: ACE\n"
-        "implicit_atoms: []\n"
         "bounds: {}\n"
-        "total_charge: 0.0\n"
+        "charge_constraints: []\n"
     )
     posterior = tmp_path / "posterior.pt"
     posterior.write_text("posterior\n")

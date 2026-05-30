@@ -19,7 +19,7 @@ def main(fn_config: str) -> None:
     assert fn_specs is not None
 
     logger = Logger("validate", str(config.log), mode="w")
-    print_validate_summary(config, fn_specs, len(parameter_samples), logger)
+    print_validate_summary(config, len(parameter_samples), logger)
     run_campaign(
         config=config,
         fn_specs=fn_specs,

@@ -53,32 +53,164 @@ def _system_record(
 
 def build_specs(config: SampleConfig) -> Path:
     config.campaign_dir.resolve().mkdir(parents=True, exist_ok=True)
-    top_modifier = TopologyModifier(
-        config.systems[0].fn_topol,
-        config.mol_resname,
-        config.implicit_atoms,
-    )
-    bounds_resolved = top_modifier.resolve_parameter_names(config.bounds)
+    modifiers = [TopologyModifier(system.fn_topol) for system in config.systems]
+    charge_params = [name for name in config.bounds if name.startswith('charge ')]
+    parameter_indices: list[dict[str, set[int]]] = []
+    resolved_tokens = {name: set() for name in charge_params}
+    for modifier in modifiers:
+        by_parameter: dict[str, set[int]] = {}
+        atom_owner: dict[int, str] = {}
+        for parameter in charge_params:
+            matches = modifier.charge_parameter_matches(parameter)
+            resolved_tokens[parameter].update(matches)
+            indices = set().union(*matches.values())
+            by_parameter[parameter] = indices
+            for index in indices:
+                if index in atom_owner:
+                    raise ValueError(
+                        f"Charge parameters {atom_owner[index]!r} and {parameter!r} "
+                        f"both modify atom {modifier.atoms[index].name!r} in "
+                        f"{modifier.source}."
+                    )
+                atom_owner[index] = parameter
+        parameter_indices.append(by_parameter)
 
-    group: list[str] = []
-    for name in bounds_resolved:
-        param_name, *atoms = name.split()
-        if param_name == 'charge':
-            group.extend(atoms)
-    group_charge = top_modifier.group_charge(group)
-    constraint_charge = (
-        config.total_charge - top_modifier.total_charge + group_charge
-    )
+    for parameter, tokens in resolved_tokens.items():
+        missing = set(parameter.split()[1:]) - tokens
+        if missing:
+            names = ', '.join(sorted(repr(name) for name in missing))
+            raise ValueError(
+                f"Charge parameter {parameter!r} references atom name or type "
+                f"token(s) not found in any configured system: {names}."
+            )
 
-    specs = Specs(
-        {
-            'mol_resname': config.mol_resname,
-            'implicit_atoms': [atom.name for atom in top_modifier.implicit_atoms],
-            'bounds': bounds_resolved,
-            'total_charge': config.total_charge,
-            'charge_target': constraint_charge,
-        }
-    )
+    compiled: list[dict[str, Any]] = []
+    selected_sets: list[list[set[int]]] = []
+    for constraint in config.charge_constraints:
+        equations: list[tuple[dict[str, float], float]] = []
+        selections: list[set[int]] = []
+        for modifier, by_parameter in zip(modifiers, parameter_indices):
+            try:
+                groups = modifier.selected_groups(
+                    constraint.selection,
+                    constraint.scope,
+                )
+            except Exception as exc:
+                raise ValueError(
+                    f"Invalid MDAnalysis selection {constraint.selection!r}."
+                ) from exc
+            selections.append(set().union(*groups))
+            for group in groups:
+                coefficients = {
+                    parameter: float(len(group & indices))
+                    for parameter, indices in by_parameter.items()
+                    if group & indices
+                }
+                controlled = set().union(*(
+                    group & indices for indices in by_parameter.values()
+                ))
+                fixed_charge = float(sum(
+                    modifier.atoms[index].charge for index in group - controlled
+                ))
+                equations.append((coefficients, fixed_charge))
+
+        if not equations:
+            raise ValueError(
+                f"Charge-constraint selection {constraint.selection!r} does not "
+                "match any atoms in the configured systems."
+            )
+
+        coefficients, fixed_charge = equations[0]
+        implicit_coefficient = coefficients.get(constraint.implicit, 0.0)
+        if np.isclose(implicit_coefficient, 0.0):
+            raise ValueError(
+                f"Implicit parameter {constraint.implicit!r} is not selected by "
+                f"its owning constraint {constraint.selection!r}."
+            )
+        reference_row = np.asarray([
+            coefficients.get(name, 0.0) / implicit_coefficient
+            for name in config.bounds
+        ])
+        reference_target = (constraint.target - fixed_charge) / implicit_coefficient
+        for candidate, candidate_fixed in equations[1:]:
+            candidate_implicit = candidate.get(constraint.implicit, 0.0)
+            if np.isclose(candidate_implicit, 0.0):
+                raise ValueError(
+                    f"Implicit parameter {constraint.implicit!r} is not selected "
+                    f"consistently by {constraint.selection!r}."
+                )
+            row = np.asarray([
+                candidate.get(name, 0.0) / candidate_implicit
+                for name in config.bounds
+            ])
+            target = (constraint.target - candidate_fixed) / candidate_implicit
+            if not np.allclose(row, reference_row) or not np.isclose(
+                target, reference_target
+            ):
+                raise ValueError(
+                    f"Charge constraint {constraint.selection!r} does not define "
+                    "one consistent equation across the configured systems and "
+                    f"{constraint.scope} groups."
+                )
+
+        compiled.append({
+            'selection': constraint.selection,
+            'target': constraint.target,
+            'scope': constraint.scope,
+            'implicit': constraint.implicit,
+            'coefficients': coefficients,
+            'fixed_charge': fixed_charge,
+        })
+        selected_sets.append(selections)
+
+    for first in range(len(compiled)):
+        for second in range(first + 1, len(compiled)):
+            relations: set[str] = set()
+            for selected_first, selected_second in zip(
+                selected_sets[first], selected_sets[second]
+            ):
+                if not selected_first or not selected_second:
+                    continue
+                overlap = selected_first & selected_second
+                if not overlap:
+                    relations.add('disjoint')
+                elif selected_first == selected_second:
+                    raise ValueError(
+                        "Charge constraints must not select exactly the same atoms: "
+                        f"{compiled[first]['selection']!r} and "
+                        f"{compiled[second]['selection']!r}."
+                    )
+                elif selected_first < selected_second:
+                    relations.add('first-child')
+                elif selected_second < selected_first:
+                    relations.add('second-child')
+                else:
+                    raise ValueError(
+                        "Charge constraints may be disjoint or nested, but must not "
+                        f"partially overlap: {compiled[first]['selection']!r} and "
+                        f"{compiled[second]['selection']!r}."
+                    )
+            if len(relations) > 1:
+                raise ValueError(
+                    "Charge-constraint hierarchy changes between configured systems: "
+                    f"{compiled[first]['selection']!r} and "
+                    f"{compiled[second]['selection']!r}."
+                )
+            if relations == {'first-child'}:
+                child, parent = first, second
+            elif relations == {'second-child'}:
+                child, parent = second, first
+            else:
+                continue
+            parent_implicit = compiled[parent]['implicit']
+            if compiled[child]['coefficients'].get(parent_implicit, 0.0):
+                raise ValueError(
+                    f"Implicit parameter {parent_implicit!r} owned by parent "
+                    f"constraint {compiled[parent]['selection']!r} must not appear "
+                    f"in descendant constraint {compiled[child]['selection']!r}."
+                )
+
+    specs = Specs({'bounds': config.bounds, 'charge_constraints': compiled})
     fn_specs = config.campaign_dir / 'specs.yaml'
     specs.write(fn_specs)
     return fn_specs
@@ -262,7 +394,6 @@ def print_sample_summary(
 ) -> None:
     specs = Specs(fn_specs)
     logger.section('Sampling Campaign')
-    logger.kv('Molecule', specs.mol_resname)
     logger.kv('Campaign directory', config.campaign_dir.resolve())
     logger.kv('Systems', len(config.systems))
     logger.kv('Samples', config.n_samples)
@@ -278,22 +409,19 @@ def print_sample_summary(
     logger.info('parameters:', level=1)
     for name, bounds in specs.bounds.by_name.items():
         label = f'{name}: {bounds}'
-        if name == specs.implicit_param:
+        if name in specs.implicit_params:
             label += ' (implicit)'
         logger.info(label, level=2)
-    logger.kv('Total charge', specs.total_charge)
+    logger.kv('Charge constraints', len(specs.charge_constraints))
     logger.blank()
 
 
 def print_validate_summary(
     config: SimulationCampaignConfig,
-    fn_specs: PathLike,
     n_samples: int,
     logger: Logger,
 ) -> None:
-    specs = Specs(fn_specs)
     logger.section('Validation Campaign')
-    logger.kv('Molecule', specs.mol_resname)
     logger.kv('Log file', config.log.resolve())
     logger.kv('Campaign directory', config.campaign_dir.resolve())
     logger.kv('Systems', len(config.systems))

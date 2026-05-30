@@ -128,12 +128,9 @@ class LearningProblem:
     def parameter_names(self) -> list[str] | None:
         if self.constraint is None:
             return None
-        if not hasattr(self.constraint, "bounds") or not hasattr(
-            self.constraint, "implicit_param"
-        ):
+        if not hasattr(self.constraint, "explicit_parameter_names"):
             return None
-        bounds = self.constraint.bounds.without(self.constraint.implicit_param)
-        return bounds.names.tolist()
+        return list(self.constraint.explicit_parameter_names)
 
     @property
     def nuisance_names(self) -> list[str]:

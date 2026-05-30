@@ -6,7 +6,7 @@ from typing import Union
 
 import numpy as np
 
-from ...domain.specs import Specs
+from ...domain.specs import ChargeConstraint, Specs
 from ...io.colvars import write_mdp_with_colvars
 from ...io.commands import build_command
 from ...io.mdp import get_n_frames_target
@@ -109,15 +109,31 @@ def modify_topology(
     if isinstance(specs, (str, Path, dict)):
         specs = Specs(specs)
 
-    constraint_charge = specs.constraint_charge if implicit else None
-    params_dict = specs.parameter_dict(params, explicit_only=implicit)
-
-    top_modifier = TopologyModifier(
-        fn_topol,
-        specs.mol_resname,
-        specs.implicit_atoms,
+    if implicit and not ChargeConstraint(specs)(params).all():
+        raise ValueError(
+            "Explicit parameter values or reconstructed implicit charges violate "
+            "the configured bounds."
+        )
+    values = (
+        specs.with_implicit_charges(params).reshape(-1)
+        if implicit
+        else np.asarray(params, dtype=float).reshape(-1)
     )
-    top_modifier.apply_parameters(params_dict, constraint_charge=constraint_charge)
+    params_dict = specs.parameter_dict(values)
+
+    top_modifier = TopologyModifier(fn_topol)
+    top_modifier.apply_parameters(params_dict)
+    for constraint in specs.charge_constraints:
+        for group in top_modifier.selected_groups(
+            constraint.selection,
+            constraint.scope,
+        ):
+            actual = sum(top_modifier.atoms[index].charge for index in group)
+            if not np.isclose(actual, constraint.target, atol=1e-8):
+                raise ValueError(
+                    f"Applied charge constraint {constraint.selection!r} has "
+                    f"charge {actual}, expected {constraint.target}."
+                )
 
     if fn_out:
         top_modifier.write(fn_out)

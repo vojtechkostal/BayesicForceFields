@@ -6,6 +6,7 @@ import torch
 
 from bff.bayes.priors import Prior, Priors
 from bff.bayes.results import PosteriorResults
+from bff.domain.specs import Specs
 
 
 def test_posterior_results_requires_raw_chain_shape(tmp_path: Path) -> None:
@@ -54,3 +55,46 @@ def test_posterior_results_summary_uses_prepared_samples() -> None:
 
     assert set(summary) == {"theta", "autocorr_time"}
     assert summary["theta"]["mean"] == 1.0
+
+
+def test_posterior_results_expands_multiple_implicit_charges() -> None:
+    specs = Specs(
+        {
+            "bounds": {
+                "charge A": [-1.0, 1.0],
+                "charge B": [-1.0, 1.0],
+                "charge C": [0.0, 2.0],
+            },
+            "charge_constraints": [
+                {
+                    "selection": "name A B C",
+                    "target": 1.0,
+                    "scope": "residue",
+                    "implicit": "charge C",
+                    "coefficients": {
+                        "charge A": 1.0,
+                        "charge B": 1.0,
+                        "charge C": 1.0,
+                    },
+                },
+                {
+                    "selection": "name A B",
+                    "target": 0.0,
+                    "scope": "residue",
+                    "implicit": "charge B",
+                    "coefficients": {"charge A": 1.0, "charge B": 1.0},
+                },
+            ],
+        }
+    )
+    results = PosteriorResults(
+        np.full((3, 2, 1), 0.2),
+        sample_labels=["charge A"],
+        specs=specs,
+        include_implicit_charge=True,
+    )
+
+    results.prepare_samples(discard=0, thin=1, strip_outliers=False)
+
+    assert results.labels == ["charge A", "charge B", "charge C"]
+    np.testing.assert_allclose(results.prepared_samples[0], [0.2, -0.2, 1.0])

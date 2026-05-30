@@ -70,10 +70,7 @@ def test_learning_problem_builds_priors_from_constraint() -> None:
     constraint = SimpleNamespace(
         n_params=1,
         explicit_bounds=np.array([[-2.0, 2.0]]),
-        bounds=SimpleNamespace(
-            without=lambda name: SimpleNamespace(names=np.array(["charge A"]))
-        ),
-        implicit_param="charge B",
+        explicit_parameter_names=["charge A"],
     )
     problem = LearningProblem(
         {"qoi": FakeCommittee(shape=(3, 1), n_params=1, nuisance=None)},

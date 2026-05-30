@@ -111,16 +111,6 @@ def _validate_bounds(bounds: Any) -> dict[str, tuple[float, float]]:
     return normalized
 
 
-def _normalize_implicit_atoms(value: Any) -> list[str]:
-    if isinstance(value, str):
-        return value.split()
-    if isinstance(value, (list, tuple)) and all(
-        isinstance(item, str) for item in value
-    ):
-        return list(value)
-    raise ValueError("'implicit_atoms' must be a string or a list of strings.")
-
-
 def _load_model_paths(
     base_dir: Path,
     models_raw: Any,

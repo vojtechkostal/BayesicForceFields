@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Optional, Sequence, Tuple, Union
 
 import numpy as np
+from scipy.optimize import linprog
 from scipy.stats.qmc import LatinHypercube
 
 from ..io.utils import load_yaml, save_yaml
@@ -47,7 +48,10 @@ class Bounds:
 
     @property
     def array(self) -> np.ndarray:
-        return np.asarray([bounds for _, bounds in self._items], dtype=float)
+        return np.asarray(
+            [bounds for _, bounds in self._items],
+            dtype=float,
+        ).reshape(-1, 2)
 
     @property
     def lower(self) -> np.ndarray:
@@ -77,6 +81,12 @@ class Bounds:
         }
         return Bounds(items)
 
+    def without_names(self, names: Sequence[str]) -> "Bounds":
+        excluded = set(names)
+        return Bounds({
+            key: value for key, value in self.by_name.items() if key not in excluded
+        })
+
     def to_dict(self) -> dict[str, list[float]]:
         return {
             name: [float(lower), float(upper)]
@@ -85,16 +95,70 @@ class Bounds:
 
 
 @dataclass(frozen=True)
+class ChargeConstraintSpec:
+    """One compiled charge equation stored in ``specs.yaml``."""
+
+    selection: str
+    target: float
+    scope: str
+    implicit: str
+    coefficients: Mapping[str, float]
+    fixed_charge: float = 0.0
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "ChargeConstraintSpec":
+        required = {"selection", "target", "scope", "implicit", "coefficients"}
+        missing = required - set(data)
+        if missing:
+            fields = ", ".join(sorted(repr(key) for key in missing))
+            raise ValueError(
+                f"Charge constraint is missing required field(s): {fields}"
+            )
+        scope = str(data["scope"])
+        if scope not in {"system", "residue"}:
+            raise ValueError(
+                f"Unsupported charge-constraint scope {scope!r}; "
+                "expected 'system' or 'residue'."
+            )
+        coefficients = data["coefficients"]
+        if not isinstance(coefficients, Mapping):
+            raise ValueError("Charge-constraint 'coefficients' must be a mapping.")
+        return cls(
+            selection=str(data["selection"]),
+            target=float(data["target"]),
+            scope=scope,
+            implicit=str(data["implicit"]),
+            coefficients={
+                str(name): float(value) for name, value in coefficients.items()
+            },
+            fixed_charge=float(data.get("fixed_charge", 0.0)),
+        )
+
+    @property
+    def adjusted_target(self) -> float:
+        return self.target - self.fixed_charge
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "selection": self.selection,
+            "target": self.target,
+            "scope": self.scope,
+            "implicit": self.implicit,
+            "coefficients": dict(self.coefficients),
+            "fixed_charge": self.fixed_charge,
+        }
+
+
+@dataclass(frozen=True)
 class Specs:
-    """Force-field specification data."""
+    """Force-field parameters and compiled charge reconstruction rules."""
 
     source: InitVar[dict[str, Any] | PathLike]
 
-    mol_resname: str = field(init=False)
     bounds: Bounds = field(init=False)
-    total_charge: float = field(init=False)
-    constraint_charge: float = field(init=False)
-    implicit_atoms: tuple[str, ...] = field(init=False)
+    charge_constraints: tuple[ChargeConstraintSpec, ...] = field(init=False)
+    implicit_params: tuple[str, ...] = field(init=False)
+    reconstruction_order: tuple[int, ...] = field(init=False)
 
     def __post_init__(self, source: dict[str, Any] | PathLike) -> None:
         if isinstance(source, dict):
@@ -104,21 +168,93 @@ class Specs:
         else:
             raise TypeError(f"Unsupported source type: {type(source)}")
 
-        required = {"bounds", "implicit_atoms", "charge_target"}
+        required = {"bounds", "charge_constraints"}
         missing = required - set(data)
         if missing:
-            missing_list = ", ".join(sorted(repr(key) for key in missing))
-            raise ValueError(f"Missing required specs field(s): {missing_list}")
+            fields = ", ".join(sorted(repr(key) for key in missing))
+            raise ValueError(f"Missing required specs field(s): {fields}")
 
-        implicit_atoms = data["implicit_atoms"]
-        if isinstance(implicit_atoms, str):
-            implicit_atoms = implicit_atoms.split()
+        raw_constraints = data["charge_constraints"]
+        if not isinstance(raw_constraints, list):
+            raise ValueError("'charge_constraints' must be a list.")
+        if not all(isinstance(item, Mapping) for item in raw_constraints):
+            raise ValueError("Each charge constraint must be a mapping.")
 
-        object.__setattr__(self, "mol_resname", str(data.get("mol_resname", "")))
-        object.__setattr__(self, "bounds", Bounds(data["bounds"]))
-        object.__setattr__(self, "total_charge", float(data.get("total_charge", 0.0)))
-        object.__setattr__(self, "constraint_charge", float(data["charge_target"]))
-        object.__setattr__(self, "implicit_atoms", tuple(implicit_atoms))
+        bounds = Bounds(data["bounds"])
+        constraints = tuple(
+            ChargeConstraintSpec.from_dict(item) for item in raw_constraints
+        )
+        implicit_params = tuple(constraint.implicit for constraint in constraints)
+        if len(implicit_params) != len(set(implicit_params)):
+            raise ValueError(
+                "Each charge constraint must own a distinct implicit parameter."
+            )
+
+        bound_names = set(bounds.names)
+        for constraint in constraints:
+            if constraint.implicit not in bound_names:
+                raise ValueError(
+                    f"Implicit parameter {constraint.implicit!r} is not defined "
+                    "in bounds."
+                )
+            if not constraint.implicit.startswith("charge "):
+                raise ValueError(
+                    f"Implicit parameter {constraint.implicit!r} is not a charge "
+                    "parameter."
+                )
+            unknown = set(constraint.coefficients) - bound_names
+            if unknown:
+                names = ", ".join(sorted(repr(name) for name in unknown))
+                raise ValueError(
+                    f"Charge constraint {constraint.selection!r} references "
+                    f"unknown bounded parameter(s): {names}."
+                )
+            invalid = [
+                name
+                for name in constraint.coefficients
+                if not name.startswith("charge ")
+            ]
+            if invalid:
+                names = ", ".join(sorted(repr(name) for name in invalid))
+                raise ValueError(
+                    f"Charge constraint {constraint.selection!r} references "
+                    f"non-charge parameter(s): {names}."
+                )
+            if np.isclose(constraint.coefficients.get(constraint.implicit, 0.0), 0.0):
+                raise ValueError(
+                    f"Implicit parameter {constraint.implicit!r} is not selected by "
+                    f"its owning constraint {constraint.selection!r}."
+                )
+
+        owners = {name: i for i, name in enumerate(implicit_params)}
+        dependencies = {
+            i: {
+                owners[name]
+                for name, coefficient in constraint.coefficients.items()
+                if (
+                    name in owners
+                    and name != constraint.implicit
+                    and not np.isclose(coefficient, 0.0)
+                )
+            }
+            for i, constraint in enumerate(constraints)
+        }
+        order: list[int] = []
+        pending = set(range(len(constraints)))
+        while pending:
+            ready = sorted(i for i in pending if dependencies[i] <= set(order))
+            if not ready:
+                raise ValueError(
+                    "Charge constraints contain a cyclic implicit-parameter dependency."
+                )
+            order.extend(ready)
+            pending.difference_update(ready)
+
+        object.__setattr__(self, "bounds", bounds)
+        object.__setattr__(self, "charge_constraints", constraints)
+        object.__setattr__(self, "implicit_params", implicit_params)
+        object.__setattr__(self, "reconstruction_order", tuple(order))
+        self._check_feasibility()
 
     @classmethod
     def load(cls, source: PathLike) -> "Specs":
@@ -126,27 +262,47 @@ class Specs:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "mol_resname": self.mol_resname,
             "bounds": self.bounds.to_dict(),
-            "total_charge": self.total_charge,
-            "charge_target": self.constraint_charge,
-            "implicit_atoms": list(self.implicit_atoms),
+            "charge_constraints": [
+                constraint.to_dict() for constraint in self.charge_constraints
+            ],
         }
 
     def write(self, fn_out: PathLike) -> None:
         save_yaml(self.to_dict(), fn_out)
 
     @property
-    def implicit_param(self) -> str:
-        return f"charge {' '.join(self.implicit_atoms)}"
-
-    @property
-    def implicit_param_index(self) -> int:
-        return self.bounds.index(self.implicit_param)
-
-    @property
     def explicit_bounds(self) -> Bounds:
-        return self.bounds.without(self.implicit_param)
+        return self.bounds.without_names(self.implicit_params)
+
+    @property
+    def constraint_matrix(self) -> np.ndarray:
+        return np.asarray([
+            [constraint.coefficients.get(name, 0.0) for name in self.bounds.names]
+            for constraint in self.charge_constraints
+        ], dtype=float)
+
+    @property
+    def constraint_targets(self) -> np.ndarray:
+        return np.asarray([
+            constraint.adjusted_target for constraint in self.charge_constraints
+        ], dtype=float)
+
+    def _check_feasibility(self) -> None:
+        if not self.charge_constraints:
+            return
+        result = linprog(
+            np.zeros(self.bounds.n_params),
+            A_eq=self.constraint_matrix,
+            b_eq=self.constraint_targets,
+            bounds=self.bounds.array,
+            method="highs",
+        )
+        if not result.success:
+            raise ValueError(
+                "Charge constraints are incompatible with each other or with the "
+                f"configured bounds: {result.message}"
+            )
 
     def parameter_names(self, *, explicit_only: bool = False) -> tuple[str, ...]:
         bounds = self.explicit_bounds if explicit_only else self.bounds
@@ -170,39 +326,7 @@ class Specs:
             )
         return {name: float(value) for name, value in zip(names, array)}
 
-    @property
-    def explicit_charge_coefficients(self) -> np.ndarray:
-        coeffs: list[int] = []
-        for param in self.explicit_bounds.names:
-            atoms = param.split()[1:]
-            coeffs.append(len(atoms) if param.startswith("charge") else 0)
-        return np.asarray(coeffs, dtype=int)
-
-    @property
-    def constraint_matrix(self) -> np.ndarray:
-        return self.explicit_charge_coefficients
-
-    def implicit_charge(
-        self,
-        values: Sequence[float] | np.ndarray | Any,
-    ) -> np.ndarray:
-        array = (
-            values.detach().cpu().numpy()
-            if _is_torch_tensor(values)
-            else np.asarray(values, dtype=float)
-        )
-        array = np.atleast_2d(array)
-        n_explicit = self.explicit_bounds.n_params
-        if array.shape[1] < n_explicit:
-            raise ValueError(
-                f"Expected at least {n_explicit} explicit parameter columns, "
-                f"got {array.shape[1]}."
-            )
-        explicit = array[:, :n_explicit]
-        explicit_charge = explicit @ self.constraint_matrix
-        return (self.constraint_charge - explicit_charge) / len(self.implicit_atoms)
-
-    def with_implicit_charge(
+    def with_implicit_charges(
         self,
         values: Sequence[float] | np.ndarray | Any,
     ) -> np.ndarray:
@@ -219,16 +343,19 @@ class Specs:
                 f"got {array.shape[1]}."
             )
 
-        implicit = self.implicit_charge(array)[:, None]
-        insert_at = self.implicit_param_index
-        return np.concatenate(
-            [
-                array[:, :insert_at],
-                implicit,
-                array[:, insert_at:],
-            ],
-            axis=1,
-        )
+        names = self.bounds.names.tolist()
+        full = np.zeros((len(array), self.bounds.n_params), dtype=float)
+        explicit_indices = [names.index(name) for name in self.explicit_bounds.names]
+        full[:, explicit_indices] = array[:, :n_explicit]
+        for index in self.reconstruction_order:
+            constraint = self.charge_constraints[index]
+            implicit_index = names.index(constraint.implicit)
+            coefficient = constraint.coefficients[constraint.implicit]
+            full[:, implicit_index] = (
+                constraint.adjusted_target - full @ self.constraint_matrix[index]
+            ) / coefficient
+
+        return np.concatenate([full, array[:, n_explicit:]], axis=1)
 
 
 @dataclass(frozen=True)
@@ -252,8 +379,8 @@ class ChargeConstraint:
         return self.specs.explicit_bounds.array
 
     @property
-    def implicit_bounds(self) -> tuple[float, float]:
-        return self.specs.bounds.get(self.specs.implicit_param)
+    def explicit_parameter_names(self) -> list[str]:
+        return self.specs.explicit_bounds.names.tolist()
 
     @property
     def n_params(self) -> int:
@@ -275,22 +402,15 @@ class ChargeConstraint:
                 f"but got {x.shape}."
             )
 
-        explicit_lower, explicit_upper = self.explicit_bounds.T
-        implicit_lower, implicit_upper = self.implicit_bounds
+        full = self.specs.with_implicit_charges(x)
+        lower, upper = self.specs.bounds.array.T
+        return ((full >= lower) & (full <= upper)).all(axis=1)
 
-        in_explicit_bounds = ((x >= explicit_lower) & (x <= explicit_upper)).all(axis=1)
-        explicit_total_charge = np.sum(
-            x * self.specs.explicit_charge_coefficients,
-            axis=1,
-        )
-        implicit_charge = self.specs.constraint_charge - explicit_total_charge
-        in_implicit_bounds = (
-            (implicit_charge >= implicit_lower) & (implicit_charge <= implicit_upper)
-        )
-        return in_explicit_bounds & in_implicit_bounds
-
-    def __call__(self, values: ArrayLike) -> np.ndarray:
-        return self.is_valid(values)
+    def __call__(self, values: ArrayLike) -> np.ndarray | Any:
+        valid = self.is_valid(values)
+        if _is_torch_tensor(values):
+            return torch.as_tensor(valid, device=values.device)
+        return valid
 
 
 class RandomParamsGenerator:
@@ -307,16 +427,28 @@ class RandomParamsGenerator:
         self.bounds = np.asarray(bounds, dtype=float)
         self.constraint = constraint
         self.n_generated = 0
-        self.sampler = LatinHypercube(self.bounds.shape[0])
+        self.sampler = (
+            None if self.bounds.shape[0] == 0 else LatinHypercube(self.bounds.shape[0])
+        )
 
     def __call__(self, n: int) -> np.ndarray:
         if n < 0:
             raise ValueError("Number of samples must be non-negative.")
         if n == 0:
             return np.empty((0, self.bounds.shape[0]), dtype=float)
+        if self.bounds.shape[0] == 0:
+            samples = np.empty((n, 0), dtype=float)
+            if self.constraint is not None and not np.asarray(
+                self.constraint(samples),
+                dtype=bool,
+            ).all():
+                raise RuntimeError("Fully constrained parameter values are invalid.")
+            self.n_generated += n
+            return samples
 
         lower, upper = self.bounds.T
         if self.constraint is None:
+            assert self.sampler is not None
             unit_samples = self.sampler.random(n)
             self.n_generated += n
             return unit_samples * (upper - lower) + lower
@@ -325,6 +457,7 @@ class RandomParamsGenerator:
         n_valid = 0
         attempts = 0
         while n_valid < n:
+            assert self.sampler is not None
             batch_size = max(2 * (n - n_valid), 1)
             unit_samples = self.sampler.random(batch_size)
             self.n_generated += batch_size

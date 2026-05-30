@@ -173,7 +173,7 @@ class PosteriorResults:
             return self.sample_labels
         return [f'theta_{i}' for i in range(self.n_dim)]
 
-    def _labels_with_implicit_charge(self) -> list[str]:
+    def _labels_with_implicit_charges(self) -> list[str]:
         if self.specs is None:
             raise ValueError(
                 'Implicit-charge expansion requires Specs to be attached to '
@@ -190,9 +190,13 @@ class PosteriorResults:
                 'Posterior labels do not cover all explicit parameters required '
                 'by the specs.'
             )
-        insert_at = self.specs.implicit_param_index
-        implicit_param = self.specs.implicit_param
-        return raw_labels[:insert_at] + [implicit_param] + raw_labels[insert_at:]
+        explicit_labels = dict(zip(
+            self.specs.explicit_bounds.names,
+            raw_labels[:n_explicit],
+        ))
+        return [
+            explicit_labels.get(name, name) for name in self.specs.bounds.names
+        ] + raw_labels[n_explicit:]
 
     def prepare_samples(
         self,
@@ -221,8 +225,8 @@ class PosteriorResults:
                 raise ValueError(
                     'include_implicit_charge=True requires Specs to be provided.'
                 )
-            prepared = self.specs.with_implicit_charge(prepared)
-            self._prepared_labels = self._labels_with_implicit_charge()
+            prepared = self.specs.with_implicit_charges(prepared)
+            self._prepared_labels = self._labels_with_implicit_charges()
         else:
             self._prepared_labels = (
                 list(self.sample_labels)

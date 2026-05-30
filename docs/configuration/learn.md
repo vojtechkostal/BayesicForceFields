@@ -75,4 +75,4 @@ Each value is a path to the corresponding trained `.lgp` file.
 - `ess_min`
   Minimum effective sample size target.
 - `include_implicit_charge`
-  If `true`, include the implicit charge in prepared posterior samples.
+  If `true`, include reconstructed implicit charges in prepared posterior samples.

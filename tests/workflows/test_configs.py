@@ -289,14 +289,19 @@ def test_sample_config_loads_prepared_assets(tmp_path: Path) -> None:
     fn_config.write_text(
         yaml.safe_dump(
             {
-                "mol_resname": "ACE",
                 "campaign_dir": "./campaign",
                 "gmx_cmd": "gmx",
                 "job_scheduler": "local",
                 "systems": [{"assets": str(assets), "n_steps": 1000}],
                 "bounds": {"charge C1": [-1.0, 1.0]},
-                "total_charge": 0.0,
-                "implicit_atoms": ["C1"],
+                "charge_constraints": [
+                    {
+                        "selection": "resname ACE",
+                        "target": 0.0,
+                        "scope": "residue",
+                        "implicit": "charge C1",
+                    }
+                ],
                 "n_samples": 4,
             }
         )
@@ -304,7 +309,7 @@ def test_sample_config_loads_prepared_assets(tmp_path: Path) -> None:
 
     config = SampleConfig.load(fn_config)
 
-    assert config.mol_resname == "ACE"
+    assert config.charge_constraints[0].implicit == "charge C1"
     assert config.n_samples == 4
     assert len(config.systems) == 1
 

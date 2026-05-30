@@ -69,5 +69,5 @@ charge C1: [-0.5, -0.4, -0.3]
 charge O1 O2: [-0.7, -0.6, -0.5]
 ```
 
-The implicit charge is reconstructed from `specs.yaml`, so it does not need to
+Implicit charges are reconstructed from `specs.yaml`, so they do not need to
 appear in the file.

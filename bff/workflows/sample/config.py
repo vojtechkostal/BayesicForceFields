@@ -1,22 +1,28 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from .._shared.config import (
     PathLike,
     SimulationCampaignConfig,
     _load_campaign_common,
-    _normalize_implicit_atoms,
     _validate_bounds,
 )
 
 
+@dataclass(frozen=True)
+class ChargeConstraintConfig:
+    selection: str
+    target: float
+    scope: Literal["system", "residue"]
+    implicit: str
+
+
 @dataclass(frozen=True, kw_only=True)
 class SampleConfig(SimulationCampaignConfig):
-    mol_resname: str
     bounds: dict[str, tuple[float, float]]
-    total_charge: float
-    implicit_atoms: list[str]
+    charge_constraints: tuple[ChargeConstraintConfig, ...]
     n_samples: int
 
     @classmethod
@@ -24,10 +30,8 @@ class SampleConfig(SimulationCampaignConfig):
         _, _, config, common = _load_campaign_common(fn_config)
 
         required = [
-            'mol_resname',
             'bounds',
-            'total_charge',
-            'implicit_atoms',
+            'charge_constraints',
             'n_samples',
         ]
         missing = [key for key in required if key not in config]
@@ -38,17 +42,52 @@ class SampleConfig(SimulationCampaignConfig):
             )
 
         bounds = _validate_bounds(config['bounds'])
-        implicit_atoms = _normalize_implicit_atoms(config['implicit_atoms'])
-        bound_charge_groups = {
-            name.split(maxsplit=1)[1]
-            for name in bounds
-            if name.startswith('charge ')
-        }
-        implicit_group = ' '.join(implicit_atoms)
-        if bound_charge_groups and implicit_group not in bound_charge_groups:
+        raw_constraints = config['charge_constraints']
+        if not isinstance(raw_constraints, list):
+            raise ValueError("'charge_constraints' must be a list.")
+        charge_constraints: list[ChargeConstraintConfig] = []
+        for index, constraint in enumerate(raw_constraints):
+            if not isinstance(constraint, dict):
+                raise ValueError(f"charge_constraints[{index}] must be a mapping.")
+            missing = [
+                key
+                for key in ('selection', 'target', 'scope', 'implicit')
+                if key not in constraint
+            ]
+            if missing:
+                raise ValueError(
+                    f"charge_constraints[{index}] is missing required key(s): "
+                    + ', '.join(repr(key) for key in missing)
+                )
+            scope = str(constraint['scope'])
+            if scope not in {'system', 'residue'}:
+                raise ValueError(
+                    f"charge_constraints[{index}].scope must be 'system' or "
+                    f"'residue', got {scope!r}."
+                )
+            implicit = str(constraint['implicit'])
+            if implicit not in bounds:
+                raise ValueError(
+                    f"charge_constraints[{index}].implicit ({implicit!r}) must "
+                    "match a parameter defined in 'bounds'."
+                )
+            if not implicit.startswith('charge '):
+                raise ValueError(
+                    f"charge_constraints[{index}].implicit must be a charge "
+                    f"parameter, got {implicit!r}."
+                )
+            charge_constraints.append(
+                ChargeConstraintConfig(
+                    selection=str(constraint['selection']),
+                    target=float(constraint['target']),
+                    scope=scope,
+                    implicit=implicit,
+                )
+            )
+        implicit_params = [constraint.implicit for constraint in charge_constraints]
+        if len(implicit_params) != len(set(implicit_params)):
             raise ValueError(
-                f"'implicit_atoms' ({implicit_group}) must match one of the "
-                "charge parameters defined in 'bounds'."
+                "Each charge constraint must define a distinct implicit parameter."
             )
 
         n_samples = int(config['n_samples'])
@@ -57,9 +96,7 @@ class SampleConfig(SimulationCampaignConfig):
 
         return cls(
             **common,
-            mol_resname=str(config['mol_resname']),
             bounds=bounds,
-            total_charge=float(config['total_charge']),
-            implicit_atoms=implicit_atoms,
+            charge_constraints=tuple(charge_constraints),
             n_samples=n_samples,
         )

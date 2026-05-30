@@ -14,7 +14,6 @@ the corresponding GROMACS jobs.
 ## Minimal Example
 
 ```yaml
-mol_resname: ACE
 campaign_dir: ./
 systems:
   - assets: ../02-assets/ffmd/system-000
@@ -22,8 +21,11 @@ systems:
 bounds:
   charge C2: [0.0, 1.0]
   charge O1 O2: [-0.8, -0.3]
-implicit_atoms: [C2]
-total_charge: -0.8
+charge_constraints:
+  - selection: "resname ACE"
+    target: -0.8
+    scope: residue
+    implicit: "charge C2"
 n_samples: 10
 gmx_cmd: gmx
 job_scheduler: local
@@ -31,18 +33,15 @@ job_scheduler: local
 
 ## Top-Level Keys
 
-- `mol_resname`
-  Residue name of the parameterized molecule in the GROMACS topology.
 - `campaign_dir`
   Output directory for sampled topologies, metadata, and trajectories.
 - `systems`
   Non-empty list of staged asset directories plus system-specific MD lengths.
 - `bounds`
   Mapping from parameter label to lower and upper bounds.
-- `implicit_atoms`
-  Atom group whose charge is determined by the total-charge constraint.
-- `total_charge`
-  Target total molecular charge used when building `specs.yaml`.
+- `charge_constraints`
+  Charge equations compiled from MDAnalysis selections. Each constraint defines
+  `selection`, `target`, `scope`, and a distinct bounded `implicit` parameter.
 - `n_samples`
   Number of force-field vectors sampled for the campaign.
 - `gmx_cmd`
@@ -66,6 +65,22 @@ job_scheduler: local
   Directory created by `bff prepare-assets`, for example `ffmd/system-000`.
 - `n_steps`
   Production MD length for this prepared system within the sampled campaign.
+
+## `charge_constraints[]` Keys
+
+- `selection`
+  MDAnalysis atom selection. Selections must be disjoint or strictly nested;
+  partial overlaps are rejected.
+- `target`
+  Required total charge for the selected group.
+- `scope`
+  Either `system` for one complete-system sum or `residue` to apply the target
+  independently to each selected residue.
+- `implicit`
+  Parameter reconstructed to satisfy this equation. It must exist in `bounds`,
+  belong to this selection, and not occur in a descendant selection.
+
+Nested constraints are reconstructed from the smallest selected groups outward.
 
 ## Outputs
 

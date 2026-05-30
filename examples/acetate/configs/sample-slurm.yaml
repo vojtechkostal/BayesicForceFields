@@ -1,4 +1,3 @@
-mol_resname: ACE
 campaign_dir: ./
 systems:
   - assets: ../02-assets/ffmd/system-000
@@ -12,8 +11,11 @@ bounds:
   charge O1 O2: [-0.8, -0.3]
   charge C1: [-1.0, 0.3]
   charge H1 H2 H3: [-0.3, 0.3]
-implicit_atoms: [C2]
-total_charge: -0.80
+charge_constraints:
+  - selection: "resname ACE"
+    target: -0.80
+    scope: residue
+    implicit: "charge C2"
 n_samples: 20
 compress: false
 cleanup: false

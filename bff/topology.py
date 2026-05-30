@@ -5,7 +5,7 @@ from pathlib import Path
 
 import MDAnalysis as mda
 import numpy as np
-from gmxtopology import MoleculeType, Topology
+from gmxtopology import Topology
 from MDAnalysis.guesser.tables import masses as MDA_MASSES
 from MDAnalysis.lib.distances import distance_array
 
@@ -341,93 +341,70 @@ def fill_universe(topol: Topology) -> mda.Universe:
 
 
 class TopologyModifier(Topology if Topology is not None else object):
+    """Modify parameters across a complete Gromacs topology."""
 
-    """A class for modifying Gromacs topologies.
+    def __init__(self, fn_topol: Path | str) -> None:
+        source = Path(fn_topol).resolve()
+        super().__init__(source)
+        self.source = source
+        self.universe = prepare_universe(source)
+        if len(self.atoms) != len(self.universe.atoms) or any(
+            atom.name != mda_atom.name
+            for atom, mda_atom in zip(self.atoms, self.universe.atoms)
+        ):
+            raise ValueError(
+                f"Topology and MDAnalysis atom ordering disagree for {self.source}."
+            )
 
-    Parameters
-    ----------
-    fn_topol : str | Path
-        Path to the topology file to be modified.
-    mol_resname : str
-        Residue name of the molecule to be modified.
-    implicit_atomnames : list[str] | str
-        Atom names or types to be treated as implicit
-        (i.e., their charges will be adjusted to satisfy a charge constraint).
-        Can be a single string if only one atom is implicit.
+    def select_indices(self, selection: str) -> set[int]:
+        """Resolve one MDAnalysis selection to expanded topology atom indices."""
+        return {int(atom.index) for atom in self.universe.select_atoms(selection)}
 
-    Properties
-    ----------
-    mol : MoleculeType
-        The molecule type corresponding to `mol_resname`.
-    n_mol : int
-        The number of molecules of type `mol_resname` in the topology.
-    implicit_atoms : list[Atom]
-        List of Atom objects corresponding to the implicit atoms.
-    implicit_param : str
-        A string representing the charge parameter for the implicit atoms.
-    total_charge : float
-        The total charge of the molecule before applying any constraints.
+    def selected_groups(self, selection: str, scope: str) -> list[set[int]]:
+        """Resolve a system selection into one system-level or per-residue group."""
+        indices = self.select_indices(selection)
+        if not indices or scope == "system":
+            return [indices] if indices else []
+        if scope != "residue":
+            raise ValueError(f"Unsupported charge-constraint scope {scope!r}.")
 
-    Methods
-    -------
-    group_charge(atomnames: list[str]) -> float
-        Calculate the total charge of a group of atoms specified by their names.
-    resolve_parameter_names(params)
-        Resolve charge-parameter keys that may contain atom types into names.
-    apply_parameters(params, constraint_charge=None)
-        Update topology parameters and apply an optional charge constraint.
-    """
+        groups: dict[int, set[int]] = {}
+        for index in indices:
+            residue_index = int(self.universe.atoms[index].resindex)
+            groups.setdefault(residue_index, set()).add(index)
+        return list(groups.values())
 
-    def __init__(
-        self,
-        fn_topol: Path | str,
-        mol_resname: str,
-        implicit_atomnames: list[str] | str
-    ) -> None:
+    def charge_parameter_matches(self, parameter: str) -> dict[str, set[int]]:
+        """Resolve charge-label tokens by atom name, falling back to atom type."""
+        kind, *tokens = parameter.split()
+        if kind != "charge" or not tokens:
+            raise ValueError(f"Invalid charge parameter {parameter!r}.")
+        if len(tokens) != len(set(tokens)):
+            raise ValueError(f"Duplicate atom name or type in {parameter!r}.")
 
-        self.source = fn_topol
-        self.mol_resname = mol_resname
-        if isinstance(implicit_atomnames, str):
-            self._implicit_atomnames = [implicit_atomnames]
-        else:
-            self._implicit_atomnames = implicit_atomnames
+        matches: dict[str, set[int]] = {}
+        for token in tokens:
+            indices = {
+                index for index, atom in enumerate(self.atoms) if atom.name == token
+            }
+            if not indices:
+                indices = {
+                    index
+                    for index, atom in enumerate(self.atoms)
+                    if atom.type.name == token
+                }
+            if indices:
+                matches[token] = indices
+        return matches
 
-        super().__init__(self.source)
-        self.universe = prepare_universe(self.source)
-
-    @property
-    def mol(self) -> MoleculeType:
-        return self.molecules[self.mol_resname][0]
-
-    @property
-    def n_mol(self) -> int:
-        return self.molecules[self.mol_resname][1]
-
-    @property
-    def implicit_atoms(self) -> list[str]:
-        implicit_atoms = []
-        for atom in self.mol.atoms:
-            if (atom.name in self._implicit_atomnames
-                    or atom.type.name in self._implicit_atomnames):
-                implicit_atoms.append(atom)
-
-        return implicit_atoms
-
-    @property
-    def implicit_param(self) -> str:
-        atoms = " ".join([atom.name for atom in self.implicit_atoms])
-        return f"charge {atoms}"
-
-    @property
-    def total_charge(self) -> float:
-        return np.sum([atom.charge for atom in self.mol.atoms])
-
-    def _update_charge(self, atomname: str, value: float) -> None:
-        for atom in self.mol.atoms:
-            if atom.name == atomname:
+    def _update_charge(self, parameter: str, value: float) -> None:
+        indices = set().union(*self.charge_parameter_matches(parameter).values())
+        updated: set[int] = set()
+        for index in indices:
+            atom = self.atoms[index]
+            if id(atom) not in updated:
                 atom.update(charge=value)
-                return
-        raise ValueError(f"Atom {atomname} not found in molecule {self.mol_resname}.")
+                updated.add(id(atom))
 
     def _update_sigma(self, atomtype: str, value: float) -> None:
         for at in self.atomtypes:
@@ -454,16 +431,15 @@ class TopologyModifier(Topology if Topology is not None else object):
         # normalize white spaces
         dihedraltype = " ".join(atoms.split())
 
-        for d in self.mol.dihedrals:
-            atoms = [d.ai, d.aj, d.ak, d.al]
-            if d.func == 9:
-                dt_str = " ".join([a.type.name for a in atoms])
-            if dt_str == dihedraltype:
-                d.update(kphi=k, phi_s=phase, mult=multiplicity)
-                return
-        raise ValueError(
-            f"Dihedral type '{dihedraltype}' not found in molecule {self.mol_resname}."
-        )
+        for mol in self.moleculetypes:
+            for d in mol.dihedrals:
+                atoms = [d.ai, d.aj, d.ak, d.al]
+                if d.func == 9:
+                    dt_str = " ".join([a.type.name for a in atoms])
+                    if dt_str == dihedraltype:
+                        d.update(kphi=k, phi_s=phase, mult=multiplicity)
+                        return
+        raise ValueError(f"Dihedral type '{dihedraltype}' not found in topology.")
 
     def _update_define(self, directive: str, argument: float | int | str) -> None:
         for define in self.defines:
@@ -471,71 +447,11 @@ class TopologyModifier(Topology if Topology is not None else object):
                 define.update(argument=argument)
                 return
 
-    def _constraint_charge(self, target: float) -> None:
-
-        q_explicit = np.sum([
-            atom.charge for atom in self.mol.atoms
-            if atom not in self.implicit_atoms
-        ])
-
-        n_implicit = len(self.implicit_atoms)
-        q_implicit = (target - q_explicit) / n_implicit
-        for atom in self.implicit_atoms:
-            self._update_charge(atom.name, q_implicit)
-
-    def group_charge(self, atomnames: list[str]) -> float:
-        return np.sum([
-            atom.charge for atom in self.mol.atoms
-            if atom.name in atomnames
-        ])
-
-    def resolve_parameter_names(
-        self,
-        params: dict[str, float | list[float]]
-    ) -> dict[str, float | list[float]]:
-        mol_atomnames = [atom.name for atom in self.mol.atoms]
-        mol_atomtypes = [atom.type.name for atom in self.mol.atoms]
-
-        resolved: dict[str, float | list[float]] = {}
-        for p in params.keys():
-            p_name, atoms = p.split(" ", maxsplit=1)
-            if p_name != 'charge':
-                resolved[p] = params[p]
-                continue
-
-            atomnames = " "
-            for name in atoms.split(" "):
-                if name in mol_atomnames:
-                    atomnames += f"{name} "
-                elif name in mol_atomtypes:
-                    for atom in self.mol.atoms:
-                        if atom.type.name == name:
-                            atomnames += f"{atom.name} "
-                else:
-                    raise ValueError(
-                        f"Atom name or type '{name}' not found "
-                        f"in molecule {self.mol_resname}."
-                    )
-            resolved[f"charge {atomnames.strip()}"] = params[p]
-
-        # check for duplicates
-        flat: list[str] = []
-        for r in resolved.keys():
-            if r.startswith('charge'):
-                flat.extend(r.split(" ")[1:])
-        if len(flat) != len(set(flat)):
-            raise ValueError("Duplicate atom names in resolved parameters.")
-
-        return resolved
-
     def apply_parameters(
         self,
         params: dict[str, float | list[float]],
-        constraint_charge: float | None = None,
     ) -> None:
-        params_resolved = self.resolve_parameter_names(params)
-
-        for p, value in params_resolved.items():
+        for p, value in params.items():
             if "dihedraltype9" in p:
                 p_name, *dihedraltypes, mult, phase = p.split()
                 for dt in dihedraltypes:
@@ -554,8 +470,7 @@ class TopologyModifier(Topology if Topology is not None else object):
             else:
                 p_name, *atoms = p.split(" ")
                 if p_name == 'charge':
-                    for atom in atoms:
-                        self._update_charge(atom, value)
+                    self._update_charge(p, value)
                 elif p_name == 'sigma':
                     for atom in atoms:
                         self._update_sigma(atom, value)
@@ -564,18 +479,3 @@ class TopologyModifier(Topology if Topology is not None else object):
                         self._update_epsilon(atom, value)
                 else:
                     raise ValueError(f"Unsupported parameter name '{p_name}'.")
-
-        if constraint_charge is not None:
-            # Ensure the implicit charge group stays implicit.
-            for atom in self.implicit_atoms:
-                updated = any(
-                    key.startswith("charge ")
-                    and atom.name in key.split()[1:]
-                    for key in params_resolved
-                )
-                if updated:
-                    raise ValueError(
-                        f"Implicit atom '{atom.name}' charge was set manually, "
-                        "cannot apply constraint charge."
-                    )
-            self._constraint_charge(constraint_charge)

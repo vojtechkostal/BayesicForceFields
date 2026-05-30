@@ -95,7 +95,11 @@ def plot_marginals(
     fn_out: Optional[PathLike] = None,
 ) -> None:
     specs = _coerce_specs(specs)
-    posterior = specs.with_implicit_charge(results.prepared_samples)
+    posterior = (
+        results.prepared_samples
+        if results.include_implicit_charge
+        else specs.with_implicit_charges(results.prepared_samples)
+    )
     param_names = specs.bounds.names.tolist()
     tick_labels = _parameter_labels(param_names, parameter_labels)
     if parameter_labels is None:
@@ -117,7 +121,7 @@ def plot_marginals(
     )
     axes = np.atleast_1d(axes)
 
-    explicit_names = specs.bounds.without(specs.implicit_param).names.tolist()
+    explicit_names = specs.explicit_bounds.names.tolist()
     prior_index = {name: i for i, name in enumerate(explicit_names)}
     show_prior = results.priors is not None
     legend_used = {"prior": False, "posterior": False, "bounds": False}
