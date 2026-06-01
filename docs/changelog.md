@@ -3,7 +3,14 @@
 The public reproduction snapshot for the published study is archived as
 [`v0.0.1`](https://github.com/vojtechkostal/BayesicForceFields/tree/v0.0.1).
 Use that tag for exact reproduction of the paper results. The current
-`0.2.0` release is a substantial workflow refactor.
+`0.2.1` release is a substantial workflow refactor.
+
+## `0.2.1` - 2026-06-01
+
+### Fixed
+
+- Restored Python 3.10 compatibility by replacing the Python 3.11-only
+  `typing.Self` annotation in Gaussian-process model loading.
 
 ## `0.2.0` - 2026-06-01
 

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## `0.2.1` - 2026-06-01
+
+### Fixed
+
+- Restored Python 3.10 compatibility by replacing the Python 3.11-only
+  `typing.Self` annotation in Gaussian-process model loading.
+
 ## `0.2.0` - 2026-06-01
 
 The public reproduction snapshot for the published study is archived as
