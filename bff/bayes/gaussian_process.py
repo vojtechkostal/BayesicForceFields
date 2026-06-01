@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Callable, Self, Union
+from typing import Callable, TypeVar, Union
 
 import numpy as np
 import torch
@@ -14,6 +14,7 @@ MeanFunction = Union[
     float,
     Callable[[torch.Tensor], torch.Tensor],
 ]
+LGPCommitteeT = TypeVar("LGPCommitteeT", bound="LGPCommittee")
 
 
 def evaluate_mean(
@@ -269,7 +270,7 @@ class LGPCommittee:
         return self.error
 
     @classmethod
-    def load(cls, fn: PathLike) -> Self:
+    def load(cls: type[LGPCommitteeT], fn: PathLike) -> LGPCommitteeT:
         state = torch.load(fn, weights_only=False)
         lgps = [LocalGaussianProcess(**lgp_state) for lgp_state in state["lgps"]]
         committee = cls(
