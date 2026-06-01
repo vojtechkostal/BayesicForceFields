@@ -82,6 +82,69 @@ job_scheduler: local
 
 Nested constraints are reconstructed from the smallest selected groups outward.
 
+## Parameter Labels
+
+The `bounds` keys determine which GROMACS force-field parameters are sampled
+and subsequently learned. BFF currently supports:
+
+| Parameter | Label syntax | Example | GROMACS quantity |
+| --- | --- | --- | --- |
+| Partial charge | `charge <name-or-type> [<name-or-type> ...]` | `charge O1 O2` | Atomic charge |
+| Lennard-Jones sigma | `sigma <atom-type> [<atom-type> ...]` | `sigma OW` | LJ sigma |
+| Lennard-Jones epsilon | `epsilon <atom-type> [<atom-type> ...]` | `epsilon OW` | LJ epsilon |
+| Function-9 dihedral force constant | `dihedraltype9_<multiplicity>_<phase>` | `dihedraltype9_3_180` | Periodic-dihedral force constant |
+
+Values use the native units of the GROMACS topology: elementary charge for
+partial charges, nm for sigma, kJ mol^-1 for epsilon, degrees for the
+dihedral phase, and kJ mol^-1 for the dihedral force constant.
+
+### Charges
+
+Charge labels resolve each token by atom name first and fall back to atom type
+when no atom has that name. Multiple tokens in one label tie all matching atoms
+to one sampled value:
+
+```yaml
+bounds:
+  charge O1 O2: [-0.8, -0.3]
+  charge HW: [0.1, 0.6]
+```
+
+Here, `O1` and `O2` share one charge parameter. If there is no atom named
+`HW`, all atoms of type `HW` share the second parameter. Charge labels must not
+overlap: one topology atom cannot be controlled by two entries in `bounds`.
+
+Charge parameters may participate in the hierarchical `charge_constraints`
+described above. Parameters of the other supported families are sampled
+directly.
+
+### Lennard-Jones Parameters
+
+Sigma and epsilon labels address GROMACS atom types. Multiple atom types in one
+label tie those types to one sampled value:
+
+```yaml
+bounds:
+  sigma OW: [0.25, 0.38]
+  epsilon OW: [0.58, 0.72]
+  sigma NA CL: [0.20, 0.45]
+```
+
+### Function-9 Dihedrals
+
+To sample a GROMACS function-9 dihedral force constant, use
+`dihedraltype9_<multiplicity>_<phase>`:
+
+```yaml
+bounds:
+  dihedraltype9_3_180: [0.0, 10.0]
+```
+
+This updates the force constant of every matching function-9 dihedral term in
+the topology while preserving its multiplicity and phase. If the topology has
+several function-9 terms with the same multiplicity and phase, the label ties
+all of them to the same sampled value.
+
 ## Outputs
 
 `bff sample` writes:

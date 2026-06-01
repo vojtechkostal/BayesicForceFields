@@ -10,9 +10,14 @@ from ..io.logs import Logger, print_progress_mcmc
 from ..mcmc.proposal import AdaptiveGaussianProposal
 from ..mcmc.sampler import Sampler
 from ..qoi.data import QoIDataset
-from ..tools import rdf_sigmoid_mean
-from .gaussian_process import LGPCommittee, LocalGaussianProcess
+from .gaussian_process import (
+    LGPCommittee,
+    LocalGaussianProcess,
+    MeanFunction,
+    evaluate_mean,
+)
 from .likelihoods import gaussian_log_likelihood, loo_log_likelihood
+from .means import rdf_sigmoid_mean
 from .posterior import log_posterior
 from .priors import Prior, Priors
 from .results import PosteriorResults
@@ -26,7 +31,6 @@ from .utils import (
 )
 
 PathLike = Union[str, Path]
-ArrayLike = Union[np.ndarray, torch.Tensor]
 
 
 @dataclass(frozen=True, slots=True)
@@ -274,10 +278,10 @@ class LearningProblem:
 
 def _resolve_mean(
     dataset: QoIDataset,
-    mean: ArrayLike | float | str,
-) -> ArrayLike | float:
+    mean: MeanFunction | str,
+) -> MeanFunction:
     """Resolve a configured surrogate mean specification."""
-    if dataset.name == "rdf" and mean == "sigmoid":
+    if dataset.name == "rdf" and isinstance(mean, str) and mean == "sigmoid":
         n_bins = dataset.settings.get("n_bins")
         r_range = dataset.settings.get("r_range")
         if n_bins is None or r_range is None:
@@ -298,7 +302,7 @@ def _default_checkpoint_path(fn_posterior: Path) -> Path:
 def fit_lgp_committee(
     X: torch.Tensor,
     y: torch.Tensor,
-    y_mean: torch.Tensor,
+    y_mean: MeanFunction,
     test_fraction: float,
     n_hyper: int,
     committee: int,
@@ -309,6 +313,7 @@ def fit_lgp_committee(
     device: str,
     logger: Optional[Logger] = None,
     opt_kwargs: Optional[dict[str, Union[int, float, str]]] = None,
+    hyperpriors: Optional[Priors | Sequence] = None,
 ) -> LGPCommittee:
     """Fit a committee of local Gaussian-process surrogates."""
     check_device(device)
@@ -320,19 +325,34 @@ def fit_lgp_committee(
 
     X_hyper = check_tensor(X_train[:n_hyper], device="cpu")
     y_hyper = check_tensor(y_train[:n_hyper], device="cpu")
-    y_mean = check_tensor(y_mean, device="cpu")
+    y_hyper_mean = evaluate_mean(y_mean, X_hyper, device="cpu")
 
     n_params = X.shape[1]
-    priors = Priors(
-        [Prior("normal", -2.0, 2.0, name=f"length_{i}") for i in range(n_params)]
-        + [
-            Prior("normal", -2.0, 2.0, name="width"),
-            Prior("normal", -2.0, 3.0, name="noise"),
-        ]
-    )
+    if hyperpriors is None:
+        priors = Priors(
+            [
+                Prior("normal", -2.0, 2.0, name=f"length_{i}")
+                for i in range(n_params)
+            ]
+            + [
+                Prior("normal", -2.0, 2.0, name="width"),
+                Prior("normal", -2.0, 3.0, name="noise"),
+            ]
+        )
+    else:
+        priors = Priors.from_any(hyperpriors)
+    if len(priors) != n_params + 2:
+        raise ValueError(
+            "LGP hyperpriors must define one length scale per input parameter, "
+            "followed by width and noise."
+        )
     p0 = torch.tensor(priors.means, dtype=torch.float32)
 
-    log_likelihood = partial(loo_log_likelihood, X=X_hyper, y=y_hyper - y_mean)
+    log_likelihood = partial(
+        loo_log_likelihood,
+        X=X_hyper,
+        y=y_hyper - y_hyper_mean,
+    )
     log_probability = partial(
         log_posterior,
         priors=priors,
@@ -404,7 +424,8 @@ def _effective_observations(
 def fit_surrogates(
     datasets: Sequence[QoIDataset],
     *,
-    y_means: Optional[Mapping[str, ArrayLike | float | str]] = None,
+    y_means: Optional[Mapping[str, MeanFunction | str]] = None,
+    hyperpriors: Optional[Mapping[str, Priors | Sequence]] = None,
     observation_scales: Optional[Mapping[str, float]] = None,
     model_paths: Optional[Mapping[str, PathLike | None]] = None,
     reuse_models: bool = True,
@@ -419,6 +440,7 @@ def fit_surrogates(
     owns_logger = logger is None
     logger = logger or Logger("fit")
     y_means = dict(y_means or {})
+    hyperpriors = dict(hyperpriors or {})
     observation_scales = dict(observation_scales or {})
     model_paths = dict(model_paths or {})
 
@@ -479,6 +501,7 @@ def fit_surrogates(
             device=device,
             logger=logger,
             opt_kwargs=opt_kwargs,
+            hyperpriors=hyperpriors.get(qoi),
         )
         logger.kv("Effective observations", n_observations, level=2)
         logger.blank()

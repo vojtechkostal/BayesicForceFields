@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-
 from _fake_mdanalysis import install as install_fake_mdanalysis
 
 from bff.io.cp2k import (

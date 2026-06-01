@@ -1,5 +1,7 @@
 # Bayesic Force Fields
 
+<img src="assets/bff-logo.svg" alt="BFF logo" width="300">
+
 Bayesic Force Fields (BFF) is a command-line workflow for learning
 fixed-charge molecular force fields from trajectory observables.
 
@@ -11,6 +13,7 @@ Preprint:
 
 For exact reproduction of the published paper data, use the archived Git tag
 `v0.0.1`. The current `bfflearn` package is the refactored workflow.
+See the [changelog](changelog.md) for post-publication highlights.
 
 ## What BFF Does
 
@@ -30,6 +33,16 @@ build -> prepare-assets -> evaluate-snapshots
 - `learn`: infer posterior force-field parameters
 - `validate`: rerun selected posterior samples
 
+## Supported Learned Parameters
+
+BFF currently learns GROMACS partial charges, Lennard-Jones sigma and epsilon,
+and function-9 dihedral force constants. A single bound can tie multiple atom
+names or atom types to one learned value. Charge parameters also support
+hierarchical residue- or system-level constraints.
+
+See the [sample configuration reference](configuration/sample.md#parameter-labels)
+for the accepted labels, matching rules, and examples.
+
 ## Quick Start
 
 Install BFF, copy the example tree, then run the acetate walkthrough:
@@ -42,6 +55,12 @@ pip install bfflearn
 bff examples
 cd examples/acetate
 ```
+
+!!! warning
+    Install the PyTorch build that matches your machine separately before
+    fitting or learning. Use the
+    [official PyTorch selector](https://pytorch.org/get-started/locally/) for
+    CPU or CUDA installation commands.
 
 Each example stage has config templates. Copy the needed files into the stage
 directory, edit them there, and run BFF from that directory:
@@ -64,7 +83,10 @@ Continue with the stages in the [acetate example](examples/acetate.md).
 ## Where To Go Next
 
 - [Installation](installation.md)
+- [Architecture](architecture.md)
 - [Command-line interface](cli.md)
-- [Acetate example](examples/acetate.md)
+- [Examples overview](examples/index.md)
 - [Configuration reference](configuration/build.md)
 - [Development](development.md)
+- [Contributing](https://github.com/vojtechkostal/BayesicForceFields/blob/main/CONTRIBUTING.md)
+- [Support](https://github.com/vojtechkostal/BayesicForceFields/blob/main/SUPPORT.md)

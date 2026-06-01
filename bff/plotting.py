@@ -263,19 +263,30 @@ def plot_corner(
 ) -> None:
     sample_source = samples
     samples = _coerce_samples(samples)
+    result_labels = None
+    if (
+        isinstance(sample_source, PosteriorResults)
+        and sample_source.specs is not None
+        and not sample_source.include_implicit_charge
+    ):
+        samples = sample_source.specs.with_implicit_charges(samples)
+        result_labels = sample_source._labels_with_implicit_charges()
+    elif isinstance(sample_source, PosteriorResults):
+        result_labels = list(sample_source.labels)
+
     if samples.ndim != 2:
         raise ValueError("plot_corner expects samples with shape (n_samples, n_dim).")
 
     n_dim = samples.shape[1]
     if labels is None:
-        if isinstance(sample_source, PosteriorResults):
-            labels = list(sample_source.labels)
+        if result_labels is not None:
+            labels = result_labels
         else:
             labels = [f"theta_{i}" for i in range(n_dim)]
     elif len(labels) != n_dim:
         raise ValueError("labels must match the posterior sample dimension.")
-    elif isinstance(sample_source, PosteriorResults):
-        labels = _expand_short_labels(labels, sample_source.labels)
+    elif result_labels is not None:
+        labels = _expand_short_labels(labels, result_labels)
 
     labels = [_wrap_label(label) for label in labels]
     base_cmap = plt.get_cmap(cmap)

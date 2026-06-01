@@ -36,14 +36,10 @@ docs/acetate-example
 Before committing, run the checks that match your change:
 
 ```bash
-python -m py_compile $(find bff -name '*.py')
+python -m compileall -q bff
+ruff check .
+python -m pytest -q
 mkdocs build --strict
-```
-
-If tests are available in your environment:
-
-```bash
-python -m pytest -q tests
 ```
 
 For docs-only changes, `mkdocs build --strict` is usually enough.
@@ -92,3 +88,34 @@ else's pushed work by accident.
 - `examples/acetate/`: worked example
 - `tests/`: tests
 - `.github/workflows/`: CI and publishing workflows
+
+The [architecture guide](architecture.md) describes the package modules,
+workflow stages, and persisted artifacts in more detail.
+
+## Publishing Research Software
+
+For a citable BFF release:
+
+1. Update the changelog, version, examples, and documentation together.
+2. Reserve a version-specific Zenodo DOI if the release needs an archival DOI.
+3. Run the test suite, lint checks, package build, and strict documentation
+   build in CI.
+4. Merge the release branch into `main` and create a signed `vX.Y.Z` tag.
+5. Publish the GitHub release from that tag. The release workflow builds,
+   verifies, and publishes the distributions through PyPI trusted publishing.
+6. Archive the tagged release in Zenodo and record its version-specific DOI
+   and release date in `CITATION.cff`.
+
+The repository already includes package metadata, an OSI-approved license,
+`CITATION.cff`, a changelog, documentation, examples, tests, and GitHub Actions
+workflows. Contribution, support, conduct, and security policies live in the
+repository root. Expand API reference documentation as the public Python API
+matures.
+
+Useful references:
+
+- [FAIR Principles for Research Software](https://doi.org/10.15497/RDA00068)
+- [GitHub citation-file documentation](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-citation-files)
+- [Zenodo DOI documentation](https://help.zenodo.org/docs/deposit/describe-records/reserve-doi/)
+- [JOSS review criteria](https://joss.readthedocs.io/en/latest/review_criteria.html)
+- [Diátaxis documentation framework](https://diataxis.fr/)

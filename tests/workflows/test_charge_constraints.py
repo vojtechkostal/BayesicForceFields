@@ -10,7 +10,6 @@ from bff.workflows._shared.campaign import build_specs
 from bff.workflows.md.main import modify_topology
 from bff.workflows.sample.config import ChargeConstraintConfig
 
-
 ROOT = Path(__file__).parents[2]
 ACE_TOP = ROOT / "examples/acetate/inputs/common/topol.top"
 ACE_IONS_TOP = ROOT / "examples/acetate/inputs/common/topol-ions.top"

@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Self, Union
+from typing import Callable, Self, Union
 
 import numpy as np
 import torch
@@ -8,6 +8,22 @@ from .kernels import gaussian_kernel
 from .utils import check_tensor, nearest_positive_definite, smape
 
 PathLike = Union[str, Path]
+MeanFunction = Union[
+    torch.Tensor,
+    np.ndarray,
+    float,
+    Callable[[torch.Tensor], torch.Tensor],
+]
+
+
+def evaluate_mean(
+    mean: MeanFunction,
+    X: torch.Tensor,
+    device: str,
+) -> torch.Tensor:
+    """Evaluate a static or parameter-dependent GP mean."""
+    values = mean(X) if callable(mean) else mean
+    return check_tensor(values, device=device)
 
 
 class LocalGaussianProcess:
@@ -20,8 +36,8 @@ class LocalGaussianProcess:
         Training input features.
     y_train : torch.Tensor
         Training output values.
-    y_mean : torch.Tensor
-        Mean of the output values.
+    y_mean : torch.Tensor or callable
+        Static output mean or a callable mean evaluated at the input parameters.
     lengths : torch.Tensor
         Length scales for the Gaussian kernel.
     width : float
@@ -54,14 +70,17 @@ class LocalGaussianProcess:
 
     def __init__(
         self,
-        X_train: torch.Tensor, y_train: torch.Tensor, y_mean: torch.Tensor,
+        X_train: torch.Tensor, y_train: torch.Tensor, y_mean: MeanFunction,
         lengths: torch.Tensor, width: float, sigma: float,
         device: str
     ) -> None:
 
         self.X_train = check_tensor(X_train, device=device)
         self.y_train = check_tensor(y_train, device=device)
-        self.y_mean = check_tensor(y_mean, device=device)
+        self.y_mean = (
+            y_mean if callable(y_mean) else check_tensor(y_mean, device=device)
+        )
+        self.y_train_mean = evaluate_mean(self.y_mean, self.X_train, device)
         self.lengths = check_tensor(lengths, device=device)
         self.width = check_tensor(width, device=device)
         self.sigma = check_tensor(sigma, device=device)
@@ -109,7 +128,8 @@ class LocalGaussianProcess:
         """
         Xi = check_tensor(Xi, device=self.device)
         Kid = gaussian_kernel(Xi, self.X_train, self.lengths, self.width)
-        mean = self.y_mean + (Kid @ self.Kdd_inv) @ (self.y_train - self.y_mean)
+        mean = evaluate_mean(self.y_mean, Xi, self.device)
+        mean = mean + (Kid @ self.Kdd_inv) @ (self.y_train - self.y_train_mean)
         return mean
 
     def state_dict(self) -> dict:
@@ -225,7 +245,7 @@ class LGPCommittee:
 
         # Otherwise, return the mean prediction across all models
         predictions = torch.stack([lgp.predict(X) for lgp in self.lgps])
-        return predictions.mean(dim=0).squeeze(0)
+        return predictions.mean(dim=0)
 
     def validate(self, X_test: torch.Tensor, y_test: torch.Tensor) -> float:
         """

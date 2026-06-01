@@ -1,12 +1,14 @@
 cff-version: 1.2.0
 message: "If you use BFF, please cite the repository and the associated paper."
 title: "Bayesic Force Fields"
+version: "0.2.0"
+date-released: "2026-06-01"
 authors:
   - family-names: Kostal
     given-names: Vojtech
 url: "https://github.com/vojtechkostal/BayesicForceFields"
 repository-code: "https://github.com/vojtechkostal/BayesicForceFields"
-license: "GPL-3.0"
+license: "GPL-3.0-only"
 preferred-citation:
   type: article
   title: "Bayesian Learning for Accurate and Robust Biomolecular Force Fields"

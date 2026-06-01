@@ -1,13 +1,13 @@
 """Workflow entry point for sampled FFMD campaigns."""
 
 from ...io.logs import Logger
-from .config import SampleConfig
 from .._shared.campaign import (
     build_parameter_samples,
     print_sample_summary,
     run_campaign,
     stage_campaign,
 )
+from .config import SampleConfig
 
 
 def main(fn_config: str) -> None:

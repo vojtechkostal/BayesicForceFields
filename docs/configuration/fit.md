@@ -40,7 +40,9 @@ fit:
 - `data`
   QoI dataset file produced by `bff analyze`.
 - `mean`
-  Mean-function setting passed into surrogate training.
+  Mean-function setting passed into surrogate training. Use a numeric constant
+  or `sigmoid` for RDF datasets. Python callers of `fit_surrogates()` may also
+  pass a callable mean.
 - `nuisance`
   Optional fixed nuisance standard deviation.
 - `observation_scale`
@@ -55,7 +57,7 @@ fit:
 - `reuse_models`
   Reuse existing model files if present.
 - `n_hyper_max`
-  Maximum number of hyperparameter optimization steps.
+  Maximum number of training rows used during hyperparameter optimization.
 - `committee_size`
   Number of committee members for model averaging.
 - `test_fraction`

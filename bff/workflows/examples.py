@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
 import tarfile
 import tempfile
 from importlib import metadata
@@ -46,7 +47,42 @@ def _prepare_output_dir(output_dir: Path, *, force: bool) -> None:
 
 
 def _copy_local_examples(source_dir: Path, output_dir: Path) -> Path:
-    shutil.copytree(source_dir, output_dir)
+    repo_root = source_dir.parent
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "ls-files",
+                "-z",
+                "--cached",
+                "--others",
+                "--exclude-standard",
+                "--",
+                source_dir.name,
+            ],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise RuntimeError(
+            "Could not list example files in the source checkout."
+        ) from exc
+
+    tracked_files = [Path(path) for path in result.stdout.split("\0") if path]
+    if not tracked_files:
+        raise RuntimeError("The source checkout does not contain examples.")
+
+    output_dir.mkdir(parents=True)
+    for tracked_file in tracked_files:
+        source_path = repo_root / tracked_file
+        if not source_path.is_file():
+            continue
+        relative_path = source_path.relative_to(source_dir)
+        target_path = output_dir / relative_path
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_path, target_path)
     return output_dir
 
 
@@ -78,6 +114,10 @@ def _extract_examples_archive(archive_path: Path, output_dir: Path) -> Path:
                 continue
 
             relative_path = Path(*parts[2:])
+            if relative_path.is_absolute() or ".." in relative_path.parts:
+                raise RuntimeError(
+                    "Downloaded examples archive contains an unsafe path."
+                )
             target_path = output_dir / relative_path
 
             if member.isdir():

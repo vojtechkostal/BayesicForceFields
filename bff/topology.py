@@ -12,21 +12,6 @@ from MDAnalysis.lib.distances import distance_array
 from .data import IONS, WATER_3SITE, WATER_4SITE, WATERS
 from .tools import guess_box, random_placement
 
-# 1) MDAnalysis DeprecationWarning from ITPParser (elements guessing transition)
-warnings.filterwarnings(
-    "ignore",
-    category=DeprecationWarning,
-    module=r"MDAnalysis\.topology\.ITPParser",
-)
-
-# 2) MDAnalysis UserWarning about missing coordinate reader (topology-only file)
-warnings.filterwarnings(
-    "ignore",
-    category=UserWarning,
-    message=r"No coordinate reader found for .*\.top\. Skipping this file\.",
-    module=r"MDAnalysis\.core\.universe",
-)
-
 MASSES = np.array(list(MDA_MASSES.values()))
 ELEMENTS = list(MDA_MASSES.keys())
 
@@ -113,16 +98,28 @@ def prepare_universe(
         and guessed elements.
     """
 
-    if fn_coord is None:
-        universe = mda.Universe(
-            fn_topol,
-            topology_format='ITP', to_guess=('elements', 'masses'), dt=dt
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            category=DeprecationWarning,
+            module=r"MDAnalysis\.topology\.ITPParser",
         )
-    else:
-        universe = mda.Universe(
-            fn_topol, fn_coord,
-            topology_format='ITP', to_guess=('elements', 'masses'), dt=dt
-        )
+        if fn_coord is None:
+            warnings.filterwarnings(
+                "ignore",
+                category=UserWarning,
+                message=r"No coordinate reader found for .*\. Skipping this file\.",
+                module=r"MDAnalysis\.core\.universe",
+            )
+            universe = mda.Universe(
+                fn_topol,
+                topology_format='ITP', to_guess=('elements', 'masses'), dt=dt
+            )
+        else:
+            universe = mda.Universe(
+                fn_topol, fn_coord,
+                topology_format='ITP', to_guess=('elements', 'masses'), dt=dt
+            )
 
     guess_elements(universe)
 
@@ -422,24 +419,25 @@ class TopologyModifier(Topology if Topology is not None else object):
 
     def _update_dihedraltype9(
         self,
-        atoms: str,
         k: float,
         phase: float,
         multiplicity: int
     ) -> None:
-
-        # normalize white spaces
-        dihedraltype = " ".join(atoms.split())
-
+        updated = 0
         for mol in self.moleculetypes:
             for d in mol.dihedrals:
-                atoms = [d.ai, d.aj, d.ak, d.al]
-                if d.func == 9:
-                    dt_str = " ".join([a.type.name for a in atoms])
-                    if dt_str == dihedraltype:
-                        d.update(kphi=k, phi_s=phase, mult=multiplicity)
-                        return
-        raise ValueError(f"Dihedral type '{dihedraltype}' not found in topology.")
+                if (
+                    d.func == 9
+                    and d.params["mult"] == multiplicity
+                    and np.isclose(d.params["phi_s"], phase)
+                ):
+                    d.update(kphi=k)
+                    updated += 1
+        if not updated:
+            raise ValueError(
+                "Dihedral type 9 with multiplicity "
+                f"{multiplicity} and phase {phase:g} not found in topology."
+            )
 
     def _update_define(self, directive: str, argument: float | int | str) -> None:
         for define in self.defines:
@@ -452,16 +450,26 @@ class TopologyModifier(Topology if Topology is not None else object):
         params: dict[str, float | list[float]],
     ) -> None:
         for p, value in params.items():
-            if "dihedraltype9" in p:
-                p_name, *dihedraltypes, mult, phase = p.split()
-                for dt in dihedraltypes:
-                    atoms = dt.replace("_", " ")
-                    self._update_dihedraltype9(
-                        atoms,
-                        k=value,
-                        phase=float(phase),
-                        multiplicity=int(mult)
+            if p.startswith("dihedraltype9"):
+                parts = p.split("_")
+                if len(parts) != 3 or parts[0] != "dihedraltype9":
+                    raise ValueError(
+                        f"Invalid dihedral type 9 parameter {p!r}; expected "
+                        "'dihedraltype9_<multiplicity>_<phase>'."
                     )
+                try:
+                    multiplicity = int(parts[1])
+                    phase = float(parts[2])
+                except ValueError as exc:
+                    raise ValueError(
+                        f"Invalid dihedral type 9 parameter {p!r}; multiplicity "
+                        "must be an integer and phase must be a number."
+                    ) from exc
+                self._update_dihedraltype9(
+                    k=value,
+                    phase=phase,
+                    multiplicity=multiplicity,
+                )
 
             elif p.startswith("define"):
                 p_name, directive = p.split(" ")

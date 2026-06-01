@@ -31,6 +31,11 @@ def test_loo_log_likelihood_returns_one_value_per_theta() -> None:
 
     assert out.shape == (2,)
     assert torch.isfinite(out).all()
+    individual = torch.cat([
+        loo_log_likelihood(row[None, :], X, y)
+        for row in theta
+    ])
+    assert torch.allclose(out, individual)
 
 
 def test_gaussian_log_likelihood_uses_free_and_fixed_nuisance() -> None:

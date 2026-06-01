@@ -1,21 +1,22 @@
 [project]
 name = "bfflearn"
-version = "0.1.0.dev3"
+version = "0.2.0"
 description = "Bayesian workflows for fixed-charge molecular force fields"
 authors = [
   { name="Vojtech Kostal", email="vojtakostal8@gmail.com" }
 ]
 readme = "README.md"
 requires-python = ">=3.10"
-license = { file = "LICENSE" }
+license = "GPL-3.0-only"
+license-files = ["LICENSE"]
 dependencies = [
-  "gmxtopology",
-  "matplotlib",
-  "MDAnalysis",
-  "numpy",
-  "PyYAML",
-  "scipy",
-  "typer",
+  "gmxtopology>=0.1.1",
+  "matplotlib>=3.8",
+  "MDAnalysis>=2.7",
+  "numpy>=1.26",
+  "PyYAML>=6.0",
+  "scipy>=1.11",
+  "typer>=0.12",
 ]
 keywords = [
   "bayesian-inference",
@@ -27,7 +28,6 @@ keywords = [
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
-  "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
@@ -70,7 +70,7 @@ docs = [
 ]
 
 [build-system]
-requires = ["setuptools>=61", "wheel", "pip"]
+requires = ["setuptools>=77", "wheel", "pip"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]

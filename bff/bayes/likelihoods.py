@@ -55,12 +55,22 @@ def loo_log_likelihood(
 
     # Compute the kernel matrix and its inverse
     Kdd = gaussian_kernel(X, X, length, width) + identity * noise
-    Kdd_inv = torch.linalg.inv(Kdd)
+    Kdd = 0.5 * (Kdd + Kdd.transpose(1, 2))
+    L, info = torch.linalg.cholesky_ex(Kdd)
+    jitter = torch.finfo(Kdd.dtype).eps
+    for _ in range(6):
+        if not torch.any(info):
+            break
+        L, info = torch.linalg.cholesky_ex(Kdd + jitter * identity)
+        jitter *= 10
+    if torch.any(info):
+        raise torch.linalg.LinAlgError("Could not stabilize the GP covariance matrix.")
+    Kdd_inv = torch.cholesky_inverse(L)
     Kdd_inv_diagonal = torch.diagonal(Kdd_inv, 0, dim1=1, dim2=2)
     log_Kdd_inv_ii = torch.log(Kdd_inv_diagonal)
 
     # Compute the terms for the log likelihood
-    norm = torch.sqrt(Kdd_inv_diagonal + 1e-9).unsqueeze(1)
+    norm = torch.sqrt(Kdd_inv_diagonal).unsqueeze(1)
     term_1 = (Kdd_inv @ y).transpose(1, 2) / norm
     term_1 = 1 / (2 * n_samples) * torch.sum(term_1**2, dim=(1, 2))
 

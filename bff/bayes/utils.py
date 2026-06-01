@@ -278,10 +278,16 @@ def find_map(
     optimizer = torch.optim.SGD([x0], lr=lr_opt)
     iter_width = len(str(max_iter))
     tol_grad_text = f"{tol_grad:g}"
+    best_value = -torch.inf
+    best_x = x0.detach().clone()
 
     for i in range(max_iter):
         optimizer.zero_grad()
         loss = -fn(x0)
+        value = -loss.detach()
+        if torch.isfinite(value) and value > best_value:
+            best_value = value
+            best_x = x0.detach().clone()
         loss.backward()
         grad_norm = x0.grad.norm().item()
         if i % 100 == 0 and logger is not None:
@@ -308,7 +314,7 @@ def find_map(
                 level=2,
             )
 
-    return x0.detach()
+    return best_x
 
 
 def laplace_approximation(

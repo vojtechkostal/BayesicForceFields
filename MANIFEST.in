@@ -1,0 +1,9 @@
+include CHANGELOG.md
+include CITATION.cff
+include CODE_OF_CONDUCT.md
+include CONTRIBUTING.md
+include SECURITY.md
+include SUPPORT.md
+include mkdocs.yml
+recursive-include docs *.md *.pdf *.svg
+recursive-include tests *.py

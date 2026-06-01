@@ -10,6 +10,27 @@ strict: true
 
 theme:
   name: material
+  logo: assets/bff-logo.svg
+  favicon: assets/bff-logo.svg
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: blue grey
+      accent: red
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: blue grey
+      accent: red
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
   features:
     - navigation.sections
     - navigation.expand
@@ -23,7 +44,11 @@ markdown_extensions:
   - toc:
       permalink: true
   - pymdownx.details
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
 
 plugins:
   - search
@@ -31,6 +56,8 @@ plugins:
 nav:
   - Home: index.md
   - Installation: installation.md
+  - Architecture: architecture.md
+  - Changelog: changelog.md
   - CLI: cli.md
   - Configuration:
       - Build: configuration/build.md
@@ -41,6 +68,9 @@ nav:
       - Fit: configuration/fit.md
       - Learn: configuration/learn.md
       - Validate: configuration/validate.md
-  - Example:
-      - Acetate: examples/acetate.md
+  - Examples:
+      - Overview: examples/index.md
+      - Full MD Workflow: examples/acetate.md
+      - Existing Tabular Data: examples/arbitrary-data.md
+      - Neon RDF Inference: examples/neon-mie-lgpmd.md
   - Development: development.md

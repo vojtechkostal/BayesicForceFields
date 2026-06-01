@@ -1,13 +1,13 @@
 """Workflow entry point for posterior-sample validation campaigns."""
 
 from ...io.logs import Logger
-from .config import ValidateConfig
 from .._shared.campaign import (
     load_parameter_samples,
     print_validate_summary,
     run_campaign,
     stage_campaign,
 )
+from .config import ValidateConfig
 
 
 def main(fn_config: str) -> None:

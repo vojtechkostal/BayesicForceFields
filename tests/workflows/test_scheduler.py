@@ -25,6 +25,23 @@ def test_get_job_state_counts_splits_slurm_states(monkeypatch) -> None:
     }
 
 
+def test_get_job_state_counts_includes_last_line_without_newline(monkeypatch) -> None:
+    def fake_run(*args, **kwargs):
+        return SimpleNamespace(
+            stdout="101,R\n102,R",
+            stderr="",
+            returncode=0,
+        )
+
+    monkeypatch.setattr(scheduler.subprocess, "run", fake_run)
+
+    counts = scheduler.get_job_state_counts([101, 102], "slurm")
+
+    assert counts["active"] == 2
+    assert counts["running"] == 2
+    assert counts["finished"] == 0
+
+
 def test_wait_for_scheduler_slot_reports_counts(monkeypatch) -> None:
     calls = [
         {

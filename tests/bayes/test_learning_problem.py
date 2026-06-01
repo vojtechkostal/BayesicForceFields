@@ -8,6 +8,7 @@ from bff.bayes.learning import (
     LearningProblem,
     _default_checkpoint_path,
     _effective_observations,
+    _resolve_mean,
 )
 from bff.qoi.data import QoIDataset
 
@@ -104,3 +105,31 @@ def test_learning_helpers() -> None:
         values_per_label=2,
     )
     assert _effective_observations(dataset, 0.5) == 1
+
+
+def test_resolve_mean_accepts_vector_rdf_mean() -> None:
+    dataset = QoIDataset(
+        name="rdf",
+        inputs=np.zeros((2, 1)),
+        outputs=np.zeros((2, 3)),
+        outputs_ref=np.zeros(3),
+    )
+    mean = np.ones(3)
+
+    assert _resolve_mean(dataset, mean) is mean
+
+
+def test_resolve_mean_builds_sigmoid_for_concatenated_rdfs() -> None:
+    dataset = QoIDataset(
+        name="rdf",
+        inputs=np.zeros((2, 1)),
+        outputs=np.zeros((2, 6)),
+        outputs_ref=np.zeros(6),
+        settings={"n_bins": 3, "r_range": (0.0, 3.0)},
+    )
+
+    mean = _resolve_mean(dataset, "sigmoid")
+
+    assert mean.shape == (6,)
+    assert np.allclose(mean[:3], mean[3:])
+    assert np.all(np.diff(mean[:3]) > 0)

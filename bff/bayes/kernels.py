@@ -24,8 +24,8 @@ def gaussian_kernel(
         Length scale(s) for the kernel.
         Can be a single float or a tensor of shape (n_features,).
     width : Union[float, torch.Tensor]
-        Width scale(s) for the kernel.
-        Can be a single float or a tensor of shape (n_features,).
+        Width scale for the kernel.
+        Can be a single float or a tensor of shape (n_batches,).
     manual_sqdist : bool, optional
         If True, computes the squared distance manually.
         If False, uses `torch.cdist` for efficiency.
@@ -53,7 +53,7 @@ def gaussian_kernel(
 
     width = check_tensor(width, device=device)
     if width.dim() == 1:
-        width = width[None, :].to(device)
+        width = width[:, None, None]
 
     x1_scaled = x1 / lengths
     x2_scaled = x2 / lengths
@@ -66,6 +66,6 @@ def gaussian_kernel(
     else:
         sqdist = torch.cdist(x1_scaled, x2_scaled, p=2).pow(2)
 
-    kernel = width.pow(2).mean() * torch.exp(-0.5 * sqdist)
+    kernel = width.pow(2) * torch.exp(-0.5 * sqdist)
 
     return kernel.squeeze(0)
