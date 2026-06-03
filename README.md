@@ -41,6 +41,12 @@ mamba activate bfflearn
 pip install bfflearn
 ```
 
+For Jupyter notebooks, install the optional notebook tools:
+
+```bash
+pip install "bfflearn[notebook]"
+```
+
 > **WARNING:** GPU-enabled PyTorch must be installed separately. Use the
 > [official PyTorch installation selector](https://pytorch.org/get-started/locally/)
 > to choose the command matching your CUDA version before running fitting,

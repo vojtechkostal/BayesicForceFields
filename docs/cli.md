@@ -47,19 +47,21 @@ Detailed key-by-key documentation is in the configuration reference.
 
 ## Shell Completion
 
-When `bff` runs inside an activated conda environment, it writes a small
-completion hook for bash and zsh into that environment. The hook is deliberately
-minimal: `bff <TAB>` shows the public workflows and completes config-file
-arguments for commands that expect a path.
-
-After the first `bff` run, reactivate the environment once:
+`bff` uses Typer's native shell-completion support. To enable completion in the
+current bash session, run:
 
 ```bash
-conda deactivate
-conda activate bfflearn
+eval "$(bff --show-completion bash)"
 ```
 
-After that, `bff <TAB>` should offer:
+For zsh, run:
+
+```zsh
+eval "$(bff --show-completion zsh)"
+```
+
+Add the matching line to `~/.bashrc` or `~/.zshrc` if you want completion in
+future shells. After completion is loaded, `bff <TAB>` should offer:
 
 - `build`
 - `prepare-assets`

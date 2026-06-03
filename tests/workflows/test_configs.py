@@ -116,6 +116,39 @@ def test_build_config_loads_minimal_config(tmp_path: Path) -> None:
     assert len(config.systems) == 1
 
 
+def test_build_config_defaults_missing_templates_to_empty_mapping(tmp_path: Path) -> None:
+    topology = _write(tmp_path / "system.top")
+    mdp_em = _write(tmp_path / "em.mdp")
+    mdp_npt = _write(tmp_path / "npt.mdp")
+    mdp_prod = _write(tmp_path / "prod.mdp")
+
+    fn_config = tmp_path / "build.yaml"
+    fn_config.write_text(
+        yaml.safe_dump(
+            {
+                "project": "./project",
+                "gromacs": {"command": "gmx"},
+                "systems": [
+                    {
+                        "topology": str(topology),
+                        "charge": 0,
+                        "multiplicity": 1,
+                        "mdp": {
+                            "em": str(mdp_em),
+                            "npt": str(mdp_npt),
+                            "prod": str(mdp_prod),
+                        },
+                    }
+                ],
+            }
+        )
+    )
+
+    config = BuildConfig.load(fn_config)
+
+    assert config.systems[0].templates == {}
+
+
 def test_prepare_assets_config_loads_manifest(tmp_path: Path) -> None:
     fn_manifest = _make_build_manifest(tmp_path / "project")
     fn_config = tmp_path / "prepare-assets.yaml"

@@ -67,7 +67,7 @@ BayesicForceFields/
 | `bff.bayes` | Local Gaussian-process surrogates, kernels, means, likelihoods, priors, posterior learning, and result handling. |
 | `bff.mcmc` | Torch-native Metropolis-Hastings sampling, adaptive proposals, checkpoints, restart support, and convergence diagnostics. |
 | `bff.plotting` | Posterior and surrogate visualization. |
-| `bff.tools`, `bff.data` | Small shared numerical helpers and built-in structural data. |
+| `bff.tools` | Small shared numerical helpers. |
 
 ## Workflow Stages
 

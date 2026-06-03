@@ -20,6 +20,12 @@ The fitting and learning cells use CUDA by default.
 
 ## Run
 
+Install the optional notebook tools once:
+
+```bash
+pip install "bfflearn[notebook]"
+```
+
 Start Jupyter from this directory and run `neon-mie-inference.ipynb` from top
 to bottom:
 

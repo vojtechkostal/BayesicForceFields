@@ -19,6 +19,12 @@ The fitting and learning cells use CUDA by default.
 
 ## Run
 
+Install the optional notebook tools once:
+
+```bash
+pip install "bfflearn[notebook]"
+```
+
 ```bash
 cd examples/neon-mie-lgpmd
 jupyter lab
