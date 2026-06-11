@@ -10,6 +10,42 @@ if TYPE_CHECKING:
     from .learning import LearningProblem
 
 
+def _split_parameters_and_sigmas(
+    theta: torch.Tensor,
+    problem: LearningProblem,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return explicit parameters and one scalar nuisance per QoI."""
+    n_params = problem.n_params
+    params = theta[:, :n_params]
+    nuisance_free = theta[:, n_params:]
+
+    sigma_columns = []
+    j = 0
+    for model in problem.models.values():
+        if model.nuisance is None:
+            sigma_columns.append(nuisance_free[:, j].exp())
+            j += 1
+        else:
+            sigma_columns.append(
+                torch.full(
+                    (len(theta),),
+                    float(model.nuisance),
+                    device=theta.device,
+                    dtype=theta.dtype,
+                )
+            )
+    return params, torch.stack(sigma_columns, dim=1)
+
+
+def _valid_parameter_mask(
+    params: torch.Tensor,
+    problem: LearningProblem,
+) -> torch.Tensor:
+    if problem.constraint is None:
+        return torch.ones(len(params), dtype=bool, device=params.device)
+    return problem.constraint(params)
+
+
 def loo_log_likelihood(
     theta: torch.Tensor, X: torch.Tensor, y: torch.Tensor
 ) -> torch.Tensor:
@@ -103,50 +139,37 @@ def gaussian_log_likelihood(
         Log likelihood for each sample in `theta`, shape (n_samples,).
     """
 
-    # Assign device
-    device = theta.device
+    contributions = gaussian_log_likelihood_by_qoi(theta, problem)
+    return torch.stack(tuple(contributions.values())).sum(dim=0)
 
-    # Split the theta into parameters and nuisances
-    n_params = problem.n_params
-    params = theta[:, :n_params]
-    nuisance_free = theta[:, n_params:]
 
-    sigma_columns = []
-    j = 0
-    for model in problem.models.values():
-        if model.nuisance is None:
-            sigma_columns.append(nuisance_free[:, j].exp())
-            j += 1
-        else:
-            sigma_columns.append(
-                torch.full(
-                    (len(theta),),
-                    float(model.nuisance),
-                    device=device,
-                    dtype=theta.dtype,
-                )
-            )
-    sigmas = torch.stack(sigma_columns, dim=1)
-
-    # Check if the parameters are within the valid bounds
-    if problem.constraint is not None:
-        mask = problem.constraint(params)
-    else:
-        mask = torch.ones(len(theta), dtype=bool, device=device)
+def gaussian_log_likelihood_by_qoi(
+    theta: torch.Tensor,
+    problem: LearningProblem,
+) -> dict[str, torch.Tensor]:
+    """Compute one Gaussian log-likelihood contribution per QoI."""
+    params, sigmas = _split_parameters_and_sigmas(theta, problem)
+    mask = _valid_parameter_mask(params, problem)
     params = params[mask]
     sigmas = sigmas[mask]
 
-    # Compute the log-likelihod
-    log_likelihood = torch.full((len(theta), ), -torch.inf, device=device)
-    if mask.any():
-        log_like_valid = torch.zeros(mask.sum(), device=device)
-        for (qoi, model), sigma in zip(problem.models.items(), sigmas.T):
+    contributions = {}
+    for (qoi, model), sigma in zip(problem.models.items(), sigmas.T):
+        contribution = torch.full(
+            (len(theta),),
+            -torch.inf,
+            device=theta.device,
+            dtype=theta.dtype,
+        )
+        if mask.any():
             y_trial = model.predict(params)
-            N = model.n_observations
             diff = problem.observations[qoi] - y_trial
-            ssq = torch.sum(diff**2, dim=1)
-            log_like_valid += -0.5 * ssq / sigma**2 - N * torch.log(sigma)
+            mse = torch.mean(diff**2, dim=1)
+            n_eff = float(model.n_eff)
+            contribution[mask] = (
+                -0.5 * n_eff * mse / sigma**2
+                - n_eff * torch.log(sigma)
+            )
+        contributions[qoi] = contribution
 
-        log_likelihood[mask] = log_like_valid
-
-    return log_likelihood
+    return contributions

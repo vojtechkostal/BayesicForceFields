@@ -37,9 +37,6 @@ def main(fn_config: PathLike) -> None:
     datasets = _load_datasets(config)
     model_paths = {dataset.name: dataset.fn_model for dataset in config.datasets}
     y_means = {dataset.name: dataset.mean for dataset in config.datasets}
-    observation_scales = {
-        dataset.name: dataset.observation_scale for dataset in config.datasets
-    }
 
     config.fit.model_dir.mkdir(parents=True, exist_ok=True)
 
@@ -61,7 +58,6 @@ def main(fn_config: PathLike) -> None:
     fit_surrogates(
         datasets,
         y_means=y_means,
-        observation_scales=observation_scales,
         model_paths=model_paths,
         reuse_models=config.fit.reuse_models,
         n_hyper_max=config.fit.n_hyper_max,

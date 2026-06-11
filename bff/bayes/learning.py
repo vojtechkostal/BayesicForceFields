@@ -78,20 +78,6 @@ class LearningProblem:
                 + ", ".join(sorted(inconsistent_inputs))
             )
 
-        model_input_shapes = {
-            qoi: tuple(int(dim) for dim in model.lgps[0].X_train.shape)
-            for qoi, model in self.models.items()
-        }
-        if len(set(model_input_shapes.values())) != 1:
-            shape_summary = ", ".join(
-                f"{qoi}={shape}"
-                for qoi, shape in sorted(model_input_shapes.items())
-            )
-            raise ValueError(
-                "All surrogate models must expect the same training input shape. "
-                f"Found: {shape_summary}"
-            )
-
         n_params = {model.n_params for model in self.models.values()}
         if len(n_params) != 1:
             raise ValueError("All surrogate models must have the same input dimension.")
@@ -112,6 +98,17 @@ class LearningProblem:
             raise ValueError(
                 "Models with incompatible reference output size: "
                 + ", ".join(sorted(invalid))
+            )
+
+        invalid_curve_schema = []
+        for qoi, model in self.models.items():
+            n_curves = int(getattr(model, "n_curves", 0))
+            if n_curves <= 0 or model.reference_values.size % n_curves != 0:
+                invalid_curve_schema.append(qoi)
+        if invalid_curve_schema:
+            raise ValueError(
+                "Models with incompatible n_curves metadata: "
+                + ", ".join(sorted(invalid_curve_schema))
             )
 
     @property
@@ -306,8 +303,8 @@ def fit_lgp_committee(
     test_fraction: float,
     n_hyper: int,
     committee: int,
-    n_observations: int,
     reference_values: np.ndarray,
+    n_curves: int,
     nuisance: float | None,
     fn_out: PathLike | None,
     device: str,
@@ -395,10 +392,10 @@ def fit_lgp_committee(
         logger.status("Committee", f"{i}/{committee}", level=2, overwrite=True)
 
     lgp_committee = LGPCommittee(
-        lgps,
-        n_observations,
-        reference_values,
-        nuisance,
+        lgps=lgps,
+        reference_values=reference_values,
+        n_curves=n_curves,
+        nuisance=nuisance,
     )
     lgp_committee.validate(X_test, y_test)
     logger.done(
@@ -413,20 +410,11 @@ def fit_lgp_committee(
     return lgp_committee
 
 
-def _effective_observations(
-    dataset: QoIDataset,
-    observation_scale: float = 1.0,
-) -> int:
-    """Return the effective observation count used in the likelihood term."""
-    return max(1, int(round(dataset.n_observations * float(observation_scale))))
-
-
 def fit_surrogates(
     datasets: Sequence[QoIDataset],
     *,
     y_means: Optional[Mapping[str, MeanFunction | str]] = None,
     hyperpriors: Optional[Mapping[str, Priors | Sequence]] = None,
-    observation_scales: Optional[Mapping[str, float]] = None,
     model_paths: Optional[Mapping[str, PathLike | None]] = None,
     reuse_models: bool = True,
     n_hyper_max: int = 200,
@@ -441,7 +429,6 @@ def fit_surrogates(
     logger = logger or Logger("fit")
     y_means = dict(y_means or {})
     hyperpriors = dict(hyperpriors or {})
-    observation_scales = dict(observation_scales or {})
     model_paths = dict(model_paths or {})
 
     if owns_logger:
@@ -456,10 +443,6 @@ def fit_surrogates(
             )
 
         qoi = dataset.name
-        n_observations = _effective_observations(
-            dataset,
-            observation_scales.get(qoi, 1.0),
-        )
         logger.info(f"QoI {qoi}", level=1)
 
         fn_model_raw = model_paths.get(qoi)
@@ -469,19 +452,20 @@ def fit_surrogates(
 
         if reuse_models and fn_model is not None and fn_model.exists():
             models[qoi] = LGPCommittee.load(fn_model)
-            models[qoi].n_observations = n_observations
             models[qoi].reference_values = np.asarray(
                 dataset.outputs_ref,
                 dtype=float,
             ).reshape(-1)
+            models[qoi].n_eff = float(models[qoi].reference_values.size)
+            models[qoi].n_curves = dataset.n_curves
             if models[qoi].reference_values.size != models[qoi].y_size:
                 raise ValueError(
                     f"Cached surrogate for {qoi!r} is incompatible with the "
                     "current reference observation size."
                 )
+            models[qoi].write(fn_model)
             logger.info(
-                f"Using cached surrogate model. | obs = {n_observations} "
-                f"| MAPE = {models[qoi].error:.2f}",
+                f"Using cached surrogate model. | MAPE = {models[qoi].error:.2f}",
                 level=2,
             )
             logger.blank()
@@ -494,8 +478,8 @@ def fit_surrogates(
             test_fraction=test_fraction,
             n_hyper=n_hyper_max,
             committee=committee_size,
-            n_observations=n_observations,
             reference_values=dataset.outputs_ref,
+            n_curves=dataset.n_curves,
             nuisance=dataset.nuisance,
             fn_out=fn_model,
             device=device,
@@ -503,7 +487,6 @@ def fit_surrogates(
             opt_kwargs=opt_kwargs,
             hyperpriors=hyperpriors.get(qoi),
         )
-        logger.kv("Effective observations", n_observations, level=2)
         logger.blank()
 
     return models

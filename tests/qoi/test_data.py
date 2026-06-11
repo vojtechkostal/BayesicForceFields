@@ -41,7 +41,8 @@ def test_qoi_dataset_validates_shapes_and_round_trips_file(tmp_path: Path) -> No
     )
 
     assert dataset.n_samples == 3
-    assert dataset.n_observations == 2
+    assert dataset.n_curves == 2
+    assert dataset.curve_length == 2
 
     path = tmp_path / "dataset.pt"
     dataset.write(path)
@@ -51,6 +52,38 @@ def test_qoi_dataset_validates_shapes_and_round_trips_file(tmp_path: Path) -> No
     assert loaded.labels == dataset.labels
     assert loaded.nuisance == 0.5
     assert np.allclose(loaded.outputs_ref, dataset.outputs_ref)
+
+
+def test_qoi_dataset_counts_labeled_curves() -> None:
+    dataset = QoIDataset(
+        name="rdf",
+        inputs=np.zeros((2, 1)),
+        outputs=np.zeros((2, 8)),
+        outputs_ref=np.zeros(8),
+        labels=(
+            "window-000:OC",
+            "window-001:OC",
+            "window-000:CC",
+            "window-001:CC",
+        ),
+        values_per_label=2,
+    )
+
+    assert dataset.n_curves == 4
+    assert dataset.curve_length == 2
+
+
+def test_qoi_dataset_counts_unlabeled_curves_from_values_per_label() -> None:
+    dataset = QoIDataset(
+        name="pmf",
+        inputs=np.zeros((2, 1)),
+        outputs=np.zeros((2, 40)),
+        outputs_ref=np.zeros(40),
+        values_per_label=20,
+    )
+
+    assert dataset.n_curves == 2
+    assert dataset.curve_length == 20
 
 
 def test_qoi_dataset_rejects_inconsistent_shapes() -> None:

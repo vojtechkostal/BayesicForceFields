@@ -166,10 +166,10 @@ class LGPCommittee:
     ----------
     lgps : list of LocalGaussianProcess
         List of LGP models.
-    n_observations : int
-        Effective number of observations used in the likelihood term.
     reference_values : np.ndarray
         Reference observation vector matched by the surrogate outputs.
+    n_curves : int
+        Number of curves represented by the flattened reference vector.
     nuisance : float, optional
         Nuisance parameter for model selection (default is None).
     stochastic : bool, optional
@@ -195,21 +195,28 @@ class LGPCommittee:
     def __init__(
         self,
         lgps: list[LocalGaussianProcess],
-        n_observations: int,
         reference_values: np.ndarray,
+        n_curves: int,
         nuisance: float | None = None,
         stochastic: bool = False
     ) -> None:
         self.lgps = lgps
         self.error: float | None = None
-        self.n_observations = int(n_observations)
         self.reference_values = np.asarray(reference_values, dtype=float).reshape(-1)
+        self.n_curves = int(n_curves)
+        self.n_eff = float(self.reference_values.size)
         self.nuisance = nuisance
         self.stochastic = stochastic
 
         if self.reference_values.size != self.lgps[0].y_size:
             raise ValueError(
                 "Reference observation size does not match surrogate output size."
+            )
+        if self.n_curves <= 0:
+            raise ValueError("'n_curves' must be a positive integer.")
+        if self.reference_values.size % self.n_curves != 0:
+            raise ValueError(
+                "Reference observation size must be divisible by 'n_curves'."
             )
 
     @property
@@ -223,6 +230,10 @@ class LGPCommittee:
     @property
     def y_size(self) -> int:
         return self.lgps[0].y_size
+
+    @property
+    def curve_length(self) -> int:
+        return int(self.reference_values.size // self.n_curves)
 
     def predict(self, X: torch.Tensor) -> torch.Tensor:
         """
@@ -272,11 +283,17 @@ class LGPCommittee:
     @classmethod
     def load(cls: type[LGPCommitteeT], fn: PathLike) -> LGPCommitteeT:
         state = torch.load(fn, weights_only=False)
+        if "n_curves" not in state:
+            raise ValueError(
+                "This surrogate model predates BFF 0.3.0 and does not contain "
+                "reference-curve metadata. Refit the model before learning."
+            )
         lgps = [LocalGaussianProcess(**lgp_state) for lgp_state in state["lgps"]]
+        reference_values = np.asarray(state["reference_values"], dtype=float)
         committee = cls(
             lgps=lgps,
-            n_observations=state["n_observations"],
-            reference_values=np.asarray(state["reference_values"], dtype=float),
+            reference_values=reference_values,
+            n_curves=int(state["n_curves"]),
             nuisance=state["nuisance"],
             stochastic=state["stochastic"],
         )
@@ -286,8 +303,8 @@ class LGPCommittee:
     def write(self, fn_out: PathLike) -> None:
 
         state = {
-            "n_observations": self.n_observations,
             "reference_values": self.reference_values.tolist(),
+            "n_curves": self.n_curves,
             "nuisance": self.nuisance,
             "stochastic": self.stochastic,
             "error": self.error,

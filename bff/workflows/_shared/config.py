@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, Mapping, Optional, Union
+from typing import Any, Literal, Optional, Union
 
 from ...domain.bias import BiasSpec
 from ...io.utils import load_yaml
@@ -109,27 +109,6 @@ def _validate_bounds(bounds: Any) -> dict[str, tuple[float, float]]:
             )
         normalized[name] = (lower, upper)
     return normalized
-
-
-def _load_model_paths(
-    base_dir: Path,
-    models_raw: Any,
-) -> dict[str, Path]:
-    if not isinstance(models_raw, Mapping) or not models_raw:
-        raise ValueError("'models' must be a non-empty mapping.")
-
-    models: dict[str, Path] = {}
-    for name, path in models_raw.items():
-        if not isinstance(name, str):
-            raise ValueError("Model names in 'models' must be strings.")
-        if not isinstance(path, (str, Path)):
-            raise ValueError(f"Model path for {name!r} must be a file path.")
-        models[name] = _resolve_path(
-            base_dir,
-            path,
-            kind=f"model file for {name!r}",
-        )
-    return models
 
 
 @dataclass(frozen=True)

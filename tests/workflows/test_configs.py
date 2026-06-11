@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 import yaml
 
 from bff.workflows.analyze.config import AnalyzeConfig
@@ -116,7 +117,9 @@ def test_build_config_loads_minimal_config(tmp_path: Path) -> None:
     assert len(config.systems) == 1
 
 
-def test_build_config_defaults_missing_templates_to_empty_mapping(tmp_path: Path) -> None:
+def test_build_config_defaults_missing_templates_to_empty_mapping(
+    tmp_path: Path,
+) -> None:
     topology = _write(tmp_path / "system.top")
     mdp_em = _write(tmp_path / "em.mdp")
     mdp_npt = _write(tmp_path / "npt.mdp")
@@ -254,7 +257,29 @@ def test_fit_config_loads_minimal_config(tmp_path: Path) -> None:
     assert config.datasets[0].fn_model == (tmp_path / "models" / "rdf.lgp").resolve()
 
 
-def test_learn_config_loads_minimal_config(tmp_path: Path) -> None:
+def test_fit_config_rejects_observation_scale(tmp_path: Path) -> None:
+    data = _write(tmp_path / "dataset.pt")
+
+    fn_config = tmp_path / "fit.yaml"
+    fn_config.write_text(
+        yaml.safe_dump(
+            {
+                "datasets": {
+                    "rdf": {
+                        "data": str(data),
+                        "observation_scale": 2.0,
+                    }
+                },
+                "fit": {"model_dir": "./models", "device": "cpu"},
+            }
+        )
+    )
+
+    with pytest.raises(ValueError, match="observation_scale"):
+        FitConfig.load(fn_config)
+
+
+def test_learn_config_loads_effective_observation_modes(tmp_path: Path) -> None:
     specs = _write(tmp_path / "specs.yaml")
     model = _write(tmp_path / "model.lgp")
 
@@ -263,8 +288,24 @@ def test_learn_config_loads_minimal_config(tmp_path: Path) -> None:
         yaml.safe_dump(
             {
                 "specs": str(specs),
-                "models": {"rdf": str(model)},
-                "mcmc": {"posterior": "./posterior.pt", "device": "cpu"},
+                "models": {
+                    "rdf": {
+                        "model_path": str(model),
+                        "tolerance": 0.1,
+                    },
+                    "density": {
+                        "model_path": str(model),
+                        "independent_observations": True,
+                    },
+                    "pmf": {
+                        "model_path": str(model),
+                        "n_eff": 2.5,
+                    },
+                },
+                "mcmc": {
+                    "posterior": "./posterior.pt",
+                    "device": "cpu",
+                },
             }
         )
     )
@@ -272,8 +313,136 @@ def test_learn_config_loads_minimal_config(tmp_path: Path) -> None:
     config = LearnConfig.load(fn_config)
 
     assert config.specs == specs.resolve()
-    assert config.models["rdf"] == model.resolve()
+    assert config.models["rdf"].model_path == model.resolve()
+    assert config.models["rdf"].independent_observations is False
+    assert config.models["rdf"].n_eff is None
+    assert config.models["rdf"].tolerance == 0.1
+    assert config.models["density"].independent_observations is True
+    assert config.models["density"].n_eff is None
+    assert config.models["density"].tolerance is None
+    assert config.models["pmf"].n_eff == 2.5
     assert config.mcmc.posterior == (tmp_path / "posterior.pt").resolve()
+
+
+def test_learn_config_rejects_obsolete_effective_observation_keys(
+    tmp_path: Path,
+) -> None:
+    specs = _write(tmp_path / "specs.yaml")
+    model = _write(tmp_path / "model.lgp")
+    fn_config = tmp_path / "learn.yaml"
+    fn_config.write_text(
+        yaml.safe_dump(
+            {
+                "specs": str(specs),
+                "models": {
+                    "rdf": {
+                        "model_path": str(model),
+                        "infer_effective_observations": True,
+                        "tolerance": 0.1,
+                    }
+                },
+                "mcmc": {},
+            }
+        )
+    )
+
+    with pytest.raises(ValueError, match="unsupported keys"):
+        LearnConfig.load(fn_config)
+
+
+def test_learn_config_rejects_ambiguous_effective_observations(
+    tmp_path: Path,
+) -> None:
+    specs = _write(tmp_path / "specs.yaml")
+    model = _write(tmp_path / "model.lgp")
+    fn_config = tmp_path / "learn.yaml"
+    fn_config.write_text(
+        yaml.safe_dump(
+            {
+                "specs": str(specs),
+                "models": {
+                    "density": {
+                        "model_path": str(model),
+                        "independent_observations": True,
+                        "n_eff": 4,
+                    }
+                },
+                "mcmc": {},
+            }
+        )
+    )
+
+    with pytest.raises(ValueError, match="cannot combine"):
+        LearnConfig.load(fn_config)
+
+
+def test_learn_config_requires_tolerance_for_curve_model(
+    tmp_path: Path,
+) -> None:
+    specs = _write(tmp_path / "specs.yaml")
+    model = _write(tmp_path / "model.lgp")
+    fn_config = tmp_path / "learn.yaml"
+    fn_config.write_text(
+        yaml.safe_dump(
+            {
+                "specs": str(specs),
+                "models": {
+                    "rdf": {
+                        "model_path": str(model),
+                    }
+                },
+                "mcmc": {},
+            }
+        )
+    )
+
+    with pytest.raises(ValueError, match="must define 'tolerance'"):
+        LearnConfig.load(fn_config)
+
+
+@pytest.mark.parametrize(
+    ("models", "message"),
+    [
+        (
+            {
+                1: {
+                    "model_path": "model.lgp",
+                    "independent_observations": True,
+                }
+            },
+            "non-empty strings",
+        ),
+        (
+            {
+                "density": {
+                    "model_path": "model.lgp",
+                    "independent_observations": "false",
+                }
+            },
+            "must be a boolean",
+        ),
+    ],
+)
+def test_learn_config_validates_model_names_and_booleans(
+    tmp_path: Path,
+    models: dict,
+    message: str,
+) -> None:
+    _write(tmp_path / "specs.yaml")
+    _write(tmp_path / "model.lgp")
+    fn_config = tmp_path / "learn.yaml"
+    fn_config.write_text(
+        yaml.safe_dump(
+            {
+                "specs": "./specs.yaml",
+                "models": models,
+                "mcmc": {},
+            }
+        )
+    )
+
+    with pytest.raises(ValueError, match=message):
+        LearnConfig.load(fn_config)
 
 
 def test_md_job_config_loads_minimal_config(tmp_path: Path) -> None:
