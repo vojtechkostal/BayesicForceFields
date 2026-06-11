@@ -102,6 +102,9 @@ Builtin routines currently live in:
 - `bff/qoi/rdf.py`
 - `bff/qoi/hbonds.py`
 
+Builtin RDF and hydrogen-bond routines analyze the selected trajectory slice
+directly; they do not perform block averaging internally.
+
 ## `run` Keys
 
 - `in_memory`

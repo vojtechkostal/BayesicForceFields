@@ -38,9 +38,10 @@ demonstrates the complete data-facing workflow:
 3. construct and write a BFF `QoIDataset`;
 4. build and validate a local Gaussian-process surrogate with a notebook-local
    Mie PMF mean;
-5. infer the Mie potential parameters and RDF discrepancy;
-6. report the inferred Mie parameters in physical units;
-7. plot the posterior and inferred RDF.
+5. estimate the effective number of resolved RDF features;
+6. infer the Mie potential parameters and RDF discrepancy;
+7. report the inferred Mie parameters in physical units;
+8. plot the posterior, QoI-attributed marginals, and inferred RDF.
 
 The RDF discrepancy is learned because the source data do not provide an
 experimental uncertainty. The callable PMF mean stays inside the notebook
@@ -49,6 +50,8 @@ because it is specific to this Mie-potential example.
 The copied-file inventory, source commit, article citation, and upstream
 license are recorded in [SOURCE.md][neon-source]. All notebook-generated files
 are written under `generated/`.
+The notebook writes `generated/qoi-marginals.pdf`; with one RDF QoI its
+posterior filling has a single attribution color.
 
 [neon-root]: https://github.com/vojtechkostal/BayesicForceFields/tree/main/examples/neon-mie-lgpmd
 [neon-source]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/neon-mie-lgpmd/SOURCE.md

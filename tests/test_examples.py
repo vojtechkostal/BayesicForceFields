@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
 from bff.workflows import examples as examples_workflow
 
@@ -32,6 +33,31 @@ def test_notebook_examples_use_cuda_by_default() -> None:
     for notebook in NOTEBOOKS:
         source = notebook.read_text()
         assert "device='cuda'" in source or 'device=\\"cuda\\"' in source
+
+
+def test_notebook_examples_write_qoi_marginals() -> None:
+    for notebook in NOTEBOOKS:
+        source = notebook.read_text()
+        assert "gaussian_log_likelihood_by_qoi" in source
+        assert "plot_qoi_marginals" in source
+        assert "qoi-marginals.pdf" in source
+
+
+def test_acetate_configs_use_current_effective_observation_schema() -> None:
+    fit = yaml.safe_load((EXAMPLES / "acetate/configs/fit.yaml").read_text())
+    learn = yaml.safe_load((EXAMPLES / "acetate/configs/learn.yaml").read_text())
+
+    assert all(
+        "observation_scale" not in dataset
+        for dataset in fit["datasets"].values()
+    )
+    assert learn["models"]["rdf"]["tolerance"] > 0
+    assert learn["models"]["hb"]["independent_observations"] is True
+    assert learn["models"]["dist"]["tolerance"] > 0
+    assert all(
+        "model_path" in model
+        for model in learn["models"].values()
+    )
 
 
 def test_neon_notebook_uses_local_pmf_mean() -> None:

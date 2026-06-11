@@ -14,6 +14,10 @@ molecular force-field parameters from molecular-dynamics observables. It
 coordinates simulation campaigns, trajectory analysis, surrogate fitting, and
 Bayesian posterior learning.
 
+Posterior learning supports explicit or data-derived effective observation
+counts for scalar and curve-valued observables. It also writes QoI-attributed
+marginals that show which observables support different posterior regions.
+
 Full documentation:
 [vojtechkostal.github.io/BayesicForceFields](https://vojtechkostal.github.io/BayesicForceFields/)
 

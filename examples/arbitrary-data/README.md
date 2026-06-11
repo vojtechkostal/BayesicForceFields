@@ -38,7 +38,8 @@ The notebook:
 2. converts each observable into a BFF `QoIDataset`;
 3. fits one local Gaussian-process surrogate per observable;
 4. learns the posterior distribution of `epsilon O` and `sigma O`;
-5. writes the posterior summary and plots.
+5. writes the posterior summary, standard marginals, and
+   `qoi-marginals.pdf`.
 
 Generated datasets, models, posterior files, logs, and plots are written under
 `generated/` and ignored by git.
