@@ -16,6 +16,12 @@ The fitting and learning cells use CUDA by default.
 
 ## Run
 
+Install the optional notebook tools once:
+
+```bash
+pip install "bfflearn[notebook]"
+```
+
 ```bash
 cd examples/arbitrary-data
 jupyter lab
@@ -28,10 +34,12 @@ demonstrates the complete data-facing workflow:
 2. construct and write one `QoIDataset` per observable;
 3. fit local Gaussian-process surrogate models;
 4. build a constrained `LearningProblem`;
-5. sample the posterior and write summary plots.
+5. sample the posterior and write standard and QoI-attributed marginal plots.
 
 The generated `qoi-*.pt` datasets can also be passed to `bff fit`. All
 notebook-generated files are written under `generated/`.
+The plot `generated/qoi-marginals.pdf` colors each posterior marginal by the
+local contribution from density, enthalpy of vaporization, and diffusion.
 
 ## Input Tables
 

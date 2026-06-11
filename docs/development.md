@@ -100,7 +100,7 @@ For a citable BFF release:
 2. Reserve a version-specific Zenodo DOI if the release needs an archival DOI.
 3. Run the test suite, lint checks, package build, and strict documentation
    build in CI.
-4. Merge the release branch into `main` and create a signed `vX.Y.Z` tag.
+4. Merge the release branch into `main` and create an annotated `vX.Y.Z` tag.
 5. Publish the GitHub release from that tag. The release workflow builds,
    verifies, and publishes the distributions through PyPI trusted publishing.
 6. Archive the tagged release in Zenodo and record its version-specific DOI

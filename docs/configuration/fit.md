@@ -45,8 +45,6 @@ fit:
   pass a callable mean.
 - `nuisance`
   Optional fixed nuisance standard deviation.
-- `observation_scale`
-  Optional scaling applied to the effective observation count in the likelihood.
 - `model`
   Optional model output path. Defaults to `fit.model_dir/<name>.lgp`.
 
@@ -70,5 +68,10 @@ fit:
 ## Outputs
 
 `bff fit` writes one `.lgp` file per QoI.
-Each model file stores the trained committee together with the reference values
-and effective observation count needed later by `bff learn`.
+Each model file stores the trained committee together with the reference values,
+and the number of reference curves. `bff learn` assigns the effective
+observation count from its model configuration.
+
+!!! warning
+    Models written before BFF 0.3.0 do not contain the required curve metadata.
+    Refit existing QoI datasets before using them with BFF 0.3.0.

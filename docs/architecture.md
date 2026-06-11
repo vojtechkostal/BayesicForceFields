@@ -67,7 +67,7 @@ BayesicForceFields/
 | `bff.bayes` | Local Gaussian-process surrogates, kernels, means, likelihoods, priors, posterior learning, and result handling. |
 | `bff.mcmc` | Torch-native Metropolis-Hastings sampling, adaptive proposals, checkpoints, restart support, and convergence diagnostics. |
 | `bff.plotting` | Posterior and surrogate visualization. |
-| `bff.tools`, `bff.data` | Small shared numerical helpers and built-in structural data. |
+| `bff.tools` | Small shared numerical helpers. |
 
 ## Workflow Stages
 
@@ -79,7 +79,7 @@ BayesicForceFields/
 | `bff sample` | FFMD assets, parameter bounds, and charge constraints | Draw parameter vectors and run sampled GROMACS campaigns. | `specs.yaml`, `samples.yaml`, and sampled trajectories |
 | `bff analyze` | Sampled and reference trajectories | Compute matching quantities of interest. | One serialized `QoIDataset` per quantity of interest |
 | `bff fit` | QoI datasets | Train local Gaussian-process surrogate committees. | One `.lgp` model per quantity of interest |
-| `bff learn` | Surrogate models and `specs.yaml` | Run posterior learning with the Torch-native MCMC stack. | Posterior chain, optional checkpoint and priors, and plots |
+| `bff learn` | Surrogate models and `specs.yaml` | Assign effective observation counts and run posterior learning with the Torch-native MCMC stack. | Posterior chain, optional checkpoint and priors, parameter marginals, QoI-attributed marginals, and corner plot |
 | `bff validate` | Selected parameter samples, `specs.yaml`, and FFMD assets | Rerun chosen posterior samples as an independent campaign. | Validation trajectories and energies |
 
 ## Core Artifacts
@@ -93,6 +93,7 @@ BayesicForceFields/
 | `<name>.lgp` | Trained local Gaussian-process committee for one quantity of interest. |
 | `posterior.pt` | Learned posterior chain. |
 | `mcmc-checkpoint.pt` | Restartable MCMC state and convergence information. |
+| `qoi-marginals.pdf` | Posterior parameter marginals colored by local QoI responsibility. |
 
 ## Design Choices
 

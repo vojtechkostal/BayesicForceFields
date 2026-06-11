@@ -130,7 +130,7 @@ def _normalize_qoi_mapping(result: Mapping[str, Any]) -> dict[str, QoI]:
 
 @dataclass(frozen=True, slots=True)
 class RuntimeRoutine:
-    fn: Callable[..., Any]
+    routine: str
     options: dict[str, Any] = field(default_factory=dict)
 
 
@@ -228,7 +228,8 @@ def run_analysis_routines(
     """Run all configured routines for one trajectory and merge QoI outputs."""
     result: dict[str, QoI] = {}
     for routine in routines:
-        qoi_result = routine.fn(
+        fn = _load_routine(routine.routine)
+        qoi_result = fn(
             universe=universe,
             start=start,
             stop=stop,
@@ -262,9 +263,10 @@ def build_analysis_routines(
     for system in systems:
         runtime_routines: list[RuntimeRoutine] = []
         for routine in system:
+            _load_routine(routine.routine)
             runtime_routines.append(
                 RuntimeRoutine(
-                    fn=_load_routine(routine.routine),
+                    routine=routine.routine,
                     options=dict(routine.options),
                 )
             )

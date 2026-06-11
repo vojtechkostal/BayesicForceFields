@@ -5,7 +5,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from matplotlib.colors import ListedColormap
+from matplotlib.patches import Patch
 from matplotlib.ticker import MaxNLocator
+from scipy.special import softmax
 from scipy.stats import gaussian_kde
 
 from .bayes.results import PosteriorResults
@@ -242,6 +244,237 @@ def plot_marginals(
             ncol=3,
             frameon=False,
         )
+
+    if fn_out is not None:
+        plt.savefig(fn_out, bbox_inches="tight")
+        plt.close(fig)
+    else:
+        plt.show()
+
+
+def _local_qoi_responsibilities(
+    parameter: np.ndarray,
+    grid: np.ndarray,
+    standardized_log_likelihood: np.ndarray,
+    temperature: float,
+) -> np.ndarray:
+    bandwidth = gaussian_kde(parameter).factor * np.std(parameter)
+    bandwidth = max(bandwidth, np.ptp(parameter) / 100.0, 1e-8)
+    distance = (parameter[:, None] - grid[None, :]) / bandwidth
+    kernel = np.exp(-0.5 * distance**2)
+    local_scores = kernel.T @ standardized_log_likelihood
+    local_scores /= np.maximum(kernel.sum(axis=0)[:, None], 1e-12)
+
+    posterior_density = gaussian_kde(parameter)(grid)
+    baseline = np.average(local_scores, axis=0, weights=posterior_density)
+    return softmax((local_scores - baseline) / temperature, axis=1)
+
+
+def plot_qoi_marginals(
+    results: PosteriorResults,
+    specs: Specs | PathLike,
+    log_likelihood_by_qoi: Mapping[str, ArrayLike],
+    *,
+    parameter_labels: Optional[Sequence[str] | Mapping[str, str]] = None,
+    temperature: float = 0.7,
+    colors: Optional[Mapping[str, Any]] = None,
+    color_prior: str = "gray",
+    fn_out: Optional[PathLike] = None,
+) -> None:
+    """Plot contrastive QoI attribution within posterior marginals."""
+    if not np.isfinite(temperature) or temperature <= 0.0:
+        raise ValueError("temperature must be positive and finite.")
+    if not log_likelihood_by_qoi:
+        raise ValueError("log_likelihood_by_qoi must not be empty.")
+
+    specs = _coerce_specs(specs)
+    posterior = (
+        results.prepared_samples
+        if results.include_implicit_charge
+        else specs.with_implicit_charges(results.prepared_samples)
+    )
+    param_names = specs.bounds.names.tolist()
+    tick_labels = _parameter_labels(param_names, parameter_labels)
+    if parameter_labels is None:
+        tick_labels = [
+            label if label.startswith("$") else label.split(maxsplit=1)[-1]
+            for label in tick_labels
+        ]
+
+    qoi_names = list(log_likelihood_by_qoi)
+    log_likelihood = np.column_stack([
+        _coerce_samples(log_likelihood_by_qoi[qoi]).reshape(-1)
+        for qoi in qoi_names
+    ])
+    if log_likelihood.shape[0] != len(posterior):
+        raise ValueError(
+            "QoI log likelihoods must match the prepared posterior sample count."
+        )
+    if not np.all(np.isfinite(log_likelihood)):
+        raise ValueError("QoI log likelihoods must contain only finite values.")
+
+    centers = np.median(log_likelihood, axis=0)
+    scales = np.subtract(
+        *np.quantile(log_likelihood, [0.75, 0.25], axis=0)
+    )
+    fallback = np.std(log_likelihood, axis=0)
+    scales = np.where(scales > 1e-12, scales, fallback)
+    scales = np.where(scales > 1e-12, scales, 1.0)
+    standardized = (log_likelihood - centers) / scales
+
+    default_colors = plt.get_cmap("tab10").colors
+    qoi_colors = {
+        qoi: (
+            colors[qoi]
+            if colors is not None and qoi in colors
+            else default_colors[i % len(default_colors)]
+        )
+        for i, qoi in enumerate(qoi_names)
+    }
+
+    param_groups: dict[str, list[int]] = {}
+    for idx, name in enumerate(param_names):
+        param_groups.setdefault(name.split()[0], []).append(idx)
+
+    explicit_names = specs.explicit_bounds.names.tolist()
+    prior_index = {name: i for i, name in enumerate(explicit_names)}
+    show_prior = results.priors is not None
+
+    fig, axes = plt.subplots(
+        1,
+        len(param_groups),
+        figsize=(4 * len(param_groups), 3.2),
+        gridspec_kw={"wspace": 0.3},
+    )
+    axes = np.atleast_1d(axes)
+    profile_width = 1.2
+    prior_width = 0.7
+
+    for ax, (kind, indices) in zip(axes, param_groups.items()):
+        bounds_block = np.asarray(
+            [specs.bounds.by_name[param_names[i]] for i in indices],
+            dtype=float,
+        )
+        y_min = bounds_block[:, 0].min()
+        y_max = bounds_block[:, 1].max()
+        y_pad = max(0.05, 0.18 * (y_max - y_min))
+
+        for xpos, idx in enumerate(indices):
+            name = param_names[idx]
+            lower, upper = specs.bounds.by_name[name]
+            grid = np.linspace(lower, upper, 400)
+            values = posterior[:, idx]
+            density = gaussian_kde(values)(grid)
+            density /= max(float(density.max()), 1e-12)
+            responsibilities = _local_qoi_responsibilities(
+                values,
+                grid,
+                standardized,
+                temperature,
+            )
+
+            cumulative = np.zeros_like(grid)
+            for qoi_idx, qoi in enumerate(qoi_names):
+                next_cumulative = cumulative + responsibilities[:, qoi_idx]
+                ax.fill_betweenx(
+                    grid,
+                    xpos + profile_width * cumulative * density,
+                    xpos + profile_width * next_cumulative * density,
+                    color=qoi_colors[qoi],
+                    lw=0,
+                )
+                cumulative = next_cumulative
+
+            if show_prior and name in prior_index:
+                prior = results.priors.distributions[prior_index[name]]
+                prior_density = (
+                    prior.log_prob(torch.as_tensor(grid, dtype=torch.float32))
+                    .exp()
+                    .detach()
+                    .cpu()
+                    .numpy()
+                )
+                prior_density /= max(float(prior_density.max()), 1e-12)
+                ax.fill_betweenx(
+                    grid,
+                    xpos - prior_width * prior_density,
+                    xpos,
+                    color=color_prior,
+                    lw=0,
+                )
+
+            ax.plot(
+                xpos + profile_width * density,
+                grid,
+                color="k",
+                lw=1.5,
+            )
+            center = 0.5 * (lower + upper)
+            ax.errorbar(
+                xpos,
+                center,
+                yerr=[[center - lower], [upper - center]],
+                lw=2,
+                ls="",
+                capsize=4,
+                capthick=2,
+                markeredgewidth=2,
+                color="k",
+            )
+
+        ax.set_xlim(
+            -prior_width - 0.25,
+            len(indices) - 1 + profile_width + 0.25,
+        )
+        ax.set_ylim(y_min - y_pad, y_max + y_pad)
+        ax.set_xticks(range(len(indices)))
+        ax.set_xticklabels(
+            [_wrap_label(tick_labels[i]) for i in indices],
+            rotation=30,
+            ha="center",
+        )
+        xlabel, ylabel = _axis_labels(kind)
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        ax.tick_params(direction="in")
+
+    summary_handles = [
+        Patch(facecolor=color_prior, label="prior"),
+        plt.Line2D([0], [0], color="k", lw=1.5, label="posterior"),
+        axes[0].errorbar(
+            [np.nan],
+            [np.nan],
+            yerr=[[0.5], [0.5]],
+            color="k",
+            lw=2,
+            ls="",
+            capsize=4,
+            capthick=2,
+            label="bounds",
+        ),
+    ]
+    if not show_prior:
+        summary_handles = summary_handles[1:]
+    fig.legend(
+        handles=summary_handles,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.98),
+        ncol=len(summary_handles),
+        frameon=False,
+    )
+
+    qoi_handles = [
+        Patch(facecolor=qoi_colors[qoi], label=qoi)
+        for qoi in qoi_names
+    ]
+    fig.legend(
+        handles=qoi_handles,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.88),
+        ncol=len(qoi_handles),
+        frameon=False,
+    )
+    fig.subplots_adjust(top=0.76)
 
     if fn_out is not None:
         plt.savefig(fn_out, bbox_inches="tight")

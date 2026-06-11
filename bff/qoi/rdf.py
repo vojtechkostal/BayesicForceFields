@@ -19,8 +19,8 @@ def compute_rdf(
     stop: int = None,
     step: int = None,
     smooth: bool = True,
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Compute the radial distribution function between two atom groups."""
+) -> tuple[np.ndarray, np.ndarray]:
+    """Compute an RDF over the requested trajectory slice."""
     distances = compute_distances(
         universe,
         atoms_ref,
@@ -82,7 +82,7 @@ def compute_all_rdfs(
             step=step,
             smooth=smooth,
         )
-        rdf_results[atomtype] = np.array([r, g])
+        rdf_results[atomtype] = np.array([r, g], dtype=float)
 
     atomtypes = tuple(sorted(rdf_results))
     values = np.concatenate(

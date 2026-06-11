@@ -2,6 +2,47 @@
 
 ## Unreleased
 
+## `0.3.0` - 2026-06-11
+
+### Breaking Changes
+
+- Moved effective-observation configuration from `bff fit` to each model under
+  `bff learn`. Model entries now require `model_path` and exactly one strategy:
+  explicit `n_eff`, `independent_observations: true`, or curve inference with
+  `tolerance`.
+- Changed `.lgp` serialization to store reference-curve metadata. Models
+  written by earlier releases must be refitted before use with 0.3.0.
+
+### Added
+
+- Added prominence-based effective-observation estimates for smooth,
+  curve-valued QoIs while retaining direct counts for independent scalar data.
+- Added `qoi-marginals.pdf`, which colors posterior parameter marginals by the
+  local contribution of each QoI and shows priors and parameter bounds.
+- Added per-QoI Gaussian log-likelihood evaluation for post-processing thinned
+  posterior samples.
+
+### Changed
+
+- Made the Gaussian likelihood insensitive to curve binning by applying
+  `n_eff` to a mean squared residual rather than treating every bin as an
+  independent observation.
+- Allowed surrogate models for different QoIs to use different numbers of
+  training rows, provided their parameter dimensions agree.
+- Simplified the `bff` command entry point and shell completion while retaining
+  subcommands such as `bff build`.
+- Made build templates optional for systems that do not require molecule
+  templates.
+- Updated the packaged examples and documentation for effective observations
+  and QoI-attributed posterior plots.
+- Included `pytest` in the standard installation so packaged test and example
+  checks are available without installing the developer extra.
+
+### Fixed
+
+- Fixed multiprocessing imports for analysis routines loaded from user Python
+  files.
+
 ## `0.2.1` - 2026-06-01
 
 ### Fixed

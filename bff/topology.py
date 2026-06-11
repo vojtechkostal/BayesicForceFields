@@ -9,11 +9,44 @@ from gmxtopology import Topology
 from MDAnalysis.guesser.tables import masses as MDA_MASSES
 from MDAnalysis.lib.distances import distance_array
 
-from .data import IONS, WATER_3SITE, WATER_4SITE, WATERS
 from .tools import guess_box, random_placement
 
 MASSES = np.array(list(MDA_MASSES.values()))
 ELEMENTS = list(MDA_MASSES.keys())
+
+WATER_4SITE = np.array(
+    [[0.02909557, 0.03692916, -0.04588176],
+     [0.43909732, -0.54306981, 0.60411833],
+     [-0.90090283, -0.04307076, 0.12411808],
+     [-0.0309039, -0.04307076, 0.05411814]]
+)
+
+WATER_3SITE = np.array(
+    [[0.02909557, 0.03692916, -0.04588176],
+     [0.43909732, -0.54306981, 0.60411833],
+     [-0.90090283, -0.04307076, 0.12411808]]
+)
+
+WATERS = {
+    'H2O',
+    'HHO',
+    'HOH',
+    'OH2',
+    'OHH',
+    'SOL',
+    'SPC',
+    'SPCE',
+    'T3P',
+    'T4P',
+    'TIP',
+    'TIP2',
+    'TIP3',
+    'TIP4',
+    'TP3M',
+    'WAT',
+    'WATER',
+    'water'
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,16 +231,10 @@ def load_residue_template(
     """Resolve one residue placement template from builtins or user input."""
     residue_names = tuple(atom.name for atom in residue.atoms)
     n_atoms = len(residue.atoms)
-    key = residue.name.lower()
-
-    if residue.name in WATERS:
-        positions, template_names = _load_water_template(n_atoms)
-    elif key in IONS:
-        if n_atoms != 1:
-            raise ValueError(
-                f"Ion residue {residue.name!r} is expected to be monoatomic, "
-                f"but has {n_atoms} atoms."
-            )
+    if residue.name.upper() in WATERS:
+        positions, _ = _load_water_template(n_atoms)
+        template_names = residue_names
+    elif n_atoms == 1:
         positions = np.zeros((1, 3), dtype=float)
         template_names = residue_names
     else:

@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import numpy as np
+import pytest
 import torch
 
 from bff.bayes.gaussian_process import LGPCommittee, LocalGaussianProcess
@@ -62,7 +63,12 @@ def test_lgp_committee_averages_predictions_and_round_trips(tmp_path: Path) -> N
     gp2 = LocalGaussianProcess(
         X, y2, torch.tensor([0.0]), torch.tensor([1.0]), 1.0, 1e-4, "cpu"
     )
-    committee = LGPCommittee([gp1, gp2], 2, np.array([0.5]), nuisance=None)
+    committee = LGPCommittee(
+        [gp1, gp2],
+        reference_values=np.array([0.5]),
+        n_curves=1,
+        nuisance=None,
+    )
 
     pred = committee.predict(torch.tensor([[0.0]]))
 
@@ -81,9 +87,61 @@ def test_lgp_committee_averages_predictions_and_round_trips(tmp_path: Path) -> N
     loaded = LGPCommittee.load(path)
 
     assert loaded.size == 2
-    assert loaded.n_observations == 2
+    assert loaded.n_eff == 1
+    assert loaded.n_curves == 1
+    assert loaded.curve_length == 1
     assert loaded.error == 12.3
     assert np.allclose(loaded.reference_values, [0.5])
+
+
+def test_lgp_committee_round_trips_curve_count(tmp_path: Path) -> None:
+    X = torch.tensor([[0.0], [1.0], [2.0]])
+    y = torch.tensor([
+        [0.0, 1.0, 2.0, 3.0],
+        [0.5, 1.5, 2.5, 3.5],
+        [1.0, 2.0, 3.0, 4.0],
+    ])
+    gp = LocalGaussianProcess(
+        X,
+        y,
+        torch.zeros(4),
+        torch.tensor([1.0]),
+        1.0,
+        1e-4,
+        "cpu",
+    )
+    committee = LGPCommittee(
+        [gp],
+        reference_values=np.arange(4),
+        n_curves=2,
+    )
+    path = tmp_path / "model.lgp"
+    committee.write(path)
+
+    loaded = LGPCommittee.load(path)
+
+    assert loaded.n_eff == 4
+    assert loaded.n_curves == 2
+    assert loaded.curve_length == 2
+
+
+def test_lgp_committee_rejects_models_without_curve_metadata(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "legacy.lgp"
+    torch.save(
+        {
+            "lgps": [],
+            "n_observations": 4,
+            "reference_values": [0.0],
+            "nuisance": None,
+            "stochastic": False,
+        },
+        path,
+    )
+
+    with pytest.raises(ValueError, match="predates BFF 0.3.0"):
+        LGPCommittee.load(path)
 
 
 def test_local_gaussian_process_round_trips_parameter_dependent_mean(
@@ -93,7 +151,7 @@ def test_local_gaussian_process_round_trips_parameter_dependent_mean(
     mean = ParameterDependentMean()
     y = mean(X)
     gp = LocalGaussianProcess(X, y, mean, torch.ones(1), 1.0, 1e-4, "cpu")
-    committee = LGPCommittee([gp], 5, y[0].numpy())
+    committee = LGPCommittee([gp], reference_values=y[0].numpy(), n_curves=1)
     path = tmp_path / "dynamic-mean.lgp"
 
     committee.write(path)

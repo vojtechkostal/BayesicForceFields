@@ -66,7 +66,9 @@ systems:
 - `topology`
   GROMACS topology describing residue counts.
 - `templates`
-  Mapping from residue name to coordinate template file for non-standard residues.
+  Optional mapping from residue name to coordinate template file for
+  non-standard residues. Omit it when the system only contains built-in water
+  or monoatomic-ion residues.
 - `charge`
   Total system charge for staged CP2K reference inputs.
 - `multiplicity`

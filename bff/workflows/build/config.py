@@ -96,12 +96,12 @@ class BuildConfig:
         for i, system in enumerate(systems_raw):
             if not isinstance(system, dict):
                 raise ValueError(f'System {i} must be a mapping.')
-            for key in ('topology', 'templates', 'charge', 'multiplicity'):
+            for key in ('topology', 'charge', 'multiplicity'):
                 if key not in system:
                     raise ValueError(f'System {i} is missing required key {key!r}.')
-            templates_raw = system['templates']
-            if not isinstance(templates_raw, dict) or not templates_raw:
-                raise ValueError(f'System {i} templates must be a non-empty mapping.')
+            templates_raw = system.get('templates', {})
+            if not isinstance(templates_raw, dict):
+                raise ValueError(f'System {i} templates must be a mapping.')
             if not all(
                 isinstance(name, str) and isinstance(path, (str, Path))
                 for name, path in templates_raw.items()

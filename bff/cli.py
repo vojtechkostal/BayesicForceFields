@@ -1,6 +1,5 @@
 """Command-line entry points for Bayesic Force Fields."""
 
-import os
 from pathlib import Path
 from typing import Callable
 
@@ -9,121 +8,10 @@ import typer
 app = typer.Typer(
     help="BayesicForceFields: Bayesian optimization of molecular force fields.",
     no_args_is_help=True,
-    add_completion=False,
+    add_completion=True,
 )
 
 WorkflowMain = Callable[[Path], object]
-WORKFLOW_COMMANDS = (
-    "build",
-    "prepare-assets",
-    "evaluate-snapshots",
-    "sample",
-    "analyze",
-    "fit",
-    "learn",
-    "validate",
-    "examples",
-)
-WORKFLOW_FILE_COMMANDS = tuple(
-    command for command in WORKFLOW_COMMANDS if command != "examples"
-)
-WORKFLOW_FILE_COMMAND_PATTERN = "|".join(WORKFLOW_FILE_COMMANDS)
-
-_COMPLETION_ACTIVATE = f"""# Managed automatically by Bayesic Force Fields.
-if [ -n "${{BASH_VERSION-}}" ]; then
-    _bff_completion() {{
-        local cur prev words cword
-        if declare -F _init_completion >/dev/null 2>&1; then
-            _init_completion || return
-        else
-            COMPREPLY=()
-            cur="${{COMP_WORDS[COMP_CWORD]}}"
-            prev="${{COMP_WORDS[COMP_CWORD-1]}}"
-            words=("${{COMP_WORDS[@]}}")
-            cword=$COMP_CWORD
-        fi
-
-        local commands="{" ".join(WORKFLOW_COMMANDS)}"
-        if [[ $COMP_CWORD -eq 1 ]]; then
-            COMPREPLY=($(compgen -W "$commands" -- "$cur"))
-            return 0
-        fi
-
-        case "${{COMP_WORDS[1]}}" in
-            {WORKFLOW_FILE_COMMAND_PATTERN})
-                COMPREPLY=($(compgen -f -- "$cur"))
-                ;;
-            *)
-                COMPREPLY=()
-                ;;
-        esac
-    }}
-
-    complete -o nosort -F _bff_completion bff
-elif [ -n "${{ZSH_VERSION-}}" ]; then
-    autoload -Uz compinit 2>/dev/null || true
-    compinit -i 2>/dev/null || true
-
-    _bff_completion() {{
-        local -a commands
-        commands=({" ".join(WORKFLOW_COMMANDS)})
-
-        if (( CURRENT == 2 )); then
-            compadd -- "${{commands[@]}}"
-            return 0
-        fi
-
-        case "${{words[2]}}" in
-            {WORKFLOW_FILE_COMMAND_PATTERN})
-                _files
-                ;;
-        esac
-    }}
-
-    compdef _bff_completion bff
-fi
-"""
-
-_COMPLETION_DEACTIVATE = """# Managed automatically by Bayesic Force Fields.
-if [ -n "${BASH_VERSION-}" ]; then
-    complete -r bff 2>/dev/null || true
-elif [ -n "${ZSH_VERSION-}" ]; then
-    unfunction _bff_completion 2>/dev/null || true
-    compdef -d bff 2>/dev/null || true
-fi
-"""
-
-
-def _conda_completion_hook_paths() -> tuple[Path, Path] | None:
-    conda_prefix = os.environ.get("CONDA_PREFIX")
-    if not conda_prefix:
-        return None
-
-    conda_dir = Path(conda_prefix) / "etc" / "conda"
-    return (
-        conda_dir / "activate.d" / "bff-completion.sh",
-        conda_dir / "deactivate.d" / "bff-completion.sh",
-    )
-
-
-def _write_if_changed(path: Path, content: str) -> None:
-    if path.exists() and path.read_text() == content:
-        return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content)
-
-
-def _ensure_completion_hooks() -> None:
-    hook_paths = _conda_completion_hook_paths()
-    if hook_paths is None:
-        return
-
-    activate_hook, deactivate_hook = hook_paths
-    try:
-        _write_if_changed(activate_hook, _COMPLETION_ACTIVATE)
-        _write_if_changed(deactivate_hook, _COMPLETION_DEACTIVATE)
-    except OSError:
-        return
 
 
 def run_workflow(
@@ -153,11 +41,6 @@ def config_argument() -> Path:
         dir_okay=False,
         help="Path to the configuration file.",
     )
-
-
-@app.callback()
-def init_cli() -> None:
-    _ensure_completion_hooks()
 
 
 @app.command()

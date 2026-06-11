@@ -1,5 +1,6 @@
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any
 
 import numpy as np
 
@@ -117,13 +118,19 @@ class QoIDataset:
         return int(self.inputs.shape[0])
 
     @property
-    def n_observations(self) -> int:
+    def n_curves(self) -> int:
         if self.outputs_ref.size % self.values_per_label != 0:
             raise ValueError(
                 "Reference output size must be divisible by "
                 "'values_per_label'."
             )
+        if self.labels is not None:
+            return len(self.labels)
         return int(self.outputs_ref.size // self.values_per_label)
+
+    @property
+    def curve_length(self) -> int:
+        return int(self.outputs_ref.size // self.n_curves)
 
     def to_dict(self) -> dict[str, Any]:
         data = {
@@ -165,5 +172,5 @@ class QoIDataset:
     def __repr__(self) -> str:
         return (
             f"QoIDataset(n_samples={self.n_samples}, "
-            f"n_observations={self.n_observations}, name={self.name!r})"
+            f"n_curves={self.n_curves}, name={self.name!r})"
         )

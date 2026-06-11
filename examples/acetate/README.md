@@ -88,7 +88,8 @@ examples/acetate/
 - `analyze.yaml`: compares `../03-sample/` against reference trajectories in
   `../03-reference/trajectories/` and writes QoI datasets into `./`.
 - `fit.yaml`: fits surrogate models into `./models/`.
-- `learn.yaml`: learns the posterior and writes outputs into `./`.
+- `learn.yaml`: assigns effective observations, learns the posterior, and
+  writes `marginals.pdf`, `qoi-marginals.pdf`, and `corner.pdf` into `./`.
 - `validate.yaml`: reruns selected posterior samples into `./`.
 
 ## Reference Trajectories

@@ -1,16 +1,30 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import isfinite
 from pathlib import Path
 from typing import Mapping
 
 from ...io.utils import load_yaml
 from .._shared.config import (
     PathLike,
-    _load_model_paths,
     _resolve_optional_path,
     _resolve_path,
 )
+
+
+def _boolean(value: object, *, key: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"{key!r} must be a boolean.")
+    return value
+
+
+@dataclass(frozen=True)
+class LearnModelConfig:
+    model_path: Path
+    independent_observations: bool = False
+    n_eff: float | None = None
+    tolerance: float | None = None
 
 
 @dataclass(frozen=True)
@@ -35,7 +49,7 @@ class LearnMCMCConfig:
 class LearnConfig:
     fn_config: Path
     specs: Path
-    models: dict[str, Path]
+    models: dict[str, LearnModelConfig]
     mcmc: LearnMCMCConfig
     log: Path
 
@@ -48,6 +62,10 @@ class LearnConfig:
         for key in ('specs', 'models', 'mcmc'):
             if key not in config:
                 raise ValueError(f'Missing required configuration section: {key!r}.')
+
+        models_raw = config['models']
+        if not isinstance(models_raw, Mapping) or not models_raw:
+            raise ValueError("'models' must be a non-empty mapping.")
 
         mcmc = config['mcmc']
         if not isinstance(mcmc, Mapping):
@@ -91,12 +109,90 @@ class LearnConfig:
                 must_exist=False,
                 kind='priors output file',
             ),
-            restart=bool(mcmc.get('restart', True)),
+            restart=_boolean(mcmc.get('restart', True), key='mcmc.restart'),
             device=str(mcmc.get('device', 'cuda')),
             rhat_tol=float(mcmc.get('rhat_tol', 1.01)),
             ess_min=int(mcmc.get('ess_min', 100)),
-            include_implicit_charge=bool(mcmc.get('include_implicit_charge', False)),
+            include_implicit_charge=_boolean(
+                mcmc.get('include_implicit_charge', False),
+                key='mcmc.include_implicit_charge',
+            ),
         )
+
+        models: dict[str, LearnModelConfig] = {}
+        for name, model in models_raw.items():
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError("Model names must be non-empty strings.")
+            if not isinstance(model, Mapping):
+                raise ValueError(
+                    f"Model {name!r} must be a mapping with a 'model_path' key."
+                )
+            if 'model_path' not in model:
+                raise ValueError(
+                    f"Model {name!r} is missing required key 'model_path'."
+                )
+
+            supported_keys = {
+                'model_path',
+                'independent_observations',
+                'n_eff',
+                'tolerance',
+            }
+            unsupported_keys = set(model) - supported_keys
+            if unsupported_keys:
+                keys = ', '.join(sorted(unsupported_keys))
+                raise ValueError(
+                    f"Model {name!r} has unsupported keys: {keys}."
+                )
+
+            independent_observations = _boolean(
+                model.get('independent_observations', False),
+                key=f"models.{name}.independent_observations",
+            )
+            n_eff = (
+                None if model.get('n_eff') is None else float(model['n_eff'])
+            )
+            tolerance = (
+                None
+                if model.get('tolerance') is None
+                else float(model['tolerance'])
+            )
+
+            if n_eff is not None:
+                if not isfinite(n_eff) or n_eff <= 0.0:
+                    raise ValueError(
+                        f"Model {name!r} n_eff must be positive and finite."
+                    )
+                if 'independent_observations' in model or 'tolerance' in model:
+                    raise ValueError(
+                        f"Model {name!r} cannot combine 'n_eff' with "
+                        "'independent_observations' or 'tolerance'."
+                    )
+            elif independent_observations:
+                if tolerance is not None:
+                    raise ValueError(
+                        f"Independent model {name!r} does not use 'tolerance'."
+                    )
+            else:
+                if tolerance is None:
+                    raise ValueError(
+                        f"Curve model {name!r} must define 'tolerance'."
+                    )
+                if not isfinite(tolerance) or tolerance <= 0.0:
+                    raise ValueError(
+                        f"Model {name!r} tolerance must be positive and finite."
+                    )
+
+            models[name] = LearnModelConfig(
+                model_path=_resolve_path(
+                    base_dir,
+                    model['model_path'],
+                    kind=f'model {name!r} file',
+                ),
+                independent_observations=independent_observations,
+                n_eff=n_eff,
+                tolerance=tolerance,
+            )
 
         log = _resolve_path(
             base_dir,
@@ -108,7 +204,7 @@ class LearnConfig:
         return cls(
             fn_config=fn_config,
             specs=_resolve_path(base_dir, config['specs'], kind='specs file'),
-            models=_load_model_paths(base_dir, config['models']),
+            models=models,
             mcmc=mcmc_config,
             log=log,
         )

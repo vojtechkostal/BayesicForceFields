@@ -13,6 +13,7 @@ PathLike = Union[str, Path]
 
 def _import_learning_stack():
     try:
+        from ...bayes.effective_observations import estimate_curve_n_eff
         from ...bayes.gaussian_process import LGPCommittee
         from ...bayes.learning import LearningProblem
     except ModuleNotFoundError as exc:
@@ -22,12 +23,25 @@ def _import_learning_stack():
                 'build of PyTorch first.'
             ) from exc
         raise
-    return LGPCommittee, LearningProblem
+    return LGPCommittee, LearningProblem, estimate_curve_n_eff
 
 
-def _write_default_plots(results, config: LearnConfig, logger: Logger) -> None:
+def _write_default_plots(
+    results,
+    config: LearnConfig,
+    problem,
+    logger: Logger,
+) -> None:
     try:
-        from ...plotting import plot_corner, plot_marginals
+        import numpy as np
+        import torch
+
+        from ...bayes.likelihoods import gaussian_log_likelihood_by_qoi
+        from ...plotting import (
+            plot_corner,
+            plot_marginals,
+            plot_qoi_marginals,
+        )
     except ModuleNotFoundError as exc:
         logger.warn(
             f"Skipping default posterior plots because {exc.name!r} is not installed.",
@@ -37,6 +51,7 @@ def _write_default_plots(results, config: LearnConfig, logger: Logger) -> None:
 
     fn_posterior = Path(config.mcmc.posterior).resolve()
     fn_marginals = fn_posterior.with_name('marginals.pdf')
+    fn_qoi_marginals = fn_posterior.with_name('qoi-marginals.pdf')
     fn_corner = fn_posterior.with_name('corner.pdf')
 
     try:
@@ -49,6 +64,50 @@ def _write_default_plots(results, config: LearnConfig, logger: Logger) -> None:
 
     logger.kv('Marginals plot', fn_marginals.resolve(), level=1)
     logger.kv('Corner plot', fn_corner.resolve(), level=1)
+
+    try:
+        prepared = results.prepared_samples
+        if results.include_implicit_charge:
+            specs = results.specs
+            all_names = specs.bounds.names.tolist()
+            explicit_indices = [
+                all_names.index(name)
+                for name in specs.explicit_bounds.names
+            ]
+            raw_samples = np.column_stack([
+                prepared[:, explicit_indices],
+                prepared[:, specs.bounds.n_params:],
+            ])
+        else:
+            raw_samples = prepared.copy()
+        raw_samples[:, problem.n_params:] = np.log(
+            raw_samples[:, problem.n_params:]
+        )
+
+        device = next(iter(problem.models.values())).lgps[0].X_train.device
+        theta = torch.as_tensor(
+            raw_samples,
+            dtype=torch.float32,
+            device=device,
+        )
+        contributions = {
+            qoi: values.detach().cpu().numpy()
+            for qoi, values in gaussian_log_likelihood_by_qoi(
+                theta,
+                problem.to_torch(str(device)),
+            ).items()
+        }
+        plot_qoi_marginals(
+            results,
+            config.specs,
+            contributions,
+            fn_out=fn_qoi_marginals,
+        )
+    except Exception as exc:
+        logger.warn(f"Skipping QoI marginals plot: {exc}", level=1)
+        return
+
+    logger.kv('QoI marginals plot', fn_qoi_marginals.resolve(), level=1)
 
 
 def main(fn_config: PathLike):
@@ -71,12 +130,34 @@ def main(fn_config: PathLike):
             'if one is found.'
         )
     logger.blank()
-    lgp_committee_type, learning_problem_type = _import_learning_stack()
+    (
+        lgp_committee_type,
+        learning_problem_type,
+        estimate_curve_n_eff,
+    ) = _import_learning_stack()
     constraint = ChargeConstraint(config.specs)
-    models = {
-        name: lgp_committee_type.load(path)
-        for name, path in config.models.items()
-    }
+    models = {}
+    for name, model_config in config.models.items():
+        model = lgp_committee_type.load(model_config.model_path)
+        if model_config.n_eff is not None:
+            model.n_eff = model_config.n_eff
+        elif model_config.independent_observations:
+            model.n_eff = float(model.reference_values.size)
+        else:
+            tolerance = model_config.tolerance
+            if tolerance is None:
+                raise ValueError(f"Model {name!r} is missing 'tolerance'.")
+            curves = model.reference_values.reshape(model.n_curves, -1)
+            model.n_eff = sum(
+                estimate_curve_n_eff(curve, tolerance=tolerance)
+                for curve in curves
+            )
+        models[name] = model
+        logger.kv(
+            f'{name} effective observations',
+            f'{model.n_eff:.3f}',
+            level=1,
+        )
     problem = learning_problem_type.from_models(models, constraint=constraint)
     results = problem.learn(
         priors_disttype=config.mcmc.priors_disttype,
@@ -95,7 +176,7 @@ def main(fn_config: PathLike):
         ess_min=config.mcmc.ess_min,
         include_implicit_charge=config.mcmc.include_implicit_charge,
     )
-    _write_default_plots(results, config, logger)
+    _write_default_plots(results, config, problem, logger)
     elapsed = time.perf_counter() - workflow_start
     logger.done('Posterior learning', detail=f'finished in {elapsed:.2f}s', level=1)
     return results

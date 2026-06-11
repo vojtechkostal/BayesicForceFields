@@ -7,7 +7,6 @@ import torch
 from bff.bayes.learning import (
     LearningProblem,
     _default_checkpoint_path,
-    _effective_observations,
     _resolve_mean,
 )
 from bff.qoi.data import QoIDataset
@@ -26,6 +25,7 @@ class FakeCommittee:
         n_params: int = 2,
         y_size: int = 2,
         reference_values: np.ndarray | None = None,
+        n_curves: int = 1,
         nuisance: float | None = None,
     ) -> None:
         self.lgps = [FakeLGP(shape)]
@@ -36,6 +36,7 @@ class FakeCommittee:
             if reference_values is not None
             else np.zeros(y_size)
         )
+        self.n_curves = n_curves
         self.nuisance = nuisance
 
 
@@ -53,10 +54,10 @@ def test_learning_problem_rejects_invalid_model_structures() -> None:
     with pytest.raises(ValueError, match="inconsistent training input"):
         LearningProblem({"qoi": inconsistent_committee})
 
-    with pytest.raises(ValueError, match="same training input shape"):
-        LearningProblem(
-            {"a": FakeCommittee(shape=(3, 2)), "b": FakeCommittee(shape=(4, 2))}
-        )
+    problem = LearningProblem(
+        {"a": FakeCommittee(shape=(3, 2)), "b": FakeCommittee(shape=(4, 2))}
+    )
+    assert problem.n_params == 2
 
     with pytest.raises(ValueError, match="same input dimension"):
         LearningProblem(
@@ -65,6 +66,9 @@ def test_learning_problem_rejects_invalid_model_structures() -> None:
 
     with pytest.raises(ValueError, match="reference output size"):
         LearningProblem({"qoi": FakeCommittee(y_size=2, reference_values=np.zeros(3))})
+
+    with pytest.raises(ValueError, match="n_curves"):
+        LearningProblem({"qoi": FakeCommittee(y_size=3, n_curves=2)})
 
 
 def test_learning_problem_builds_priors_from_constraint() -> None:
@@ -96,15 +100,6 @@ def test_learning_helpers() -> None:
     from pathlib import Path
 
     assert _default_checkpoint_path(Path("posterior.pt")).name == "posterior.ckpt.pt"
-
-    dataset = QoIDataset(
-        name="qoi",
-        inputs=np.zeros((2, 1)),
-        outputs=np.zeros((2, 4)),
-        outputs_ref=np.zeros(4),
-        values_per_label=2,
-    )
-    assert _effective_observations(dataset, 0.5) == 1
 
 
 def test_resolve_mean_accepts_vector_rdf_mean() -> None:

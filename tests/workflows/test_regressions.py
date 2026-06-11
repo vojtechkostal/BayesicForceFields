@@ -3,7 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
+import torch
 import yaml
 
 from bff.io.cp2k import (
@@ -138,6 +140,8 @@ def test_write_default_plots_writes_expected_pngs(
     class DummyResults:
         def __init__(self) -> None:
             self.prepared = False
+            self.prepared_samples = np.linspace(-0.5, 0.5, 20)[:, None]
+            self.include_implicit_charge = False
 
         def prepare_samples(self) -> None:
             self.prepared = True
@@ -149,13 +153,34 @@ def test_write_default_plots_writes_expected_pngs(
         calls["marginals"] = Path(fn_out)
         Path(fn_out).write_text("marginals\n")
 
+    def fake_plot_qoi_marginals(
+        results,
+        specs,
+        contributions,
+        *,
+        fn_out=None,
+        **kwargs,
+    ):
+        assert results.prepared is True
+        assert set(contributions) == {"qoi"}
+        calls["qoi_marginals"] = Path(fn_out)
+        Path(fn_out).write_text("qoi marginals\n")
+
     def fake_plot_corner(results, *, fn_out=None, **kwargs):
         assert results.prepared is True
         calls["corner"] = Path(fn_out)
         Path(fn_out).write_text("corner\n")
 
     monkeypatch.setattr("bff.plotting.plot_marginals", fake_plot_marginals)
+    monkeypatch.setattr(
+        "bff.plotting.plot_qoi_marginals",
+        fake_plot_qoi_marginals,
+    )
     monkeypatch.setattr("bff.plotting.plot_corner", fake_plot_corner)
+    monkeypatch.setattr(
+        "bff.bayes.likelihoods.gaussian_log_likelihood_by_qoi",
+        lambda theta, problem: {"qoi": torch.zeros(len(theta))},
+    )
 
     specs = tmp_path / "specs.yaml"
     specs.write_text(
@@ -171,12 +196,17 @@ def test_write_default_plots_writes_expected_pngs(
     fn_config = tmp_path / "learn.yaml"
     fn_config.write_text(
         yaml.safe_dump(
-            {
-                "specs": str(specs),
-                "models": {"qoi": str(model)},
-                "mcmc": {"posterior": str(posterior)},
-                "log": str(log),
-            }
+                {
+                    "specs": str(specs),
+                    "models": {
+                        "qoi": {
+                            "model_path": str(model),
+                            "independent_observations": True,
+                        }
+                    },
+                    "mcmc": {"posterior": str(posterior)},
+                    "log": str(log),
+                }
         )
     )
 
@@ -186,11 +216,22 @@ def test_write_default_plots_writes_expected_pngs(
         kv=lambda *args, **kwargs: None,
         warn=lambda message, **kwargs: warnings.append(str(message)),
     )
+    problem = SimpleNamespace(
+        n_params=1,
+        models={
+            "qoi": SimpleNamespace(
+                lgps=[SimpleNamespace(X_train=torch.zeros((1, 1)))]
+            )
+        },
+        to_torch=lambda device: problem,
+    )
 
-    _write_default_plots(DummyResults(), config, logger)
+    _write_default_plots(DummyResults(), config, problem, logger)
 
     assert warnings == []
     assert calls["marginals"].read_text() == "marginals\n"
+    assert calls["qoi_marginals"].read_text() == "qoi marginals\n"
     assert calls["corner"].read_text() == "corner\n"
     assert calls["marginals"].name == "marginals.pdf"
+    assert calls["qoi_marginals"].name == "qoi-marginals.pdf"
     assert calls["corner"].name == "corner.pdf"

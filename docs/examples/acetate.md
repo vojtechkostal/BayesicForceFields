@@ -74,6 +74,7 @@ cd ..
 
 The copied config is the record of what was run for that stage. Stage
 directories are generated outputs and are ignored by git.
+The learn stage writes `marginals.pdf`, `qoi-marginals.pdf`, and `corner.pdf`.
 
 The `03-reference` stage keeps snapshot datasets and analysis trajectories as
 sibling directories:

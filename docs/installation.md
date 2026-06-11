@@ -33,6 +33,22 @@ Then install BFF from PyPI:
 pip install bfflearn
 ```
 
+## Notebook Support
+
+The default installation keeps the command-line package small. To run the
+Jupyter examples, install the optional notebook tools:
+
+```bash
+pip install "bfflearn[notebook]"
+```
+
+This adds IPython, `ipykernel`, JupyterLab, Notebook, and widget support. You
+can then launch:
+
+```bash
+jupyter lab
+```
+
 If you need the exact code used for the published paper, do not install
 `v0.0.1` through a direct `pip` Git URL. That archived tag predates the
 packaging cleanup. Instead, clone the repository, check out the archived tag,

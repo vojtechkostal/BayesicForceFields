@@ -20,6 +20,12 @@ The fitting and learning cells use CUDA by default.
 
 ## Run
 
+Install the optional notebook tools once:
+
+```bash
+pip install "bfflearn[notebook]"
+```
+
 Start Jupyter from this directory and run `neon-mie-inference.ipynb` from top
 to bottom:
 
@@ -36,9 +42,11 @@ The notebook:
 4. converts the data into a BFF `QoIDataset`;
 5. fits and validates a BFF local Gaussian-process surrogate with a
    notebook-local Mie PMF mean;
-6. infers the Mie `epsilon`, `lambda`, and `sigma` parameters together with
+6. estimates the effective number of resolved RDF features;
+7. infers the Mie `epsilon`, `lambda`, and `sigma` parameters together with
    the RDF discrepancy;
-7. reports physical-unit posterior samples and plots the result.
+8. reports physical-unit posterior samples and writes the posterior,
+   QoI-attributed marginal, and RDF plots.
 
 Generated datasets, models, posterior files, logs, and plots are written under
 `generated/` and ignored by git.

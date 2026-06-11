@@ -3,7 +3,30 @@
 The public reproduction snapshot for the published study is archived as
 [`v0.0.1`](https://github.com/vojtechkostal/BayesicForceFields/tree/v0.0.1).
 Use that tag for exact reproduction of the paper results. The current
-`0.2.1` release is a substantial workflow refactor.
+`0.3.0` release is the current workflow release.
+
+## `0.3.0` - 2026-06-11
+
+### Highlights
+
+- Effective observation counts are now configured during `bff learn` as
+  explicit counts, independent scalar observations, or tolerance-derived curve
+  features.
+- The Gaussian likelihood uses an `n_eff`-weighted mean squared residual, so
+  posterior width is not determined by arbitrary curve binning.
+- `bff learn` writes `qoi-marginals.pdf` to show which QoIs support different
+  posterior regions.
+- Different QoIs may use different numbers of surrogate-training rows.
+- Build templates are optional when a system does not need them, and the CLI
+  uses the single `bff <command>` entry point.
+- User-defined analysis routines now work with multiprocessing workers.
+- `pytest` is included in the standard installation.
+
+!!! warning
+    The learn configuration and `.lgp` model format changed in 0.3.0. Refit
+    models created by earlier releases and migrate path-only model entries to
+    the nested format documented in the
+    [learn configuration](configuration/learn.md).
 
 ## `0.2.1` - 2026-06-01
 
