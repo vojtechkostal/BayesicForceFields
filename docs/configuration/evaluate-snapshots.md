@@ -7,8 +7,8 @@ Source code:
 
 ## Purpose
 
-`bff evaluate-snapshots` runs staged CP2K snapshot jobs. The staged assets
-normally come from `bff prepare-assets`.
+`bff evaluate-snapshots` runs staged CP2K snapshot jobs. The inputs normally
+come from `bff prepare-reference`.
 
 ## Run Example
 
@@ -20,19 +20,8 @@ single_atoms: true
 snapshot_md_steps: 100
 train_fraction: 0.8
 seed: 2026
-
-systems:
-  - assets: ../02-assets/reference/system-000
-```
-
-The staged snapshot `md.inp` uses GFN1-xTB by default. Per-system CP2K input
-overrides are optional:
-
-```yaml
-systems:
-  - assets: ../02-assets/reference/system-000
-    md: ../inputs/reference-inputs/md-0.inp
-    sp: ../inputs/reference-inputs/revpbe0-sp.inp
+source: ../02-reference
+systems: [acetate]
 ```
 
 ## Top-Level Keys
@@ -40,7 +29,10 @@ systems:
 - `output_dir`
   Output directory written by `bff evaluate-snapshots`.
 - `systems`
-  Non-empty list of systems to evaluate.
+  Non-empty list of reference-stage `system_id` selectors, or systems with fully
+  explicit `inputs` role mappings.
+- `source`
+  `prepare-reference` output root. Mixing it with direct inputs is rejected.
 - `job_scheduler`
   Either `local` or `slurm`.
 - `cp2k_cmd`
@@ -65,24 +57,24 @@ systems:
 
 ## `systems[]` Keys
 
-- `assets`
-  Path to one staged reference system directory, usually
-  `reference/system-XXX/` written by `bff prepare-assets`.
-- `md`
-  Optional CP2K MD input override for this system.
-- `sp`
-  Optional CP2K single-point input override for this system.
+- `system_id`
+  Stable system identity. It determines the output path.
+- `inputs`
+  Without `source`, explicit roles `topology`, `coordinates`,
+  `structure`, `snapshots`, `md_input`, `sp_input`, and `isolated_atoms`.
 
 ## Outputs
 
 `bff evaluate-snapshots` writes or refreshes one directory per system under
-`output_dir`, for example `snapshots/system-000/`, containing:
+`output_dir/systems/<system_id>/`, containing:
 
 - `snapshots/snapshot-XXXX/`
 - `train.extxyz`
 - `valid.extxyz`
 - optional `single-atoms.yaml` with atomic-number keys
+- `snapshot-results.yaml` at the output root
+- `evaluate-snapshots.log` at the output root
 
 Reference trajectories for `bff analyze` are user-provided. A convenient
-convention is to place them under `03-reference/trajectories/system-*/`
+convention is to place them under `03-reference/trajectories/<system_id>/`
 alongside matching `system.top` and `system.gro` files.

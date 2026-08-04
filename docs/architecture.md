@@ -73,32 +73,38 @@ BayesicForceFields/
 
 | Command | Main Input | Responsibility | Main Output |
 | --- | --- | --- | --- |
-| `bff build` | GROMACS topologies, coordinate templates, and MDP files | Build, equilibrate, and seed systems. | `build-manifest.yaml` and seeded trajectories |
-| `bff prepare-assets` | Build manifest | Package reusable FFMD inputs and stage CP2K snapshot jobs. | `ffmd/` and `reference/` asset trees |
+| `bff build` | GROMACS topologies, coordinate templates, and MDP files | Build, equilibrate, and seed systems. | Self-contained `systems/<system_id>/` directories |
+| `bff prepare-reference` | Build stage root | Stage CP2K snapshot and reference-MD inputs. | Reference `systems/<system_id>/` directories |
 | `bff evaluate-snapshots` | Staged reference assets | Run CP2K snapshot calculations and collect reference structures. | `train.extxyz`, `valid.extxyz`, and optional isolated-atom energies |
 | `bff sample` | FFMD assets, parameter bounds, and charge constraints | Draw parameter vectors and run sampled GROMACS campaigns. | `specs.yaml`, `samples.yaml`, and sampled trajectories |
 | `bff analyze` | Sampled and reference trajectories | Compute matching quantities of interest. | One serialized `QoIDataset` per quantity of interest |
-| `bff fit` | QoI datasets | Train local Gaussian-process surrogate committees. | One `.lgp` model per quantity of interest |
-| `bff learn` | Surrogate models and `specs.yaml` | Assign effective observation counts and run posterior learning with the Torch-native MCMC stack. | Posterior chain, optional checkpoint and priors, parameter marginals, QoI-attributed marginals, and corner plot |
-| `bff validate` | Selected parameter samples, `specs.yaml`, and FFMD assets | Rerun chosen posterior samples as an independent campaign. | Validation trajectories and energies |
+| `bff lgpfit` | QoI datasets | Train fingerprinted local Gaussian-process surrogate committees. | `lgpfit.log` and `models/<routine>.lgp` |
+| `bff learn` | Surrogate models and `specs.yaml` | Assign effective observations and run validated posterior learning. | Fixed `output/` artifacts and mandatory `plots/` |
+| `bff validate` | Selected parameter samples, `specs.yaml`, and build systems | Rerun chosen posterior samples as an independent campaign. | Validation trajectories and energies |
 
 ## Core Artifacts
 
 | Artifact | Meaning |
 | --- | --- |
-| `build-manifest.yaml` | Handoff from system building to asset preparation. |
+| Build system directory | Fixed-name GROMACS files plus metadata-only `system.yaml`. |
+| Reference system directory | Fixed-name CP2K inputs plus metadata-only `system.yaml`. |
 | `specs.yaml` | Named parameter bounds and reconstructable hierarchical charge constraints. |
 | `samples.yaml` | Explicit sampled force-field parameter vectors. |
-| `qoi-<name>.pt` | Training-ready `QoIDataset` with simulation outputs and reference targets. |
+| `qoi/<name>.pt` | Training-ready `QoIDataset` with ID-paired outputs and reference targets. |
 | `<name>.lgp` | Trained local Gaussian-process committee for one quantity of interest. |
-| `posterior.pt` | Learned posterior chain. |
-| `mcmc-checkpoint.pt` | Restartable MCMC state and convergence information. |
+| `output/posterior.pt` | Learned posterior chain and compatibility metadata. |
+| `output/mcmc.ckpt` | Restartable MCMC state and compatibility fingerprints. |
 | `qoi-marginals.pdf` | Posterior parameter marginals colored by local QoI responsibility. |
 
 ## Design Choices
 
-- **Files are interfaces.** Workflow boundaries use inspectable artifacts so
+- **Stage directories are interfaces.** Fixed layouts and local metadata make
+  workflow handoffs visible without duplicating deterministic paths. Expensive
+  stages remain independently runnable and archivable.
+- **Files are inspectable.** Workflow boundaries use inspectable artifacts so
   expensive simulation stages can be resumed, archived, or replaced.
+- **IDs are identities.** System matching is keyed by explicit file-safe IDs;
+  display names and YAML order never determine pairing.
 - **Domain models are separate from orchestration.** Constraint reconstruction,
   trajectory records, and QoI datasets remain usable from notebooks and Python
   code without invoking the CLI.

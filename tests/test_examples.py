@@ -44,16 +44,18 @@ def test_notebook_examples_write_qoi_marginals() -> None:
 
 
 def test_acetate_configs_use_current_effective_observation_schema() -> None:
-    fit = yaml.safe_load((EXAMPLES / "acetate/configs/fit.yaml").read_text())
+    lgpfit = yaml.safe_load(
+        (EXAMPLES / "acetate/configs/lgpfit.yaml").read_text()
+    )
     learn = yaml.safe_load((EXAMPLES / "acetate/configs/learn.yaml").read_text())
 
     assert all(
         "observation_scale" not in dataset
-        for dataset in fit["datasets"].values()
+        for dataset in lgpfit["datasets"].values()
     )
     assert learn["models"]["rdf"]["tolerance"] > 0
     assert learn["models"]["hb"]["independent_observations"] is True
-    assert learn["models"]["dist"]["tolerance"] > 0
+    assert learn["models"]["contact-distance"]["tolerance"] > 0
     assert all(
         "model_path" in model
         for model in learn["models"].values()

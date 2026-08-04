@@ -38,16 +38,13 @@ def check_gmx_available(gmx_cmd: str = "gmx") -> None:
 def _sample_output_paths(
     run_dir: Path,
     sample_id: str,
-    system_index: int,
+    system_id: str,
 ) -> list[Path]:
     """Return all files created for one sample/system pair."""
-    files: set[Path] = set()
-    for pattern in (
-        f"md-{sample_id}-{system_index}*",
-        f"md-{sample_id}-{system_index:03d}*",
-    ):
-        files.update(path for path in run_dir.glob(pattern) if path.is_file())
-    return sorted(files)
+    system_dir = run_dir / "samples" / sample_id / system_id
+    if not system_dir.exists():
+        return []
+    return sorted(path for path in system_dir.iterdir() if path.is_file())
 
 
 def _prune_unstored_outputs(
@@ -109,10 +106,12 @@ def modify_topology(
     if isinstance(specs, (str, Path, dict)):
         specs = Specs(specs)
 
-    if implicit and not ChargeConstraint(specs)(params).all():
+    constraint = ChargeConstraint(specs)
+    if implicit and not constraint(params).all():
         raise ValueError(
             "Explicit parameter values or reconstructed implicit charges violate "
-            "the configured bounds."
+            "the configured bounds: "
+            + constraint.describe_violations(params)
         )
     values = (
         specs.with_implicit_charges(params).reshape(-1)
@@ -160,7 +159,7 @@ def main(fn_config: PathLike) -> None:
 
     # Determine the run directory
     job_scheduler = config.job_scheduler
-    run_dir = campaign_dir if job_scheduler == "local" else Path("./").resolve()
+    run_dir = campaign_dir
 
     fn_log = campaign_dir / f"gmx-{sample_id}.log"
     success = []
@@ -168,31 +167,35 @@ def main(fn_config: PathLike) -> None:
     status = "failed"
     try:
         with open(fn_log, 'a+') as log:
-            for i, system in enumerate(config.systems):
-                em = system.fn_mdp_em
-                prod = system.fn_mdp_prod
-                coord = system.fn_coordinates
-                top = system.fn_topol
-                ndx = system.fn_ndx
+            for system in config.systems:
+                em = system.mdp_em_path
+                prod = system.mdp_production_path
+                coord = system.coordinates_path
+                top = system.topology_path
+                ndx = system.index_path
                 steps = system.n_steps
                 bias = system.bias
 
                 # Define the output file names
-                deffnm = run_dir / f"md-{sample_id}-{i}"
-                fn_tpr = run_dir / f"{deffnm}.tpr"
+                system_run_dir = (
+                    run_dir / "samples" / sample_id / system.system_id
+                )
+                system_run_dir.mkdir(parents=True, exist_ok=True)
+                deffnm = system_run_dir / "production"
+                fn_tpr = deffnm.with_suffix(".tpr")
                 fn_coord_prod = coord
 
                 # Create topology with new parameters
-                fn_top_new = run_dir / f"md-{sample_id}-{i:03d}.top"
+                fn_top_new = system_run_dir / "topology.top"
                 _ = modify_topology(top, specs, params, implicit, fn_top_new)
                 fn_prod_mdp = prod
                 mdrun_extra_args: list[str] = []
                 run_env = None
                 if bias.kind == "colvars" and bias.input_file is not None:
-                    fn_bias_local = run_dir / Path(bias.input_file).name
+                    fn_bias_local = system_run_dir / Path(bias.input_file).name
                     if Path(bias.input_file).resolve() != fn_bias_local.resolve():
                         shutil.copy2(bias.input_file, fn_bias_local)
-                    fn_prod_mdp = run_dir / f"md-{sample_id}-{i:03d}-colvars.mdp"
+                    fn_prod_mdp = system_run_dir / "production-colvars.mdp"
                     write_mdp_with_colvars(prod, fn_bias_local, fn_prod_mdp)
                 elif bias.kind == "plumed" and bias.input_file is not None:
                     kernel = ensure_plumed_kernel()
@@ -213,8 +216,8 @@ def main(fn_config: PathLike) -> None:
 
                 # Minimize energy
                 if em:
-                    deffnm_em = run_dir / f"md-{sample_id}-{i}-em"
-                    fn_tpr_em = run_dir / f"{deffnm_em}.tpr"
+                    deffnm_em = system_run_dir / "em"
+                    fn_tpr_em = deffnm_em.with_suffix(".tpr")
                     subprocess.run(
                         build_command(
                             gmx_cmd,
@@ -294,11 +297,15 @@ def main(fn_config: PathLike) -> None:
                 success.append(
                     check_success(f'{deffnm}.xtc', fn_prod_mdp, steps)
                 )
-                generated_files = _sample_output_paths(run_dir, sample_id, i)
+                generated_files = _sample_output_paths(
+                    run_dir, sample_id, system.system_id
+                )
                 if job_scheduler == "local":
                     _prune_unstored_outputs(generated_files, config.store)
                 trajectory_name = (
-                    f"{deffnm.name}.xtc" if "xtc" in config.store else None
+                    str(deffnm.with_suffix(".xtc").relative_to(campaign_dir))
+                    if "xtc" in config.store
+                    else None
                 )
                 outputs.append(
                     {
@@ -309,20 +316,20 @@ def main(fn_config: PathLike) -> None:
 
         if np.all(success):
             status = "completed"
-            if job_scheduler != 'local':
-                for ext in config.store:
-                    for file in run_dir.glob("*." + ext):
-                        shutil.copy(file, campaign_dir / file.name)
-            else:
+            if job_scheduler == 'local':
                 _prune_auxiliary_outputs(run_dir, config.store)
         else:
-            for system_index in range(len(config.systems)):
-                for file in _sample_output_paths(run_dir, sample_id, system_index):
+            for system in config.systems:
+                for file in _sample_output_paths(
+                    run_dir, sample_id, system.system_id
+                ):
                     file.unlink(missing_ok=True)
 
     except Exception:
-        for system_index in range(len(config.systems)):
-            for file in _sample_output_paths(run_dir, sample_id, system_index):
+        for system in config.systems:
+            for file in _sample_output_paths(
+                run_dir, sample_id, system.system_id
+            ):
                 file.unlink(missing_ok=True)
         save_yaml(
             {

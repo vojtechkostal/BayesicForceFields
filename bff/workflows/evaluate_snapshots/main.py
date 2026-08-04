@@ -65,6 +65,12 @@ class EvaluateSnapshotJobConfig:
         data = load_yaml(fn_config)
         if not isinstance(data, dict):
             raise ValueError("Snapshot job config must contain a mapping.")
+        unknown = set(data) - {"kind", "run_dir", "cp2k_cmd"}
+        if unknown:
+            raise ValueError(
+                "Snapshot job config contains unsupported key(s): "
+                + ", ".join(sorted(unknown))
+            )
 
         kind = data.get("kind")
         if kind not in SNAPSHOT_JOBS:
@@ -145,11 +151,9 @@ def count_scheduler_jobs(config: EvaluateSnapshotsConfig) -> int:
     """Count Slurm jobs that will be submitted for snapshot evaluation."""
     total = 0
     for system in config.systems:
-        total += len(list(system.snapshot_xyz_dir.glob("snapshot-*.xyz")))
+        total += len(system.snapshot_files)
         if config.single_atoms:
-            total += sum(
-                1 for path in system.single_atoms_dir.iterdir() if path.is_dir()
-            )
+            total += len(system.isolated_atoms)
     return total
 
 
@@ -230,45 +234,35 @@ def stage_system(
     config: EvaluateSnapshotsConfig,
 ) -> tuple[Path, list[Path], list[Path]]:
     """Stage one prepared snapshot system into the output tree."""
-    system_dir = config.output_dir.resolve() / system.assets_dir.name
+    system_dir = config.output_dir.resolve() / "systems" / system.system_id
     system_dir.mkdir(parents=True, exist_ok=True)
     for stale in (system_dir / "train.extxyz", system_dir / "valid.extxyz"):
         if stale.exists():
             stale.unlink()
 
-    shutil.copy2(system.fn_system_top, system_dir / "system.top")
-    shutil.copy2(system.fn_system_gro, system_dir / "system.gro")
-    shutil.copy2(system.fn_system_xyz, system_dir / "system.xyz")
-    shutil.copy2(system.fn_system_xyz, system_dir / "system.extxyz")
+    shutil.copy2(system.topology_path, system_dir / "system.top")
+    shutil.copy2(system.coordinates_path, system_dir / "system.gro")
+    shutil.copy2(system.structure_path, system_dir / "system.xyz")
+    shutil.copy2(system.structure_path, system_dir / "system.extxyz")
 
-    snapshot_files = sorted(system.snapshot_xyz_dir.glob("snapshot-*.xyz"))
-    if not snapshot_files:
-        raise FileNotFoundError(
-            f"No snapshot XYZ files found in {system.snapshot_xyz_dir}"
-        )
+    snapshot_files = system.snapshot_files
 
     snapshots_dir = system_dir / "snapshots"
     if snapshots_dir.exists():
         shutil.rmtree(snapshots_dir)
     snapshots_dir.mkdir(parents=True, exist_ok=True)
 
-    snapshot_setup_env = system.snapshots_dir / "setup-env.sh"
-    if not snapshot_setup_env.exists():
-        snapshot_setup_env = None
-
     snapshot_run_dirs: list[Path] = []
     for xyz in snapshot_files:
         run_dir = snapshots_dir / xyz.stem
         run_dir.mkdir(parents=True, exist_ok=True)
         _write_snapshot_md_input(
-            src=system.fn_snapshot_md,
+            src=system.md_input_path,
             dst=run_dir / "md.inp",
             steps=config.snapshot_md_steps,
         )
-        shutil.copy2(system.fn_snapshot_sp, run_dir / "sp.inp")
+        shutil.copy2(system.sp_input_path, run_dir / "sp.inp")
         shutil.copy2(xyz, run_dir / "pos.xyz")
-        if snapshot_setup_env is not None:
-            shutil.copy2(snapshot_setup_env, run_dir / "setup-env.sh")
         snapshot_run_dirs.append(run_dir)
 
     single_atom_run_dirs: list[Path] = []
@@ -278,28 +272,17 @@ def stage_system(
             shutil.rmtree(single_atoms_dir)
         single_atoms_dir.mkdir(parents=True, exist_ok=True)
 
-        atom_dirs = sorted(
-            path for path in system.single_atoms_dir.iterdir() if path.is_dir()
-        )
-        if not atom_dirs:
+        if not system.isolated_atoms:
             raise FileNotFoundError(
-                "No isolated-atom directories found in "
-                f"{system.single_atoms_dir}"
+                f"System {system.system_id!r} has no isolated_atoms inputs."
             )
-
-        single_atom_setup_env = system.single_atoms_dir / "setup-env.sh"
-        if not single_atom_setup_env.exists():
-            single_atom_setup_env = system.assets_dir / "setup-env.sh"
-        if not single_atom_setup_env.exists():
-            single_atom_setup_env = None
-
-        for atom_dir in atom_dirs:
-            run_dir = single_atoms_dir / atom_dir.name
+        for element, (fn_input, fn_coordinates) in sorted(
+            system.isolated_atoms.items()
+        ):
+            run_dir = single_atoms_dir / element.lower()
             run_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(atom_dir / "input.inp", run_dir / "input.inp")
-            shutil.copy2(atom_dir / "pos.xyz", run_dir / "pos.xyz")
-            if single_atom_setup_env is not None:
-                shutil.copy2(single_atom_setup_env, run_dir / "setup-env.sh")
+            shutil.copy2(fn_input, run_dir / "input.inp")
+            shutil.copy2(fn_coordinates, run_dir / "pos.xyz")
             single_atom_run_dirs.append(run_dir)
 
     return system_dir, snapshot_run_dirs, single_atom_run_dirs
@@ -315,7 +298,21 @@ def _run_cp2k(
     command = [cp2k_cmd, "-i", fn_input, "-o", fn_output]
     if os.environ.get("SLURM_JOB_ID") and shutil.which("srun") is not None:
         command = ["srun", *command]
-    subprocess.run(command, cwd=str(cwd), check=True)
+    completed = subprocess.run(
+        command,
+        cwd=str(cwd),
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    if completed.returncode != 0:
+        output = (completed.stdout or "").strip()
+        detail = f"\n{output[-4000:]}" if output else ""
+        raise RuntimeError(
+            f"CP2K command failed for {cwd / fn_input} with exit code "
+            f"{completed.returncode}; inspect {cwd / fn_output}.{detail}"
+        )
 
 
 def _remove_cp2k_restart_files(run_dir: Path) -> None:
@@ -601,7 +598,7 @@ def process_system(
 ) -> Path:
     system_dir, snapshot_run_dirs, single_atom_dirs = stage_system(system, config)
 
-    logger.kv("Prepared assets", system.assets_dir.resolve(), level=2)
+    logger.kv("System ID", system.system_id, level=2)
     logger.kv("Output directory", system_dir.resolve(), level=2)
     logger.kv("Snapshots", len(snapshot_run_dirs), level=2)
 
@@ -622,13 +619,14 @@ def process_system(
         if is_local:
             label = SNAPSHOT_JOBS[kind]["label"]
             for index, run_dir in enumerate(run_dirs, start=1):
-                logger.status(
-                    label,
-                    f"{index}/{len(run_dirs)}",
-                    detail=run_dir.name,
-                    level=2,
-                    overwrite=True,
-                )
+                if index < len(run_dirs):
+                    logger.status(
+                        label,
+                        f"{index}/{len(run_dirs)}",
+                        detail=run_dir.name,
+                        level=2,
+                        overwrite=True,
+                    )
                 run_snapshot_job(kind, run_dir, config.cp2k_cmd)
             logger.done(label, detail=f"{len(run_dirs)}/{len(run_dirs)}", level=2)
             continue
@@ -685,7 +683,9 @@ def main(fn_config: str) -> None:
     config = EvaluateSnapshotsConfig.load(fn_config)
     config.output_dir.resolve().mkdir(parents=True, exist_ok=True)
 
-    logger = Logger("evaluate-snapshots")
+    logger = Logger(
+        "evaluate-snapshots", str(config.log), mode="w"
+    )
     print_evaluate_summary(config, logger)
 
     if config.job_scheduler == "local":
@@ -703,7 +703,9 @@ def main(fn_config: str) -> None:
         )
 
     for index, system in enumerate(config.systems, start=1):
-        logger.info(f"System {index}/{len(config.systems)}", level=1)
+        logger.info(
+            f"System {index}/{len(config.systems)}: {system.system_id}", level=1
+        )
         staged_system_dirs.append(
             process_system(
                 system,
@@ -715,10 +717,7 @@ def main(fn_config: str) -> None:
         )
         logger.blank()
 
-    if config.job_scheduler == "local":
-        return
-
-    if job_ids:
+    if config.job_scheduler == "slurm" and job_ids:
         if job_monitor is not None:
             job_monitor(get_job_state_counts(job_ids, "slurm"))
         control_jobs(job_ids, "slurm", monitor=job_monitor)
@@ -730,7 +729,36 @@ def main(fn_config: str) -> None:
             level=1,
         )
 
-    for index, system_dir in enumerate(staged_system_dirs, start=1):
-        logger.info(f"Collecting system {index}/{len(staged_system_dirs)}", level=1)
-        collect_system_outputs(system_dir, config, logger)
-        logger.blank()
+    if config.job_scheduler == "slurm":
+        for index, system_dir in enumerate(staged_system_dirs, start=1):
+            logger.info(
+                f"Collecting system {index}/{len(staged_system_dirs)}", level=1
+            )
+            collect_system_outputs(system_dir, config, logger)
+            logger.blank()
+
+    save_yaml(
+        {
+            "stage": "evaluate-snapshots",
+            "systems": {
+                system.system_id: {
+                    "directory": str(
+                        directory.relative_to(config.output_dir.resolve())
+                    ),
+                    "train": str(
+                        (directory / "train.extxyz").relative_to(
+                            config.output_dir.resolve()
+                        )
+                    ),
+                    "valid": str(
+                        (directory / "valid.extxyz").relative_to(
+                            config.output_dir.resolve()
+                        )
+                    ),
+                }
+                for system, directory in zip(config.systems, staged_system_dirs)
+            },
+        },
+        config.results_manifest,
+    )
+    logger.done("Snapshot results", detail=str(config.results_manifest), level=1)

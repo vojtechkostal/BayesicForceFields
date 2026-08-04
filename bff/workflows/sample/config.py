@@ -29,6 +29,29 @@ class SampleConfig(SimulationCampaignConfig):
     def load(cls, fn_config: PathLike) -> 'SampleConfig':
         _, _, config, common = _load_campaign_common(fn_config)
 
+        allowed = {
+            'campaign_dir',
+            'log',
+            'gmx_cmd',
+            'job_scheduler',
+            'source',
+            'systems',
+            'dispatch',
+            'compress',
+            'cleanup',
+            'store',
+            'slurm',
+            'bounds',
+            'charge_constraints',
+            'n_samples',
+        }
+        unknown = set(config) - allowed
+        if unknown:
+            raise ValueError(
+                'Sample configuration contains unsupported key(s): '
+                + ', '.join(sorted(unknown))
+            )
+
         required = [
             'bounds',
             'charge_constraints',
@@ -49,6 +72,17 @@ class SampleConfig(SimulationCampaignConfig):
         for index, constraint in enumerate(raw_constraints):
             if not isinstance(constraint, dict):
                 raise ValueError(f"charge_constraints[{index}] must be a mapping.")
+            unknown_constraint = set(constraint) - {
+                'selection',
+                'target',
+                'scope',
+                'implicit',
+            }
+            if unknown_constraint:
+                raise ValueError(
+                    f'charge_constraints[{index}] contains unsupported key(s): '
+                    + ', '.join(sorted(unknown_constraint))
+                )
             missing = [
                 key
                 for key in ('selection', 'target', 'scope', 'implicit')

@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 import yaml
 
 from bff.workflows.analyze.config import AnalyzeConfig
 from bff.workflows.build.config import BuildConfig
-from bff.workflows.fit.config import FitConfig
 from bff.workflows.learn.config import LearnConfig
+from bff.workflows.lgpfit.config import LGPFitConfig
 from bff.workflows.md.config import MDJobConfig
-from bff.workflows.prepare_assets.config import PrepareAssetsConfig
+from bff.workflows.prepare_reference.config import PrepareReferenceConfig
 from bff.workflows.sample.config import SampleConfig
 from bff.workflows.validate.config import ValidateConfig
 
@@ -32,52 +31,34 @@ def _make_prepared_system(asset_dir: Path, stem: str = "system-000") -> Path:
     return asset_dir
 
 
-def _make_build_manifest(project_dir: Path) -> Path:
-    eq = project_dir / "equilibration"
-    eq.mkdir(parents=True, exist_ok=True)
+def _make_build_stage(project_dir: Path) -> Path:
     for system_id in ("000", "001"):
-        for suffix in ("top", "gro", "ndx", "em.mdp", "npt.mdp", "mdp"):
-            _write(eq / f"system-{system_id}.{suffix}", f"{suffix}\n")
-        _write(eq / f"system-{system_id}-prod.gro", "prod gro\n")
-        _write(eq / f"system-{system_id}-prod.xtc", "prod xtc\n")
-
-    fn_manifest = project_dir / "build-manifest.yaml"
-    fn_manifest.write_text(
-        yaml.safe_dump(
+        system_dir = project_dir / "systems" / system_id
+        for name in (
+            "topology.top",
+            "coordinates.gro",
+            "index.ndx",
+            "em.mdp",
+            "npt.mdp",
+            "production.mdp",
+            "production.gro",
+            "production.xtc",
+        ):
+            _write(system_dir / name, f"{name}\n")
+        _write(
+            system_dir / "system.yaml",
+            yaml.safe_dump(
             {
-                "version": 1,
-                "gmx_cmd": "gmx",
-                "systems": [
-                    {
-                        "system_id": system_id,
-                        "topology": f"equilibration/system-{system_id}.top",
-                        "coordinates": f"equilibration/system-{system_id}.gro",
-                        "index": f"equilibration/system-{system_id}.ndx",
-                        "mdp": {
-                            "em": f"equilibration/system-{system_id}.em.mdp",
-                            "npt": f"equilibration/system-{system_id}.npt.mdp",
-                            "prod": f"equilibration/system-{system_id}.mdp",
-                        },
-                        "charge": -1,
-                        "multiplicity": 1,
-                        "box": [10.0, 10.0, 10.0, 90.0, 90.0, 90.0],
-                        "maxwarn": 0,
-                        "production": {
-                            "coordinates": (
-                                f"equilibration/system-{system_id}-prod.gro"
-                            ),
-                            "trajectory": (
-                                f"equilibration/system-{system_id}-prod.xtc"
-                            ),
-                            "n_steps": 1000,
-                        },
-                    }
-                    for system_id in ("000", "001")
-                ],
+                "system_name": None,
+                "charge": -1,
+                "multiplicity": 1,
+                "box": [10.0, 10.0, 10.0, 90.0, 90.0, 90.0],
+                "maxwarn": 0,
+                "production_steps": 1000,
             }
+            ),
         )
-    )
-    return fn_manifest
+    return project_dir
 
 
 def test_build_config_loads_minimal_config(tmp_path: Path) -> None:
@@ -95,6 +76,7 @@ def test_build_config_loads_minimal_config(tmp_path: Path) -> None:
                 "gromacs": {"command": "gmx"},
                 "systems": [
                     {
+                        "system_id": "acetate",
                         "topology": str(topology),
                         "templates": {"ACE": str(template)},
                         "charge": -1,
@@ -133,6 +115,7 @@ def test_build_config_defaults_missing_templates_to_empty_mapping(
                 "gromacs": {"command": "gmx"},
                 "systems": [
                     {
+                        "system_id": "acetate",
                         "topology": str(topology),
                         "charge": 0,
                         "multiplicity": 1,
@@ -152,41 +135,42 @@ def test_build_config_defaults_missing_templates_to_empty_mapping(
     assert config.systems[0].templates == {}
 
 
-def test_prepare_assets_config_loads_manifest(tmp_path: Path) -> None:
-    fn_manifest = _make_build_manifest(tmp_path / "project")
-    fn_config = tmp_path / "prepare-assets.yaml"
+def test_prepare_reference_config_loads_build_stage(tmp_path: Path) -> None:
+    source = _make_build_stage(tmp_path / "project")
+    fn_config = tmp_path / "prepare-reference.yaml"
     fn_config.write_text(
         yaml.safe_dump(
             {
-                "manifest": str(fn_manifest),
-                "ffmd_dir": "./ffmd",
-                "reference_dir": "./reference",
+                "source": str(source),
+                "output": "./reference",
+                "systems": ["000", "001"],
             }
         )
     )
 
-    config = PrepareAssetsConfig.load(fn_config)
+    config = PrepareReferenceConfig.load(fn_config)
 
-    assert config.ffmd_dir == (tmp_path / "ffmd").resolve()
-    assert config.reference_dir == (tmp_path / "reference").resolve()
+    assert config.source == source.resolve()
+    assert config.output_dir == (tmp_path / "reference").resolve()
     assert len(config.systems) == 2
-    assert config.systems[0].fn_prod_coord.name == "system-000-prod.gro"
+    assert config.systems[0].production_coordinates_path.name == "production.gro"
 
 
-def test_prepare_assets_config_selects_systems(tmp_path: Path) -> None:
-    fn_manifest = _make_build_manifest(tmp_path / "project")
-    fn_config = tmp_path / "prepare-assets.yaml"
+def test_prepare_reference_config_selects_systems(tmp_path: Path) -> None:
+    source = _make_build_stage(tmp_path / "project")
+    fn_config = tmp_path / "prepare-reference.yaml"
     fn_config.write_text(
         yaml.safe_dump(
             {
-                "manifest": str(fn_manifest),
+                "source": str(source),
+                "output": "./reference",
                 "n_single_point_snapshots": 25,
-                "systems": ["system-001"],
+                "systems": ["001"],
             }
         )
     )
 
-    config = PrepareAssetsConfig.load(fn_config)
+    config = PrepareReferenceConfig.load(fn_config)
 
     assert config.n_single_point_snapshots == 25
     assert [system.system_id for system in config.systems] == ["001"]
@@ -194,73 +178,82 @@ def test_prepare_assets_config_selects_systems(tmp_path: Path) -> None:
 
 def test_analyze_config_loads_minimal_config(
     tmp_path: Path,
-    monkeypatch,
 ) -> None:
     sample_dir = tmp_path / "sample"
     sample_dir.mkdir()
+    sample_manifest = _write(
+        sample_dir / "samples.yaml", "systems: []\nsamples: {}\n"
+    )
     coord = _write(tmp_path / "system.gro")
     topol = _write(tmp_path / "system.top")
     trj = _write(tmp_path / "traj.xtc")
-
-    monkeypatch.setattr(
-        "bff.workflows.analyze.config.normalize_routine_list",
-        lambda routines, base_dir=None: ("dummy-routine",),
-    )
-    monkeypatch.setattr(
-        "bff.workflows.analyze.config.normalize_analysis_runtime_config",
-        lambda raw: SimpleNamespace(in_memory=False, gc_collect=False),
-    )
 
     fn_config = tmp_path / "analyze.yaml"
     fn_config.write_text(
         yaml.safe_dump(
             {
-                "sample": {"dir": str(sample_dir)},
+                "training_samples": {
+                    "manifest": str(sample_manifest),
+                    "systems": [{"system_id": "acetate"}],
+                },
                 "reference": {
                     "systems": [
                         {
-                            "coordinates": str(coord),
-                            "topology": str(topol),
-                            "trajectory": str(trj),
-                            "routines": [{"name": "dummy"}],
+                            "system_id": "acetate",
+                            "inputs": {
+                                "coordinates": str(coord),
+                                "topology": str(topol),
+                                "trajectory": str(trj),
+                            },
                         }
                     ]
                 },
+                "routines": [
+                    {
+                        "name": "rdf",
+                        "type": "rdf",
+                        "systems": ["acetate"],
+                        "selections": {
+                            "group_a": "name A",
+                            "group_b": "name B",
+                        },
+                    }
+                ],
             }
         )
     )
 
     config = AnalyzeConfig.load(fn_config)
 
-    assert config.sample.dir == sample_dir.resolve()
+    assert config.training_samples.manifest == sample_manifest.resolve()
     assert len(config.reference.systems) == 1
-    assert config.reference.systems[0].routines == ("dummy-routine",)
+    assert config.routines[0].name == "rdf"
 
 
-def test_fit_config_loads_minimal_config(tmp_path: Path) -> None:
+def test_lgpfit_config_loads_minimal_config(tmp_path: Path) -> None:
     data = _write(tmp_path / "dataset.pt")
 
-    fn_config = tmp_path / "fit.yaml"
+    fn_config = tmp_path / "lgpfit.yaml"
     fn_config.write_text(
         yaml.safe_dump(
             {
                 "datasets": {"rdf": {"data": str(data)}},
-                "fit": {"model_dir": "./models", "device": "cpu"},
+                "lgpfit": {"model_dir": "./models", "device": "cpu"},
             }
         )
     )
 
-    config = FitConfig.load(fn_config)
+    config = LGPFitConfig.load(fn_config)
 
-    assert config.fit.model_dir == (tmp_path / "models").resolve()
+    assert config.lgpfit.model_dir == (tmp_path / "models").resolve()
     assert config.datasets[0].name == "rdf"
     assert config.datasets[0].fn_model == (tmp_path / "models" / "rdf.lgp").resolve()
 
 
-def test_fit_config_rejects_observation_scale(tmp_path: Path) -> None:
+def test_lgpfit_config_rejects_observation_scale(tmp_path: Path) -> None:
     data = _write(tmp_path / "dataset.pt")
 
-    fn_config = tmp_path / "fit.yaml"
+    fn_config = tmp_path / "lgpfit.yaml"
     fn_config.write_text(
         yaml.safe_dump(
             {
@@ -270,13 +263,13 @@ def test_fit_config_rejects_observation_scale(tmp_path: Path) -> None:
                         "observation_scale": 2.0,
                     }
                 },
-                "fit": {"model_dir": "./models", "device": "cpu"},
+                "lgpfit": {"model_dir": "./models", "device": "cpu"},
             }
         )
     )
 
     with pytest.raises(ValueError, match="observation_scale"):
-        FitConfig.load(fn_config)
+        LGPFitConfig.load(fn_config)
 
 
 def test_learn_config_loads_effective_observation_modes(tmp_path: Path) -> None:
@@ -302,10 +295,8 @@ def test_learn_config_loads_effective_observation_modes(tmp_path: Path) -> None:
                         "n_eff": 2.5,
                     },
                 },
-                "mcmc": {
-                    "posterior": "./posterior.pt",
-                    "device": "cpu",
-                },
+                "mcmc": {"device": "cpu"},
+                "output": {"directory": "./learn-output"},
             }
         )
     )
@@ -321,7 +312,9 @@ def test_learn_config_loads_effective_observation_modes(tmp_path: Path) -> None:
     assert config.models["density"].n_eff is None
     assert config.models["density"].tolerance is None
     assert config.models["pmf"].n_eff == 2.5
-    assert config.mcmc.posterior == (tmp_path / "posterior.pt").resolve()
+    assert config.output.posterior == (
+        tmp_path / "learn-output" / "output" / "posterior.pt"
+    ).resolve()
 
 
 def test_learn_config_rejects_obsolete_effective_observation_keys(
@@ -346,7 +339,7 @@ def test_learn_config_rejects_obsolete_effective_observation_keys(
         )
     )
 
-    with pytest.raises(ValueError, match="unsupported keys"):
+    with pytest.raises(ValueError, match="unsupported key"):
         LearnConfig.load(fn_config)
 
 
@@ -372,7 +365,7 @@ def test_learn_config_rejects_ambiguous_effective_observations(
         )
     )
 
-    with pytest.raises(ValueError, match="cannot combine"):
+    with pytest.raises(ValueError, match="cannot be combined"):
         LearnConfig.load(fn_config)
 
 
@@ -396,7 +389,7 @@ def test_learn_config_requires_tolerance_for_curve_model(
         )
     )
 
-    with pytest.raises(ValueError, match="must define 'tolerance'"):
+    with pytest.raises(ValueError, match="requires a positive finite tolerance"):
         LearnConfig.load(fn_config)
 
 
@@ -419,7 +412,7 @@ def test_learn_config_requires_tolerance_for_curve_model(
                     "independent_observations": "false",
                 }
             },
-            "must be a boolean",
+            "must be true or false",
         ),
     ],
 )
@@ -466,10 +459,13 @@ def test_md_job_config_loads_minimal_config(tmp_path: Path) -> None:
                 "job_scheduler": "local",
                 "systems": [
                     {
-                        "topology": str(topol),
-                        "coordinates": str(coord),
-                        "mdp": {"prod": str(mdp_prod)},
-                        "index": str(ndx),
+                        "system_id": "acetate",
+                        "inputs": {
+                            "topology": str(topol),
+                            "coordinates": str(coord),
+                            "mdp_production": str(mdp_prod),
+                            "index": str(ndx),
+                        },
                         "n_steps": 1000,
                     }
                 ],
@@ -494,7 +490,19 @@ def test_sample_config_loads_prepared_assets(tmp_path: Path) -> None:
                 "campaign_dir": "./campaign",
                 "gmx_cmd": "gmx",
                 "job_scheduler": "local",
-                "systems": [{"assets": str(assets), "n_steps": 1000}],
+                "systems": [
+                    {
+                        "system_id": "acetate",
+                        "inputs": {
+                            "topology": str(assets / "system-000.top"),
+                            "coordinates": str(assets / "system-000.gro"),
+                            "mdp_em": str(assets / "system-000.em.mdp"),
+                            "mdp_production": str(assets / "system-000.mdp"),
+                            "index": str(assets / "system-000.ndx"),
+                        },
+                        "n_steps": 1000,
+                    }
+                ],
                 "bounds": {"charge C1": [-1.0, 1.0]},
                 "charge_constraints": [
                     {
@@ -528,7 +536,19 @@ def test_validate_config_loads_prepared_assets(tmp_path: Path) -> None:
                 "campaign_dir": "./campaign",
                 "gmx_cmd": "gmx",
                 "job_scheduler": "local",
-                "systems": [{"assets": str(assets), "n_steps": 1000}],
+                "systems": [
+                    {
+                        "system_id": "acetate",
+                        "inputs": {
+                            "topology": str(assets / "system-000.top"),
+                            "coordinates": str(assets / "system-000.gro"),
+                            "mdp_em": str(assets / "system-000.em.mdp"),
+                            "mdp_production": str(assets / "system-000.mdp"),
+                            "index": str(assets / "system-000.ndx"),
+                        },
+                        "n_steps": 1000,
+                    }
+                ],
                 "specs": str(specs),
                 "parameters": str(params),
             }

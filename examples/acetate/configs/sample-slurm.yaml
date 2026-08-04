@@ -1,10 +1,11 @@
 campaign_dir: ./
+source: ../01-build
 systems:
-  - assets: ../02-assets/ffmd/system-000
+  - system_id: acetate
     n_steps: 5000
-  - assets: ../02-assets/ffmd/system-001
+  - system_id: acetate-contact
     n_steps: 5000
-  - assets: ../02-assets/ffmd/system-002
+  - system_id: acetate-separated
     n_steps: 5000
 bounds:
   charge C2: [0.0, 1.0]

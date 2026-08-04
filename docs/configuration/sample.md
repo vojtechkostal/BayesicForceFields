@@ -15,8 +15,9 @@ the corresponding GROMACS jobs.
 
 ```yaml
 campaign_dir: ./
+source: ../01-build
 systems:
-  - assets: ../02-assets/ffmd/system-000
+  - system_id: acetate
     n_steps: 1000
 bounds:
   charge C2: [0.0, 1.0]
@@ -36,7 +37,11 @@ job_scheduler: local
 - `campaign_dir`
   Output directory for sampled topologies, metadata, and trajectories.
 - `systems`
-  Non-empty list of staged asset directories plus system-specific MD lengths.
+  Non-empty list of exact build-system IDs plus system-specific MD lengths, or
+  systems with fully explicit `inputs` mappings.
+- `source`
+  Build stage root containing `systems/<system_id>/`. Do not combine this with
+  direct per-system inputs.
 - `bounds`
   Mapping from parameter label to lower and upper bounds.
 - `charge_constraints`
@@ -61,8 +66,11 @@ job_scheduler: local
 
 ## `systems[]` Keys
 
-- `assets`
-  Directory created by `bff prepare-assets`, for example `ffmd/system-000`.
+- `system_id`
+  Stable ID used for all paths and metadata matching.
+- `inputs`
+  Without `source`, explicit roles `topology`, `coordinates`, `index`,
+  `mdp_production`, optional `mdp_em`, and optional `bias`.
 - `n_steps`
   Production MD length for this prepared system within the sampled campaign.
 
@@ -151,6 +159,8 @@ all of them to the same sampled value.
 
 - `campaign_dir/specs.yaml`
 - `campaign_dir/samples.yaml`
+- `campaign_dir/systems/<system_id>/`
+- `campaign_dir/samples/<sample_id>/<system_id>/`
 - per-sample job configs
 - per-sample modified topologies
 - stored trajectories and energy files

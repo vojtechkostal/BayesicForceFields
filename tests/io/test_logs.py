@@ -43,6 +43,7 @@ def test_iter_progress_prints_pytest_style_summary(capsys) -> None:
 
     out = capsys.readouterr().out
     assert "[ 33%]" in out
-    assert "[100%]" in out
+    assert "[100%]" not in out
+    assert "\r" not in out
     assert "Done. Finished in" in out
     assert "===" not in out

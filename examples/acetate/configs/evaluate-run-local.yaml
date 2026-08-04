@@ -5,8 +5,6 @@ single_atoms: true
 snapshot_md_steps: 1
 train_fraction: 0.8
 seed: 2026
+source: ../02-reference
 
-systems:
-  - assets: ../02-assets/reference/system-000
-  - assets: ../02-assets/reference/system-001
-  - assets: ../02-assets/reference/system-002
+systems: [acetate, acetate-contact, acetate-separated]

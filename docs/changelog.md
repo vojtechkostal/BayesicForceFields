@@ -5,6 +5,14 @@ The public reproduction snapshot for the published study is archived as
 Use that tag for exact reproduction of the paper results. The current
 `0.3.0` release is the current workflow release.
 
+## Unreleased
+
+The pipeline now uses semantic system IDs and explicit role-based manifests,
+pairs analysis inputs by ID, exposes `bff lgpfit` in place of `bff fit`, and
+uses a fixed, fingerprinted learning output layout. This is a breaking config
+change; follow the [pipeline migration guide](migration.md) and regenerate QoI
+datasets and `.lgp` models.
+
 ## `0.3.0` - 2026-06-11
 
 ### Highlights

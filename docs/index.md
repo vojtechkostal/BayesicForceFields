@@ -20,16 +20,16 @@ See the [changelog](changelog.md) for post-publication highlights.
 BFF runs a linear workflow:
 
 ```text
-build -> prepare-assets -> evaluate-snapshots
-                       -> sample -> analyze -> fit -> learn -> validate
+build -> prepare-reference -> evaluate-snapshots
+      -> sample -> analyze -> lgpfit -> learn -> validate
 ```
 
 - `build`: equilibrate systems and run seeded production trajectories
-- `prepare-assets`: package FFMD starts and stage CP2K snapshot assets
+- `prepare-reference`: stage CP2K reference inputs from build systems
 - `evaluate-snapshots`: run CP2K snapshot jobs
 - `sample`: run sampled force-field MD campaigns
 - `analyze`: compute quantities of interest from sample and reference data
-- `fit`: train surrogate models
+- `lgpfit`: train fingerprinted surrogate models
 - `learn`: infer posterior force-field parameters
 - `validate`: rerun selected posterior samples
 
@@ -72,10 +72,10 @@ cd 01-build
 bff build config.yaml
 cd ..
 
-mkdir -p 02-assets
-cp configs/prepare-assets.yaml 02-assets/config.yaml
-cd 02-assets
-bff prepare-assets config.yaml
+mkdir -p 02-reference
+cp configs/prepare-reference.yaml 02-reference/config.yaml
+cd 02-reference
+bff prepare-reference config.yaml
 ```
 
 Continue with the stages in the [acetate example](examples/acetate.md).

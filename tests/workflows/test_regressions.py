@@ -71,7 +71,7 @@ def test_evaluate_snapshots_rejects_import_mode(
         )
     )
 
-    with pytest.raises(ValueError, match="'mode' is no longer supported"):
+    with pytest.raises(ValueError, match="unsupported key.*mode"):
         EvaluateSnapshotsConfig.load(fn_config)
 
 
@@ -143,7 +143,8 @@ def test_write_default_plots_writes_expected_pngs(
             self.prepared_samples = np.linspace(-0.5, 0.5, 20)[:, None]
             self.include_implicit_charge = False
 
-        def prepare_samples(self) -> None:
+        def prepare_samples(self, **kwargs) -> None:
+            assert kwargs == {"discard": 0, "thin": 1}
             self.prepared = True
 
     calls: dict[str, Path] = {}
@@ -187,9 +188,6 @@ def test_write_default_plots_writes_expected_pngs(
         "bounds: {}\n"
         "charge_constraints: []\n"
     )
-    posterior = tmp_path / "posterior.pt"
-    posterior.write_text("posterior\n")
-    log = tmp_path / "learn.log"
     model = tmp_path / "model.pt"
     model.write_text("model\n")
 
@@ -204,18 +202,13 @@ def test_write_default_plots_writes_expected_pngs(
                             "independent_observations": True,
                         }
                     },
-                    "mcmc": {"posterior": str(posterior)},
-                    "log": str(log),
+                    "mcmc": {},
+                    "output": {"directory": str(tmp_path / "learn")},
                 }
         )
     )
 
     config = LearnConfig.load(fn_config)
-    warnings: list[str] = []
-    logger = SimpleNamespace(
-        kv=lambda *args, **kwargs: None,
-        warn=lambda message, **kwargs: warnings.append(str(message)),
-    )
     problem = SimpleNamespace(
         n_params=1,
         models={
@@ -226,9 +219,9 @@ def test_write_default_plots_writes_expected_pngs(
         to_torch=lambda device: problem,
     )
 
-    _write_default_plots(DummyResults(), config, problem, logger)
+    config.output.plots_dir.mkdir(parents=True)
+    _write_default_plots(DummyResults(), config, problem)
 
-    assert warnings == []
     assert calls["marginals"].read_text() == "marginals\n"
     assert calls["qoi_marginals"].read_text() == "qoi marginals\n"
     assert calls["corner"].read_text() == "corner\n"

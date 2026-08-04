@@ -1,265 +1,214 @@
+"""Build ID-paired QoI datasets from explicit analysis inputs."""
+
+from __future__ import annotations
+
 import time
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
-from ...domain.sample import SampleSet, TrajectorySet
+from ...domain.sample import SampleSet
 from ...io.logs import Logger
 from ...io.utils import save_json
-from ...qoi.analysis import analyze_trajectory_sets
+from ...qoi.analysis import analyze_input_sets
 from ...qoi.data import QoI, QoIDataset
-from ...qoi.routines import build_analysis_routines
 from .config import AnalyzeConfig
 
 
-def _qoi_output_path(path, qoi_name: str | None = None, *, raw: bool = False):
-    if raw:
-        return path.with_name(path.name + '.raw.json')
-    if qoi_name is None:
-        raise ValueError('qoi_name is required unless raw=True.')
-    return path.with_name(f'{path.name}-{qoi_name}.pt')
-
-
-def _validate_qoi_blocks(
-    blocks: list[QoI],
-    *,
-    context: str,
-) -> tuple[str, ...] | None:
+def _validate_qoi_blocks(blocks: list[QoI], *, context: str) -> None:
     if not blocks:
-        return None
-
+        raise ValueError(f"{context} contains no QoI blocks.")
     first = blocks[0]
-    labels = first.labels
-    values_per_label = first.values_per_label
-    n_values = first.n_values
     for block in blocks[1:]:
-        if block.values_per_label != values_per_label:
+        if block.values_per_label != first.values_per_label:
             raise ValueError(
-                f'QoI schema mismatch in {context}: expected values_per_label='
-                f'{values_per_label}, got {block.values_per_label}.'
+                f"{context}: expected values_per_label={first.values_per_label}, "
+                f"got {block.values_per_label}."
             )
-        if block.labels != labels:
+        if block.labels != first.labels:
             raise ValueError(
-                f'QoI label mismatch in {context}: expected {labels}, '
-                f'got {block.labels}.'
+                f"{context}: expected labels {first.labels!r}, got {block.labels!r}."
             )
-        if block.n_values != n_values:
+        if block.n_values != first.n_values:
             raise ValueError(
-                f'QoI value-count mismatch in {context}: expected {n_values}, '
-                f'got {block.n_values}.'
+                f"{context}: expected {first.n_values} values, got {block.n_values}."
             )
-    return labels
 
 
-def _stack_qoi_blocks(
-    blocks: list[QoI],
-    *,
-    context: str,
-) -> np.ndarray:
-    if not blocks:
-        return np.empty(0, dtype=float)
-    _validate_qoi_blocks(blocks, context=context)
-    return np.concatenate([block.values for block in blocks])
-
-
-def _dataset_labels(
-    ref_blocks: list[QoI],
-    system_indices: list[int],
-) -> tuple[str, ...] | None:
-    if not ref_blocks:
-        return None
-
-    labels = ref_blocks[0].labels
-    if labels is None:
-        return None
-    if len(ref_blocks) == 1:
+def _labels(blocks: list[QoI], system_ids: tuple[str, ...]) -> tuple[str, ...] | None:
+    labels = blocks[0].labels
+    if len(blocks) == 1:
         return labels
-
+    if labels is None:
+        if all(block.n_values == block.values_per_label for block in blocks):
+            return system_ids
+        return None
     return tuple(
-        f'window-{system_index:03d}:{label}'
-        for system_index, block in zip(system_indices, ref_blocks)
+        f"{system_id}:{label}"
+        for system_id, block in zip(system_ids, blocks)
         for label in block.labels or ()
     )
 
 
-def main(fn_config: str) -> None:
-    config = AnalyzeConfig.load(fn_config)
-    sample_cfg = config.sample
-    ref_cfg = config.reference
-    run_cfg = config.run
-    output_cfg = config.output
-
-    routines_by_system = build_analysis_routines(
-        [system.routines for system in ref_cfg.systems]
+def _shared_block_metadata(
+    blocks: list[QoI],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    settings = [dict(block.settings) for block in blocks]
+    metadata = [dict(block.metadata) for block in blocks]
+    shared_settings = (
+        settings[0] if all(value == settings[0] for value in settings) else {}
     )
-    logger = Logger(name='analyze', fn_log=str(output_cfg.log), mode='w')
-    sample_set = SampleSet.from_dir(sample_cfg.dir)
-    if len(routines_by_system) != len(sample_set.systems):
+    shared_metadata = (
+        metadata[0] if all(value == metadata[0] for value in metadata) else {}
+    )
+    if not shared_settings:
+        shared_metadata["settings_by_system"] = settings
+    if metadata and not shared_metadata:
+        shared_metadata["metadata_by_system"] = metadata
+    return dict(shared_settings), dict(shared_metadata)
+
+
+def _training_tasks(
+    sample_set: SampleSet,
+    selected_ids: tuple[str, ...],
+) -> list[tuple[str, str, dict[str, Any]]]:
+    campaign_ids = [system.system_id for system in sample_set.systems]
+    missing = sorted(set(selected_ids) - set(campaign_ids))
+    if missing:
         raise ValueError(
-            'Analysis system count must match the number of staged sample systems.'
+            f"training_samples.systems requests IDs absent from "
+            f"{sample_set.campaign_dir / 'samples.yaml'}: {missing}."
         )
+    tasks: list[tuple[str, str, dict[str, Any]]] = []
+    for sample in sample_set.samples:
+        by_id = dict(zip(sample.system_ids, sample.input_roles))
+        for system_id in selected_ids:
+            if system_id not in by_id:
+                raise ValueError(
+                    f"Sample {sample.sample_id!r} is missing system {system_id!r}."
+                )
+            tasks.append((sample.sample_id, system_id, dict(by_id[system_id])))
+    return tasks
 
-    reference_set = TrajectorySet(
-        sample_id='reference',
-        fn_topol=tuple(system.fn_topol for system in ref_cfg.systems),
-        fn_coord=tuple(system.fn_coord for system in ref_cfg.systems),
-        fn_trj=tuple(system.fn_trj for system in ref_cfg.systems),
+
+def main(fn_config: str | Path) -> None:
+    started = time.perf_counter()
+    config = AnalyzeConfig.load(fn_config)
+    training = config.training_samples
+    selected_ids = training.system_ids
+    config.output.directory.mkdir(parents=True, exist_ok=True)
+    logger = Logger("analyze", str(config.output.log), mode="w")
+    sample_set = SampleSet.from_dir(
+        training.manifest.parent, manifest=training.manifest
     )
+    routines_by_system = {
+        system_id: tuple(
+            routine for routine in config.routines if system_id in routine.systems
+        )
+        for system_id in selected_ids
+    }
+    reference_by_id = {
+        system.system_id: system.inputs.inputs for system in config.reference.systems
+    }
+    reference_tasks = [
+        ("reference", system_id, dict(reference_by_id[system_id]))
+        for system_id in selected_ids
+    ]
+    training_tasks = _training_tasks(sample_set, selected_ids)
 
-    logger.section('QoI Analysis')
-    logger.kv('Config', Path(fn_config).resolve())
-    logger.kv('Sampling campaign', sample_cfg.dir.resolve())
-    logger.kv('Reference systems', len(ref_cfg.systems))
-    logger.kv('Samples', len(sample_set.samples))
-    if output_cfg.write_raw:
-        logger.warn('Raw QoI export is enabled and may create a large JSON file.')
+    logger.section("QoI Analysis")
+    logger.kv("Config", config.fn_config)
+    logger.kv("Sample manifest", training.manifest)
+    logger.kv("Systems", ", ".join(selected_ids))
+    logger.kv("Samples", sample_set.n_samples)
+    logger.kv("Routines", len(config.routines))
+    logger.kv("Output directory", config.output.directory)
     logger.blank()
 
-    qoi_ref = analyze_trajectory_sets(
-        [reference_set],
+    ref_frames = config.reference.frames
+    reference_results = analyze_input_sets(
+        reference_tasks,
         routines_by_system=routines_by_system,
-        start=ref_cfg.start,
-        stop=ref_cfg.stop,
-        step=ref_cfg.step,
+        start=ref_frames.start,
+        stop=ref_frames.stop,
+        step=ref_frames.step,
         workers=1,
         progress_stride=1,
-        progress_label='Reference QoI',
+        progress_label="Reference QoI",
         logger=logger,
-        in_memory=run_cfg.in_memory,
-        gc_collect=run_cfg.gc_collect,
-    )[0]
-
-    logger.blank()
-
-    qoi_sample = analyze_trajectory_sets(
-        sample_set.samples,
+        in_memory=config.run.in_memory,
+        gc_collect=config.run.gc_collect,
+        maxtasksperchild=config.run.maxtasksperchild,
+    )
+    train_frames = training.frames
+    training_results = analyze_input_sets(
+        training_tasks,
         routines_by_system=routines_by_system,
-        start=sample_cfg.start,
-        stop=sample_cfg.stop,
-        step=sample_cfg.step,
-        workers=sample_cfg.workers,
-        progress_stride=sample_cfg.progress_stride,
-        progress_label='Sample QoI',
+        start=train_frames.start,
+        stop=train_frames.stop,
+        step=train_frames.step,
+        workers=training.workers,
+        progress_stride=training.progress_stride,
+        progress_label="Training QoI",
         logger=logger,
-        in_memory=run_cfg.in_memory,
-        gc_collect=run_cfg.gc_collect,
-        maxtasksperchild=run_cfg.maxtasksperchild,
+        in_memory=config.run.in_memory,
+        gc_collect=config.run.gc_collect,
+        maxtasksperchild=config.run.maxtasksperchild,
     )
 
-    logger.blank()
-    logger.status('Saving QoI data', 'in progress...', level=1, overwrite=True)
-    save_start = time.perf_counter()
-    qoi_names = sorted({name for sample in qoi_ref for name in sample})
-    for qoi_name in qoi_names:
-        fn_qoi = _qoi_output_path(output_cfg.path, qoi_name)
-        system_indices = [i for i, sample in enumerate(qoi_ref) if qoi_name in sample]
-        ref_blocks = [qoi_ref[i][qoi_name] for i in system_indices]
-        sample_blocks = [
-            [sample[i][qoi_name] for i in system_indices]
-            for sample in qoi_sample
+    sample_ids = sample_set.sample_ids
+    raw: dict[str, Any] = {"reference": {}, "samples": {}}
+    for routine in config.routines:
+        system_ids = routine.systems
+        ref_blocks = [
+            reference_results["reference"][system_id][routine.name]
+            for system_id in system_ids
         ]
-
-        _validate_qoi_blocks(ref_blocks, context='reference QoI blocks')
-        reference = ref_blocks[0] if ref_blocks else None
-        outputs_ref = _stack_qoi_blocks(ref_blocks, context='reference QoI blocks')
-        outputs = []
-        for i, blocks in enumerate(sample_blocks):
-            if reference is not None and blocks:
-                _validate_qoi_blocks(
-                    [reference, *blocks],
-                    context=f'sample QoI blocks for sample {i}',
-                )
-            outputs.append(
-                _stack_qoi_blocks(
-                    blocks,
-                    context=f'sample QoI blocks for sample {i}',
-                )
+        _validate_qoi_blocks(
+            ref_blocks, context=f"Reference routine {routine.name!r}"
+        )
+        sample_rows: list[np.ndarray] = []
+        for sample_id in sample_ids:
+            blocks = [
+                training_results[sample_id][system_id][routine.name]
+                for system_id in system_ids
+            ]
+            _validate_qoi_blocks(
+                [*ref_blocks, *blocks],
+                context=f"Routine {routine.name!r}, sample {sample_id!r}",
             )
-
-        if outputs_ref.size == 0:
-            if fn_qoi.exists():
-                fn_qoi.unlink()
-            continue
-
-        settings: dict[str, object] = {}
-        metadata: dict[str, object] = {'system_indices': system_indices}
-        labels = None
-        values_per_label = 1
-        if reference is not None:
-            settings_by_block = [dict(block.settings) for block in ref_blocks]
-            if settings_by_block:
-                shared_settings = settings_by_block[0]
-                if all(
-                    block_settings == shared_settings
-                    for block_settings in settings_by_block[1:]
-                ):
-                    settings = dict(shared_settings)
-                else:
-                    metadata['settings_by_block'] = settings_by_block
-
-            metadata_by_block = [dict(block.metadata) for block in ref_blocks]
-            if metadata_by_block:
-                shared_metadata = metadata_by_block[0]
-                if all(
-                    block_metadata == shared_metadata
-                    for block_metadata in metadata_by_block[1:]
-                ):
-                    metadata = dict(shared_metadata) | metadata
-                else:
-                    metadata['metadata_by_block'] = metadata_by_block
-
-            labels = _dataset_labels(ref_blocks, system_indices)
-            values_per_label = reference.values_per_label
-
+            sample_rows.append(np.concatenate([block.values for block in blocks]))
+        settings, metadata = _shared_block_metadata(ref_blocks)
+        metadata["system_ids"] = list(system_ids)
         dataset = QoIDataset(
-            name=qoi_name,
+            name=routine.name,
             inputs=sample_set.inputs,
-            outputs=outputs,
-            outputs_ref=outputs_ref,
-            labels=labels,
-            values_per_label=values_per_label,
-            nuisance=None,
+            outputs=np.asarray(sample_rows, dtype=float),
+            outputs_ref=np.concatenate([block.values for block in ref_blocks]),
+            labels=_labels(ref_blocks, system_ids),
+            values_per_label=ref_blocks[0].values_per_label,
             settings=settings,
             metadata=metadata,
         )
-        dataset.write(fn_qoi)
-    save_elapsed = time.perf_counter() - save_start
-    logger.done(
-        'Saving QoI data',
-        detail=f'finished in {save_elapsed:.2f}s',
-        level=1,
-        overwrite=True,
-    )
-    logger.blank()
+        fn_dataset = config.output.directory / f"{routine.name}.pt"
+        dataset.write(fn_dataset)
+        raw["reference"][routine.name] = [block.to_dict() for block in ref_blocks]
+        raw["samples"][routine.name] = {
+            sample_id: [
+                training_results[sample_id][system_id][routine.name].to_dict()
+                for system_id in system_ids
+            ]
+            for sample_id in sample_ids
+        }
+        logger.done("QoI dataset", detail=str(fn_dataset), level=1)
 
-    if output_cfg.write_raw:
-        logger.status(
-            'Saving raw QoI data',
-            'in progress...',
-            level=1,
-            overwrite=True,
-        )
-        raw_save_start = time.perf_counter()
-        save_json(
-            {
-                'reference': [
-                    {name: qoi.to_dict() for name, qoi in sample.items()}
-                    for sample in qoi_ref
-                ],
-                'samples': [
-                    [
-                        {name: qoi.to_dict() for name, qoi in sample.items()}
-                        for sample in dataset
-                    ]
-                    for dataset in qoi_sample
-                ],
-            },
-            _qoi_output_path(output_cfg.path, raw=True),
-        )
-        raw_save_elapsed = time.perf_counter() - raw_save_start
-        logger.done(
-            'Saving raw QoI data',
-            detail=f'finished in {raw_save_elapsed:.2f}s',
-            level=1,
-            overwrite=True,
-        )
+    if config.output.write_raw:
+        fn_raw = config.output.directory / "raw.json"
+        save_json(raw, fn_raw)
+        logger.done("Raw QoI data", detail=str(fn_raw), level=1)
+    logger.done(
+        "Analysis",
+        detail=f"finished in {time.perf_counter() - started:.2f}s",
+        level=1,
+    )

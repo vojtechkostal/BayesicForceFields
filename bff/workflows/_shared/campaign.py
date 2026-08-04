@@ -8,6 +8,7 @@ from typing import Any
 import numpy as np
 from gmxtopology import Topology
 
+from ...domain.campaign import write_sample_manifest
 from ...domain.specs import ChargeConstraint, RandomParamsGenerator, Specs
 from ...io.logs import Logger
 from ...io.utils import compress_results, load_yaml, save_yaml
@@ -39,13 +40,13 @@ def _system_record(
 ) -> dict[str, Any]:
     return {
         'system_id': system.system_id,
-        'topology': _relative_path(system.fn_topol, campaign_dir),
-        'coordinates': _relative_path(system.fn_coordinates, campaign_dir),
+        'topology': _relative_path(system.topology_path, campaign_dir),
+        'coordinates': _relative_path(system.coordinates_path, campaign_dir),
         'mdp': {
-            'em': _relative_path(system.fn_mdp_em, campaign_dir),
-            'prod': _relative_path(system.fn_mdp_prod, campaign_dir),
+            'em': _relative_path(system.mdp_em_path, campaign_dir),
+            'prod': _relative_path(system.mdp_production_path, campaign_dir),
         },
-        'index': _relative_path(system.fn_ndx, campaign_dir),
+        'index': _relative_path(system.index_path, campaign_dir),
         'bias': _relative_path(system.bias.input_file, campaign_dir),
         'n_steps': int(system.n_steps),
     }
@@ -53,7 +54,7 @@ def _system_record(
 
 def build_specs(config: SampleConfig) -> Path:
     config.campaign_dir.resolve().mkdir(parents=True, exist_ok=True)
-    modifiers = [TopologyModifier(system.fn_topol) for system in config.systems]
+    modifiers = [TopologyModifier(system.topology_path) for system in config.systems]
     charge_params = [name for name in config.bounds if name.startswith('charge ')]
     parameter_indices: list[dict[str, set[int]]] = []
     resolved_tokens = {name: set() for name in charge_params}
@@ -221,38 +222,40 @@ def stage_systems(
     campaign_dir: Path,
 ) -> list[SimulationSystemConfig]:
     staged_systems: list[SimulationSystemConfig] = []
-    for index, system in enumerate(systems):
-        fn_topol = campaign_dir / f'window-{index:03d}.top'
-        Topology(system.fn_topol).write(fn_topol, overwrite=True)
+    for system in systems:
+        system_dir = campaign_dir / 'systems' / system.system_id
+        system_dir.mkdir(parents=True, exist_ok=True)
+        fn_topol = system_dir / 'topology.top'
+        Topology(system.topology_path).write(fn_topol, overwrite=True)
 
-        fn_coordinates = campaign_dir / f'window-{index:03d}.gro'
-        shutil.copy2(system.fn_coordinates, fn_coordinates)
+        fn_coordinates = system_dir / 'coordinates.gro'
+        shutil.copy2(system.coordinates_path, fn_coordinates)
 
         fn_mdp_em = None
-        if system.fn_mdp_em is not None:
-            fn_mdp_em = campaign_dir / f'window-{index:03d}.em.mdp'
-            shutil.copy2(system.fn_mdp_em, fn_mdp_em)
+        if system.mdp_em_path is not None:
+            fn_mdp_em = system_dir / 'em.mdp'
+            shutil.copy2(system.mdp_em_path, fn_mdp_em)
 
-        fn_mdp_prod = campaign_dir / f'window-{index:03d}.mdp'
-        shutil.copy2(system.fn_mdp_prod, fn_mdp_prod)
+        fn_mdp_prod = system_dir / 'production.mdp'
+        shutil.copy2(system.mdp_production_path, fn_mdp_prod)
 
-        fn_ndx = campaign_dir / f'window-{index:03d}.ndx'
-        shutil.copy2(system.fn_ndx, fn_ndx)
+        fn_ndx = system_dir / 'index.ndx'
+        shutil.copy2(system.index_path, fn_ndx)
 
         bias = system.bias
         if bias.input_file is not None and bias.input_filename is not None:
-            fn_bias = campaign_dir / f'window-{index:03d}.{bias.input_filename}'
+            fn_bias = system_dir / bias.input_filename
             shutil.copy2(bias.input_file, fn_bias)
             bias = type(bias).load(fn_bias)
 
         staged_systems.append(
             SimulationSystemConfig(
                 system_id=system.system_id,
-                fn_topol=fn_topol,
-                fn_coordinates=fn_coordinates,
-                fn_mdp_em=fn_mdp_em,
-                fn_mdp_prod=fn_mdp_prod,
-                fn_ndx=fn_ndx,
+                topology_path=fn_topol,
+                coordinates_path=fn_coordinates,
+                mdp_em_path=fn_mdp_em,
+                mdp_production_path=fn_mdp_prod,
+                index_path=fn_ndx,
                 bias=bias,
                 n_steps=system.n_steps,
             )
@@ -270,11 +273,9 @@ def stage_campaign(
 
     systems = stage_systems(config.systems, campaign_dir)
     resolved_specs = None if fn_specs is None else fn_specs.resolve()
-    save_yaml(
-        {
-            'systems': [_system_record(system, campaign_dir) for system in systems],
-            'samples': {},
-        },
+    write_sample_manifest(
+        [_system_record(system, campaign_dir) for system in systems],
+        {},
         campaign_dir / 'samples.yaml',
     )
     return resolved_specs, systems
@@ -314,9 +315,11 @@ def stage_sample_topologies(
     fn_specs: Path,
     systems: list[SimulationSystemConfig],
 ) -> None:
-    for index, system in enumerate(systems):
-        fn_topol = campaign_dir / f'md-{sample_id}-{index:03d}.top'
-        modify_topology(system.fn_topol, fn_specs, sample, True, fn_topol)
+    for system in systems:
+        sample_system_dir = campaign_dir / 'samples' / sample_id / system.system_id
+        sample_system_dir.mkdir(parents=True, exist_ok=True)
+        fn_topol = sample_system_dir / 'topology.top'
+        modify_topology(system.topology_path, fn_specs, sample, True, fn_topol)
 
 
 def build_submission_script(
@@ -364,11 +367,9 @@ def collect_campaign_metadata(
             'outputs': result.get('outputs', sample_data.get('outputs', [])),
         }
 
-    save_yaml(
-        {
-            'systems': [_system_record(system, campaign_dir) for system in systems],
-            'samples': sample_records,
-        },
+    write_sample_manifest(
+        [_system_record(system, campaign_dir) for system in systems],
+        sample_records,
         campaign_dir / 'samples.yaml',
     )
 
@@ -406,12 +407,14 @@ def print_sample_summary(
         logger.warn(
             'No simulation outputs are configured to be stored after completion.'
         )
-    logger.info('parameters:', level=1)
-    for name, bounds in specs.bounds.by_name.items():
-        label = f'{name}: {bounds}'
-        if name in specs.implicit_params:
-            label += ' (implicit)'
+    logger.info('parameters (full array order):', level=1)
+    for index, name in enumerate(specs.parameter_names()):
+        bounds = specs.bounds.get(name)
+        role = 'implicit' if name in specs.implicit_params else 'explicit'
+        label = f'{index}: {name}: {bounds} ({role})'
         logger.info(label, level=2)
+    explicit_order = ', '.join(specs.parameter_names(explicit_only=True)) or 'none'
+    logger.kv('Sampled parameter order', explicit_order, level=1)
     logger.kv('Charge constraints', len(specs.charge_constraints))
     logger.blank()
 
@@ -492,7 +495,10 @@ def run_campaign(
 
         for idx, sample in enumerate(parameter_samples):
             sample_id = f'{idx:0{pad}d}'
-            if (not config.dispatch) or job_scheduler == 'local':
+            if (
+                ((not config.dispatch) or job_scheduler == 'local')
+                and idx + 1 < n_total
+            ):
                 logger.status(
                     action,
                     (

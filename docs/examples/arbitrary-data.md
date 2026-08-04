@@ -32,11 +32,11 @@ demonstrates the complete data-facing workflow:
 
 1. load user-provided whitespace-delimited tables;
 2. construct and write one `QoIDataset` per observable;
-3. fit local Gaussian-process surrogate models;
+3. train local Gaussian-process surrogate models;
 4. build a constrained `LearningProblem`;
 5. sample the posterior and write standard and QoI-attributed marginal plots.
 
-The generated `qoi-*.pt` datasets can also be passed to `bff fit`. All
+The generated QoI datasets can also be passed to `bff lgpfit`. All
 notebook-generated files are written under `generated/`.
 The plot `generated/qoi-marginals.pdf` colors each posterior marginal by the
 local contribution from density, enthalpy of vaporization, and diffusion.

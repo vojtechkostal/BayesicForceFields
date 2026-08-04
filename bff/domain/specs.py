@@ -406,6 +406,38 @@ class ChargeConstraint:
         lower, upper = self.specs.bounds.array.T
         return ((full >= lower) & (full <= upper)).all(axis=1)
 
+    def describe_violations(
+        self,
+        values: ArrayLike,
+        *,
+        max_items: int = 5,
+    ) -> str:
+        """Return a concise human-readable validity report."""
+        x = self._to_2d_array(values)
+        if x.shape[1] != self.n_params:
+            raise ValueError(
+                f"Input array must have shape (n_samples, {self.n_params}), "
+                f"but got {x.shape}."
+            )
+
+        full = self.specs.with_implicit_charges(x)
+        lower, upper = self.specs.bounds.array.T
+        names = self.specs.parameter_names()
+        messages: list[str] = []
+        for sample_index, row in enumerate(full[:, :self.specs.bounds.n_params]):
+            for param_index, value in enumerate(row):
+                if lower[param_index] <= value <= upper[param_index]:
+                    continue
+                side = "below" if value < lower[param_index] else "above"
+                messages.append(
+                    f"sample {sample_index}: {names[param_index]}={value:.8g} "
+                    f"is {side} [{lower[param_index]:.8g}, "
+                    f"{upper[param_index]:.8g}]"
+                )
+                if len(messages) >= max_items:
+                    return "; ".join(messages)
+        return "; ".join(messages) if messages else "all samples satisfy bounds"
+
     def __call__(self, values: ArrayLike) -> np.ndarray | Any:
         valid = self.is_valid(values)
         if _is_torch_tensor(values):
@@ -420,6 +452,7 @@ class RandomParamsGenerator:
         self,
         bounds: np.ndarray,
         constraint: Optional[Callable[[ArrayLike], np.ndarray]] = None,
+        random_state: Optional[int | np.random.Generator] = None,
     ) -> None:
         if bounds.ndim != 2 or bounds.shape[1] != 2:
             raise ValueError("Bounds must have shape (n_params, 2).")
@@ -427,8 +460,15 @@ class RandomParamsGenerator:
         self.bounds = np.asarray(bounds, dtype=float)
         self.constraint = constraint
         self.n_generated = 0
+        self.rng = (
+            random_state
+            if isinstance(random_state, np.random.Generator)
+            else np.random.default_rng(random_state)
+        )
         self.sampler = (
-            None if self.bounds.shape[0] == 0 else LatinHypercube(self.bounds.shape[0])
+            None
+            if self.bounds.shape[0] == 0
+            else LatinHypercube(self.bounds.shape[0], seed=self.rng)
         )
 
     def __call__(self, n: int) -> np.ndarray:

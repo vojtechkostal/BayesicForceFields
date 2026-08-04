@@ -1,51 +1,75 @@
-sample:
-  dir: ../03-sample
-  start: 1
-  stop: -1
-  step: 1
+training_samples:
+  manifest: ../03-sample/samples.yaml
+  systems:
+    - system_id: acetate
+    - system_id: acetate-contact
+    - system_id: acetate-separated
+  frames:
+    start: 1
+    stop: null
+    step: 1
+  workers: -1
   progress_stride: 10
 
 reference:
-  start: 1
-  stop: -1
-  step: 1
   systems:
-    - coordinates: ../03-reference/trajectories/system-000/system.gro
-      topology: ../03-reference/trajectories/system-000/system.top
-      trajectory: ../03-reference/trajectories/system-000/trajectory.xtc
-      routines:
-        - routine: rdf
-          mol_resname: ACE
-          r_range: [1, 7]
-          smooth: false
-        - routine: hb
-          mol_resname: ACE
-    - coordinates: ../03-reference/trajectories/system-001/system.gro
-      topology: ../03-reference/trajectories/system-001/system.top
-      trajectory: ../03-reference/trajectories/system-001/trajectory.xtc
-      routines:
-        - routine: rdf
-          mol_resname: ACE
-          r_range: [1, 7]
-          smooth: false
-        - routine: hb
-          mol_resname: ACE
-        - routine: ../inputs/restraint.py:distance_distribution
-          atom_pair: [C2, CAL]
-          r_range: [2.0, 5.0]
-    - coordinates: ../03-reference/trajectories/system-002/system.gro
-      topology: ../03-reference/trajectories/system-002/system.top
-      trajectory: ../03-reference/trajectories/system-002/trajectory.xtc
-      routines:
-        - routine: rdf
-          mol_resname: ACE
-          r_range: [1, 7]
-          smooth: false
-        - routine: hb
-          mol_resname: ACE
-        - routine: ../inputs/restraint.py:distance_distribution
-          atom_pair: [C2, CAL]
-          r_range: [4.0, 6.0]
+    - system_id: acetate
+      inputs:
+        coordinates: ../03-reference/trajectories/acetate/system.gro
+        topology: ../03-reference/trajectories/acetate/system.top
+        trajectory: ../03-reference/trajectories/acetate/trajectory.xtc
+    - system_id: acetate-contact
+      inputs:
+        coordinates: ../03-reference/trajectories/acetate-contact/system.gro
+        topology: ../03-reference/trajectories/acetate-contact/system.top
+        trajectory: ../03-reference/trajectories/acetate-contact/trajectory.xtc
+    - system_id: acetate-separated
+      inputs:
+        coordinates: ../03-reference/trajectories/acetate-separated/system.gro
+        topology: ../03-reference/trajectories/acetate-separated/system.top
+        trajectory: ../03-reference/trajectories/acetate-separated/trajectory.xtc
+  frames:
+    start: 1
+    stop: null
+    step: 1
+
+routines:
+  - name: rdf
+    type: rdf
+    systems: [acetate, acetate-contact, acetate-separated]
+    selections:
+      group_a: "resname ACE and name O1 O2"
+      group_b: "resname SOL and name O*"
+    options:
+      range: [1.0, 7.0]
+      bins: 200
+      pbc: true
+      smooth: false
+  - name: hb
+    type: hydrogen_bonds
+    systems: [acetate, acetate-contact, acetate-separated]
+    selections:
+      donors: "resname SOL and name O*"
+      hydrogens: "resname SOL and name H*"
+      acceptors: "resname ACE and name O1 O2"
+    options:
+      donor_acceptor_cutoff: 3.5
+      angle_cutoff: 150
+      pbc: true
+  - name: contact-distance
+    callable: ../inputs/restraint.py:distance_distribution
+    loader: mdanalysis
+    systems: [acetate-contact]
+    options:
+      atom_pair: [C2, CAL]
+      range: [2.0, 5.0]
+  - name: separated-distance
+    callable: ../inputs/restraint.py:distance_distribution
+    loader: mdanalysis
+    systems: [acetate-separated]
+    options:
+      atom_pair: [C2, CAL]
+      range: [4.0, 6.0]
 
 run:
   in_memory: true
@@ -53,6 +77,5 @@ run:
   maxtasksperchild: 100
 
 output:
-  path: ./qoi
-  log: ./out.log
+  directory: ./qoi
   write_raw: true

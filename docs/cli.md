@@ -6,15 +6,15 @@ The CLI entry point is implemented in `bff/cli.py`.
 
 - `bff build CONFIG.yaml`
   Build equilibrated systems and seeded production trajectories.
-- `bff prepare-assets CONFIG.yaml`
-  Package seeded FFMD assets and staged CP2K snapshot assets.
+- `bff prepare-reference CONFIG.yaml`
+  Prepare CP2K reference inputs from a completed build stage.
 - `bff evaluate-snapshots CONFIG.yaml`
   Evaluate staged CP2K snapshots.
 - `bff sample CONFIG.yaml`
   Sample force-field parameters and run FFMD campaigns.
 - `bff analyze CONFIG.yaml`
   Analyze sampled and reference trajectories into matched QoI datasets.
-- `bff fit CONFIG.yaml`
+- `bff lgpfit CONFIG.yaml`
   Fit surrogate models from analyzed QoI datasets.
 - `bff learn CONFIG.yaml`
   Run Bayesian posterior learning over force-field parameters.
@@ -35,11 +35,11 @@ Hidden internal commands also exist for scheduled jobs:
 Each top-level workflow uses one focused config file:
 
 - build config: how to equilibrate and seed production trajectories
-- prepare-assets config: how to package FFMD starts and stage CP2K inputs
+- prepare-reference config: how to stage CP2K inputs from build systems
 - evaluate-snapshots config: how to run CP2K snapshot jobs
-- sample config: how to turn prepared assets into a sampled FFMD campaign
+- sample config: how to turn build systems into a sampled FFMD campaign
 - analyze config: how to compute observables from trajectories
-- fit config: how to train surrogates
+- lgpfit config: how to train surrogates
 - learn config: which models and MCMC settings to use for posterior learning
 - validate config: how to rerun chosen parameter samples
 
@@ -64,11 +64,11 @@ Add the matching line to `~/.bashrc` or `~/.zshrc` if you want completion in
 future shells. After completion is loaded, `bff <TAB>` should offer:
 
 - `build`
-- `prepare-assets`
+- `prepare-reference`
 - `evaluate-snapshots`
 - `sample`
 - `analyze`
-- `fit`
+- `lgpfit`
 - `learn`
 - `validate`
 - `examples`

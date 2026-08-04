@@ -1,23 +1,25 @@
-log: ./out.log
 specs: ../03-sample/specs.yaml
 models:
   rdf:
-    model_path: ../05-fit/models/rdf.lgp
+    model_path: ../05-lgpfit/models/rdf.lgp
     tolerance: 0.1
   hb:
-    model_path: ../05-fit/models/hb.lgp
+    model_path: ../05-lgpfit/models/hb.lgp
     independent_observations: true
-  dist:
-    model_path: ../05-fit/models/dist.lgp
+  contact-distance:
+    model_path: ../05-lgpfit/models/contact-distance.lgp
+    tolerance: 0.01
+  separated-distance:
+    model_path: ../05-lgpfit/models/separated-distance.lgp
     tolerance: 0.01
 mcmc:
   priors_disttype: normal
   total_steps: 10000
   warmup: 2000
   progress_stride: 1000
-  checkpoint: ./mcmc-checkpoint.pt
-  posterior: ./posterior.pt
-  priors: ./priors.pt
-  restart: false
+  resume: false
   device: cuda
   rhat_tol: 1.05
+output:
+  directory: ./
+  overwrite: false

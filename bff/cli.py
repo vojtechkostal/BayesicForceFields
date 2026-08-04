@@ -101,12 +101,12 @@ def build(fn_config: Path = config_argument()) -> None:
     run_workflow(fn_config, build_main, "build")
 
 
-@app.command(name="prepare-assets")
-def prepare_assets(fn_config: Path = config_argument()) -> None:
-    """Prepare FFMD and snapshot evaluation assets from a build manifest."""
-    from bff.workflows.prepare_assets import main as prepare_main
+@app.command(name="prepare-reference")
+def prepare_reference(fn_config: Path = config_argument()) -> None:
+    """Prepare CP2K reference inputs from a BFF build stage."""
+    from bff.workflows.prepare_reference import main as prepare_main
 
-    run_workflow(fn_config, prepare_main, "prepare-assets")
+    run_workflow(fn_config, prepare_main, "prepare-reference")
 
 
 @app.command(name="evaluate-snapshots")
@@ -134,11 +134,11 @@ def analyze(fn_config: Path = config_argument()) -> None:
 
 
 @app.command()
-def fit(fn_config: Path = config_argument()) -> None:
+def lgpfit(fn_config: Path = config_argument()) -> None:
     """Fit surrogate models from analyzed QoI datasets."""
-    from bff.workflows.fit import main as fit_main
+    from bff.workflows.lgpfit import main as lgpfit_main
 
-    run_workflow(fn_config, fit_main, "fit")
+    run_workflow(fn_config, lgpfit_main, "lgpfit")
 
 
 @app.command()

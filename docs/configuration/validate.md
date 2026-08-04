@@ -20,8 +20,9 @@ possible.
 campaign_dir: ./
 parameters: ../06-learn/posterior-samples.yaml
 specs: ../03-sample/specs.yaml
+source: ../01-build
 systems:
-  - assets: ../02-assets/ffmd/system-000
+  - system_id: acetate
     n_steps: 1000
 gmx_cmd: gmx
 job_scheduler: local
@@ -36,7 +37,11 @@ job_scheduler: local
 - `specs`
   Force-field specification file used to reconstruct constrained parameters.
 - `systems`
-  Non-empty list of prepared asset directories plus validation MD lengths.
+  Non-empty list of build-stage system IDs plus validation MD lengths, or systems
+  with fully explicit FFMD role mappings.
+- `source`
+  Build stage root containing the selected system directories. Do not combine
+  it with explicit per-system `inputs`.
 - `gmx_cmd`
   GROMACS executable.
 - `job_scheduler`
@@ -54,8 +59,10 @@ job_scheduler: local
 
 ## `systems[]` Keys
 
-- `assets`
-  Directory created by `bff prepare-assets`, for example `ffmd/system-001`.
+- `system_id`
+  Stable ID selected from the build-stage `source`.
+- `inputs`
+  Alternatively, the explicit FFMD roles documented for `bff sample`.
 - `n_steps`
   Production MD length for this validation run.
 
@@ -71,3 +78,8 @@ charge O1 O2: [-0.7, -0.6, -0.5]
 
 Implicit charges are reconstructed from `specs.yaml`, so they do not need to
 appear in the file.
+
+The fixed learning artifact is `output/posterior.pt`. Load it with
+`PosteriorResults`, prepare/select the desired draws, and call
+`sample_posterior(..., fn_out="posterior-samples.yaml")` to create validation
+input in the format above.

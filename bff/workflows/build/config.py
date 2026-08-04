@@ -5,13 +5,16 @@ from pathlib import Path
 from typing import Optional
 
 from ...domain.bias import BiasSpec
+from ...domain.systems import validate_system_id, validate_unique_system_ids
 from ...io.utils import load_yaml
 from .._shared.config import PathLike, _resolve_path
 
 
 @dataclass(frozen=True)
 class BuildSystemConfig:
-    fn_topol: Path
+    system_id: str
+    system_name: str | None
+    topology_path: Path
     templates: dict[str, Path]
     charge: int
     mult: int
@@ -19,9 +22,9 @@ class BuildSystemConfig:
     bias: BiasSpec
     nsteps_npt: int
     nsteps_prod: int
-    fn_mdp_em: Path
-    fn_mdp_npt: Path
-    fn_mdp_prod: Path
+    mdp_em_path: Path
+    mdp_npt_path: Path
+    mdp_production_path: Path
 
 
 @dataclass(frozen=True)
@@ -37,6 +40,20 @@ class BuildConfig:
         fn_config = Path(fn_config).resolve()
         base_dir = fn_config.parent
         config = load_yaml(fn_config)
+        if not isinstance(config, dict):
+            raise ValueError('Build configuration must contain a mapping.')
+        unknown_top = set(config) - {
+            'project',
+            'gromacs',
+            'defaults',
+            'systems',
+            'fn_log',
+        }
+        if unknown_top:
+            raise ValueError(
+                'Build configuration contains unsupported key(s): '
+                + ', '.join(sorted(unknown_top))
+            )
 
         required = ['project', 'gromacs', 'systems']
         missing = [key for key in required if key not in config]
@@ -56,6 +73,12 @@ class BuildConfig:
             )
             fn_log_raw = config.get('fn_log')
         elif isinstance(project, dict):
+            unknown_project = set(project) - {'directory', 'log'}
+            if unknown_project:
+                raise ValueError(
+                    'project contains unsupported key(s): '
+                    + ', '.join(sorted(unknown_project))
+                )
             if 'directory' not in project:
                 raise ValueError('project.directory is required.')
             project_dir = _resolve_path(
@@ -71,6 +94,12 @@ class BuildConfig:
         gromacs = config['gromacs']
         if not isinstance(gromacs, dict):
             raise ValueError("'gromacs' must be a mapping.")
+        unknown_gromacs = set(gromacs) - {'command'}
+        if unknown_gromacs:
+            raise ValueError(
+                'gromacs contains unsupported key(s): '
+                + ', '.join(sorted(unknown_gromacs))
+            )
         if 'command' not in gromacs:
             raise ValueError('gromacs.command is required.')
         defaults = config.get('defaults', {})
@@ -78,11 +107,23 @@ class BuildConfig:
             defaults = {}
         if not isinstance(defaults, dict):
             raise ValueError("'defaults' must be a mapping.")
+        unknown_defaults = set(defaults) - {'nsteps'}
+        if unknown_defaults:
+            raise ValueError(
+                'defaults contains unsupported key(s): '
+                + ', '.join(sorted(unknown_defaults))
+            )
         default_steps = defaults.get('nsteps', {})
         if default_steps is None:
             default_steps = {}
         if not isinstance(default_steps, dict):
             raise ValueError("'defaults.nsteps' must be a mapping.")
+        unknown_default_steps = set(default_steps) - {'npt', 'prod'}
+        if unknown_default_steps:
+            raise ValueError(
+                'defaults.nsteps contains unsupported key(s): '
+                + ', '.join(sorted(unknown_default_steps))
+            )
         nsteps_npt_default = int(default_steps.get('npt', 0))
         nsteps_prod_default = int(default_steps.get('prod', 100000))
         if nsteps_npt_default < 0 or nsteps_prod_default < 0:
@@ -96,7 +137,24 @@ class BuildConfig:
         for i, system in enumerate(systems_raw):
             if not isinstance(system, dict):
                 raise ValueError(f'System {i} must be a mapping.')
-            for key in ('topology', 'charge', 'multiplicity'):
+            unknown_system = set(system) - {
+                'system_id',
+                'system_name',
+                'topology',
+                'templates',
+                'charge',
+                'multiplicity',
+                'box',
+                'bias',
+                'nsteps',
+                'mdp',
+            }
+            if unknown_system:
+                raise ValueError(
+                    f'systems[{i}] contains unsupported key(s): '
+                    + ', '.join(sorted(unknown_system))
+                )
+            for key in ('system_id', 'topology', 'charge', 'multiplicity'):
                 if key not in system:
                     raise ValueError(f'System {i} is missing required key {key!r}.')
             templates_raw = system.get('templates', {})
@@ -130,6 +188,12 @@ class BuildConfig:
                 steps = {}
             if not isinstance(steps, dict):
                 raise ValueError(f'System {i} nsteps must be a mapping.')
+            unknown_steps = set(steps) - {'npt', 'prod'}
+            if unknown_steps:
+                raise ValueError(
+                    f'systems[{i}].nsteps contains unsupported key(s): '
+                    + ', '.join(sorted(unknown_steps))
+                )
             nsteps_npt = int(steps.get('npt', nsteps_npt_default))
             nsteps_prod = int(steps.get('prod', nsteps_prod_default))
             if nsteps_npt < 0 or nsteps_prod < 0:
@@ -145,6 +209,12 @@ class BuildConfig:
             mdp = system.get('mdp')
             if not isinstance(mdp, dict):
                 raise ValueError(f'System {i} mdp must be a mapping.')
+            unknown_mdp = set(mdp) - {'em', 'npt', 'prod'}
+            if unknown_mdp:
+                raise ValueError(
+                    f'systems[{i}].mdp contains unsupported key(s): '
+                    + ', '.join(sorted(unknown_mdp))
+                )
             missing_mdp = [key for key in ('em', 'npt', 'prod') if key not in mdp]
             if missing_mdp:
                 raise ValueError(
@@ -154,7 +224,11 @@ class BuildConfig:
 
             systems.append(
                 BuildSystemConfig(
-                    fn_topol=_resolve_path(
+                    system_id=validate_system_id(
+                        system['system_id'], field=f'systems[{i}].system_id'
+                    ),
+                    system_name=system.get('system_name'),
+                    topology_path=_resolve_path(
                         base_dir,
                         system['topology'],
                         kind=f'system {i} topology file',
@@ -173,17 +247,17 @@ class BuildConfig:
                     bias=BiasSpec.from_any(system.get('bias'), base_dir=base_dir),
                     nsteps_npt=nsteps_npt,
                     nsteps_prod=nsteps_prod,
-                    fn_mdp_em=_resolve_path(
+                    mdp_em_path=_resolve_path(
                         base_dir,
                         mdp['em'],
                         kind=f'system {i} em mdp file',
                     ),
-                    fn_mdp_npt=_resolve_path(
+                    mdp_npt_path=_resolve_path(
                         base_dir,
                         mdp['npt'],
                         kind=f'system {i} npt mdp file',
                     ),
-                    fn_mdp_prod=_resolve_path(
+                    mdp_production_path=_resolve_path(
                         base_dir,
                         mdp['prod'],
                         kind=f'system {i} production mdp file',
@@ -191,11 +265,24 @@ class BuildConfig:
                 )
             )
 
-        resolved_log = None if fn_log_raw is None else _resolve_path(
-            base_dir,
-            fn_log_raw,
-            must_exist=False,
-            kind='log file',
+            if system.get('system_name') is not None and not isinstance(
+                system['system_name'], str
+            ):
+                raise ValueError(f'Systems[{i}].system_name must be a string.')
+
+        validate_unique_system_ids(
+            [system.system_id for system in systems], field='systems'
+        )
+
+        resolved_log = (
+            project_dir / 'build.log'
+            if fn_log_raw is None
+            else _resolve_path(
+                base_dir,
+                fn_log_raw,
+                must_exist=False,
+                kind='log file',
+            )
         )
         return cls(
             fn_config=fn_config,

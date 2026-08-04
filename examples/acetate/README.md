@@ -16,10 +16,10 @@ cd 01-build
 bff build config.yaml
 cd ..
 
-mkdir -p 02-assets
-cp configs/prepare-assets.yaml 02-assets/config.yaml
-cd 02-assets
-bff prepare-assets config.yaml
+mkdir -p 02-reference
+cp configs/prepare-reference.yaml 02-reference/config.yaml
+cd 02-reference
+bff prepare-reference config.yaml
 cd ..
 
 mkdir -p 03-reference
@@ -27,7 +27,7 @@ cp configs/evaluate-run-slurm.yaml 03-reference/config-snapshots.yaml
 cd 03-reference
 bff evaluate-snapshots config-snapshots.yaml
 mkdir -p trajectories
-# Generate or place reference trajectories under trajectories/system-*/.
+# Generate or place reference trajectories under trajectories/<system_id>/.
 cd ..
 
 mkdir -p 03-sample
@@ -42,10 +42,10 @@ cd 04-analyze
 bff analyze config.yaml
 cd ..
 
-mkdir -p 05-fit
-cp configs/fit.yaml 05-fit/config.yaml
-cd 05-fit
-bff fit config.yaml
+mkdir -p 05-lgpfit
+cp configs/lgpfit.yaml 05-lgpfit/config.yaml
+cd 05-lgpfit
+bff lgpfit config.yaml
 cd ..
 
 mkdir -p 06-learn
@@ -75,22 +75,27 @@ examples/acetate/
 
 ## Configs
 
-- `build-colvars.yaml`: equilibrates systems and runs seeded production
-  trajectories recorded in `./build-manifest.yaml`.
-- `prepare-assets.yaml`: reads `../01-build/build-manifest.yaml`, packages
-  `./ffmd/`, and stages CP2K inputs under `./reference/`.
+- `build-colvars.yaml`: equilibrates systems and writes self-contained
+  `./systems/<system_id>/` directories.
+- `prepare-reference.yaml`: reads `../01-build` and stages CP2K inputs under
+  `./systems/<system_id>/` without copying FFMD files.
 - `evaluate-run-local.yaml`: runs CP2K snapshot evaluation on
-  `../02-assets/reference/` and writes `train.extxyz` and `valid.extxyz`
-  into `./snapshots/`.
+  the systems in `../02-reference` and writes `train.extxyz`
+  and `valid.extxyz` under `./snapshots/systems/<system_id>/`.
 - `evaluate-run-slurm.yaml`: same snapshot-evaluation stage through Slurm.
 - `sample-local.yaml`: samples force-field parameters and runs local FFMD into
   `./`.
 - `analyze.yaml`: compares `../03-sample/` against reference trajectories in
   `../03-reference/trajectories/` and writes QoI datasets into `./`.
-- `fit.yaml`: fits surrogate models into `./models/`.
+- `lgpfit.yaml`: fits fingerprinted surrogate models into `./models/`.
 - `learn.yaml`: assigns effective observations, learns the posterior, and
-  writes `marginals.pdf`, `qoi-marginals.pdf`, and `corner.pdf` into `./`.
+  writes Torch artifacts under `./output/` and mandatory plots under
+  `./plots/`.
 - `validate.yaml`: reruns selected posterior samples into `./`.
+
+Before validation, use `PosteriorResults.sample_posterior` to select explicit
+parameter draws from `06-learn/output/posterior.pt` and write
+`06-learn/posterior-samples.yaml`, which is the input configured by the example.
 
 ## Reference Trajectories
 
@@ -98,20 +103,20 @@ examples/acetate/
 `train.extxyz` and `valid.extxyz`; it does not generate the reference MD
 trajectories used by `bff analyze`. After the snapshots are evaluated, generate
 those trajectories yourself. You can run AIMD directly from the CP2K inputs in
-`02-assets/reference/system-*/md/`, or train a machine-learning potential of
+`02-reference/systems/<system_id>/`, or train a machine-learning potential of
 your choice from the evaluated snapshots and use that potential to run the
 reference trajectories.
 
 Keep evaluated snapshot datasets in `03-reference/snapshots/`. A good place for
 the generated reference trajectories is
-`03-reference/trajectories/system-*/trajectory.xtc`, alongside `system.top` and
+`03-reference/trajectories/<system_id>/trajectory.xtc`, alongside `system.top` and
 `system.gro`. The `system.top` and `system.gro` files can be copied from the
-matching `02-assets/reference/system-*/` directory.
+matching `02-reference/systems/<system_id>/` directory.
 
 ```text
 03-reference/
-  snapshots/system-*/      evaluated snapshot datasets
-  trajectories/system-*/   reference trajectories for analysis
+  snapshots/systems/<system_id>/  evaluated snapshot datasets
+  trajectories/<system_id>/   reference trajectories for analysis
 ```
 
 ## Variants

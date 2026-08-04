@@ -2,8 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping, Optional
+from typing import Any, Mapping
 
+from ...domain.systems import (
+    SystemInputs,
+    resolve_explicit_inputs,
+    validate_system_id,
+    validate_unique_system_ids,
+)
 from ...io.utils import load_yaml
 from ...qoi.routines import (
     AnalysisRoutineConfig,
@@ -11,149 +17,301 @@ from ...qoi.routines import (
     normalize_analysis_runtime_config,
     normalize_routine_list,
 )
-from .._shared.config import PathLike, _resolve_path
+from .._shared.config import PathLike, _resolve_path, _strict_bool
 
 
-@dataclass(frozen=True)
-class AnalyzeSystemConfig:
-    fn_coord: Path
-    fn_topol: Path
-    fn_trj: Path
-    routines: tuple[AnalysisRoutineConfig, ...]
-
-
-@dataclass(frozen=True)
-class AnalyzeSampleConfig:
-    dir: Path
+@dataclass(frozen=True, slots=True)
+class FrameSliceConfig:
     start: int = 1
-    stop: Optional[int] = None
+    stop: int | None = None
     step: int = 1
+
+
+@dataclass(frozen=True, slots=True)
+class AnalyzeSystemConfig:
+    system_id: str
+    inputs: SystemInputs
+
+
+@dataclass(frozen=True, slots=True)
+class AnalyzeTrainingSamplesConfig:
+    manifest: Path
+    system_ids: tuple[str, ...]
+    frames: FrameSliceConfig
     workers: int = -1
     progress_stride: int = 10
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class AnalyzeReferenceConfig:
-    systems: list[AnalyzeSystemConfig]
-    start: int = 0
-    stop: int = -1
-    step: int = 1
+    systems: tuple[AnalyzeSystemConfig, ...]
+    frames: FrameSliceConfig
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class AnalyzeOutputConfig:
-    path: Path = Path('./analysis')
-    log: Path = Path('./out.log')
+    directory: Path
+    log: Path
     write_raw: bool = False
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class AnalyzeConfig:
     fn_config: Path
-    sample: AnalyzeSampleConfig
+    training_samples: AnalyzeTrainingSamplesConfig
     reference: AnalyzeReferenceConfig
-    run: AnalysisRuntimeConfig = AnalysisRuntimeConfig()
-    output: AnalyzeOutputConfig = AnalyzeOutputConfig()
+    routines: tuple[AnalysisRoutineConfig, ...]
+    run: AnalysisRuntimeConfig
+    output: AnalyzeOutputConfig
+
+    @staticmethod
+    def _frames(raw: Any, *, field: str, default_start: int = 1) -> FrameSliceConfig:
+        if raw is None:
+            raw = {}
+        if not isinstance(raw, Mapping):
+            raise ValueError(f"{field} must be a mapping.")
+        unknown = set(raw) - {"start", "stop", "step"}
+        if unknown:
+            raise ValueError(
+                f"{field} contains unsupported key(s): "
+                + ", ".join(sorted(unknown))
+            )
+        step = int(raw.get("step", 1))
+        if step <= 0:
+            raise ValueError(f"{field}.step must be a positive integer.")
+        stop = raw.get("stop")
+        start = int(raw.get("start", default_start))
+        stop_value = None if stop is None else int(stop)
+        if start < 0:
+            raise ValueError(f"{field}.start must be non-negative.")
+        if stop_value is not None and stop_value <= start:
+            raise ValueError(f"{field}.stop must be greater than start or null.")
+        return FrameSliceConfig(
+            start=start,
+            stop=stop_value,
+            step=step,
+        )
 
     @classmethod
-    def load(cls, fn_config: PathLike) -> 'AnalyzeConfig':
+    def load(cls, fn_config: PathLike) -> "AnalyzeConfig":
         fn_config = Path(fn_config).resolve()
         base_dir = fn_config.parent
         config = load_yaml(fn_config)
-
-        for key in ('sample', 'reference'):
-            if key not in config:
-                raise ValueError(f'Missing required configuration section: {key!r}.')
-
-        sample = config['sample']
-        if not isinstance(sample, Mapping):
-            raise ValueError("'sample' must be a mapping.")
-        sample_dir = sample.get('dir')
-        if sample_dir is None:
-            raise ValueError("Missing 'dir' in sample configuration.")
-
-        reference = config['reference']
-        if not isinstance(reference, Mapping):
-            raise ValueError("'reference' must be a mapping.")
-        systems_raw = reference.get('systems')
-        if not isinstance(systems_raw, list) or not systems_raw:
-            raise ValueError("'reference.systems' must be a non-empty list.")
-
-        systems: list[AnalyzeSystemConfig] = []
-        for i, system in enumerate(systems_raw):
-            if not isinstance(system, Mapping):
-                raise ValueError(f'reference.systems[{i}] must be a mapping.')
-            for key in ('coordinates', 'topology', 'trajectory'):
-                if key not in system:
-                    raise ValueError(
-                        f'reference.systems[{i}] is missing required key {key!r}.'
-                    )
-            routines = system.get('routines')
-            if not isinstance(routines, list) or not routines:
-                raise ValueError(
-                    f'reference.systems[{i}].routines must be a non-empty list.'
-                )
-
-            systems.append(
-                AnalyzeSystemConfig(
-                    fn_coord=_resolve_path(
-                        base_dir,
-                        system['coordinates'],
-                        kind=f'reference.systems[{i}] coordinates file',
-                    ),
-                    fn_topol=_resolve_path(
-                        base_dir,
-                        system['topology'],
-                        kind=f'reference.systems[{i}] topology file',
-                    ),
-                    fn_trj=_resolve_path(
-                        base_dir,
-                        system['trajectory'],
-                        kind=f'reference.systems[{i}] trajectory file',
-                    ),
-                    routines=normalize_routine_list(routines, base_dir=base_dir),
-                )
+        if not isinstance(config, Mapping):
+            raise ValueError("Analyze configuration must contain a mapping.")
+        unknown_top = set(config) - {
+            "training_samples",
+            "reference",
+            "routines",
+            "run",
+            "output",
+        }
+        if unknown_top:
+            raise ValueError(
+                "Analyze configuration contains unsupported key(s): "
+                + ", ".join(sorted(unknown_top))
+            )
+        required = {"training_samples", "reference", "routines"}
+        missing = sorted(required - set(config))
+        if missing:
+            raise ValueError(
+                "Missing required analyze section(s): "
+                + ", ".join(repr(key) for key in missing)
             )
 
-        run = normalize_analysis_runtime_config(config.get('run'))
-        output = config.get('output', {})
-        if not isinstance(output, Mapping):
-            raise ValueError("'output' must be a mapping.")
+        training = config["training_samples"]
+        if not isinstance(training, Mapping):
+            raise ValueError("training_samples must be a mapping.")
+        unknown_training = set(training) - {
+            "manifest",
+            "systems",
+            "frames",
+            "workers",
+            "progress_stride",
+        }
+        if unknown_training:
+            raise ValueError(
+                "training_samples contains unsupported key(s): "
+                + ", ".join(sorted(unknown_training))
+            )
+        if "manifest" not in training or "systems" not in training:
+            raise ValueError(
+                "training_samples requires 'manifest' and 'systems'."
+            )
+        selected_raw = training["systems"]
+        if not isinstance(selected_raw, list) or not selected_raw:
+            raise ValueError("training_samples.systems must be a non-empty list.")
+        selected_ids: list[str] = []
+        for index, record in enumerate(selected_raw):
+            if not isinstance(record, Mapping) or set(record) != {"system_id"}:
+                raise ValueError(
+                    f"training_samples.systems[{index}] must contain only system_id."
+                )
+            selected_ids.append(
+                validate_system_id(
+                    record["system_id"],
+                    field=f"training_samples.systems[{index}].system_id",
+                )
+            )
+        validate_unique_system_ids(selected_ids, field="training_samples.systems")
 
+        reference = config["reference"]
+        if not isinstance(reference, Mapping):
+            raise ValueError("reference must be a mapping.")
+        unknown_reference = set(reference) - {"systems", "frames"}
+        if unknown_reference:
+            raise ValueError(
+                "reference contains unsupported key(s): "
+                + ", ".join(sorted(unknown_reference))
+            )
+        reference_raw = reference.get("systems")
+        if not isinstance(reference_raw, list) or not reference_raw:
+            raise ValueError("reference.systems must be a non-empty list.")
+        reference_systems: list[AnalyzeSystemConfig] = []
+        for index, record in enumerate(reference_raw):
+            if not isinstance(record, Mapping):
+                raise ValueError(f"reference.systems[{index}] must be a mapping.")
+            if set(record) != {"system_id", "inputs"}:
+                raise ValueError(
+                    f"reference.systems[{index}] requires exactly system_id and inputs."
+                )
+            system_id = validate_system_id(
+                record["system_id"],
+                field=f"reference.systems[{index}].system_id",
+            )
+            inputs_raw = record["inputs"]
+            if not isinstance(inputs_raw, Mapping):
+                raise ValueError(
+                    f"reference.systems[{index}].inputs must be a mapping."
+                )
+            reference_systems.append(
+                AnalyzeSystemConfig(
+                    system_id=system_id,
+                    inputs=resolve_explicit_inputs(
+                        inputs_raw,
+                        base_dir=base_dir,
+                        system_id=system_id,
+                        field=f"reference.systems[{index}].inputs",
+                    ),
+                )
+            )
+        reference_ids = [system.system_id for system in reference_systems]
+        validate_unique_system_ids(reference_ids, field="reference.systems")
+        if set(selected_ids) != set(reference_ids):
+            missing_ref = sorted(set(selected_ids) - set(reference_ids))
+            extra_ref = sorted(set(reference_ids) - set(selected_ids))
+            raise ValueError(
+                "training_samples.systems and reference.systems must contain "
+                "identical system_id sets; "
+                f"missing from reference={missing_ref}, extra in reference={extra_ref}."
+            )
+
+        routines_raw = config["routines"]
+        routines = normalize_routine_list(routines_raw, base_dir=base_dir)
+        selected_id_set = set(selected_ids)
+        for routine in routines:
+            unknown_systems = sorted(set(routine.systems) - selected_id_set)
+            if unknown_systems:
+                raise ValueError(
+                    f"routines.{routine.name}.systems contains unknown system "
+                    f"ID(s) {unknown_systems}; expected a subset of "
+                    f"{sorted(selected_id_set)}."
+                )
+        for system in reference_systems:
+            applicable = [
+                routine for routine in routines if system.system_id in routine.systems
+            ]
+            if not applicable:
+                raise ValueError(
+                    f"reference.systems.{system.system_id}: no routine applies to "
+                    "this system; add its ID to routines[].systems or remove it."
+                )
+            roles = set(system.inputs.inputs)
+            required_roles = {
+                role
+                for routine in applicable
+                for role in (
+                    ("topology", "coordinates", "trajectory")
+                    if routine.loader == "mdanalysis"
+                    else routine.inputs
+                )
+            }
+            missing_roles = sorted(required_roles - roles)
+            if missing_roles:
+                raise ValueError(
+                    f"reference.systems.{system.system_id}.inputs is missing "
+                    f"required role(s) {missing_roles}; configured routines need "
+                    f"{sorted(required_roles)}."
+                )
+            supported_roles = {
+                "topology",
+                "coordinates",
+                "trajectory",
+                *(role for routine in applicable for role in routine.inputs),
+            }
+            unsupported_roles = sorted(roles - supported_roles)
+            if unsupported_roles:
+                raise ValueError(
+                    f"reference.systems.{system.system_id}.inputs contains "
+                    f"unsupported role(s) {unsupported_roles}; expected only "
+                    f"{sorted(supported_roles)}."
+                )
+        output_raw = config.get("output", {})
+        if not isinstance(output_raw, Mapping):
+            raise ValueError("output must be a mapping.")
+        unknown_output = set(output_raw) - {"directory", "log", "write_raw"}
+        if unknown_output:
+            raise ValueError(
+                "output contains unsupported key(s): "
+                + ", ".join(sorted(unknown_output))
+            )
+        output_dir = _resolve_path(
+            base_dir,
+            output_raw.get("directory", "./qoi"),
+            must_exist=False,
+            kind="QoI output directory",
+        )
+        workers = int(training.get("workers", -1))
+        if workers == 0 or workers < -1:
+            raise ValueError(
+                "training_samples.workers must be a positive integer or -1."
+            )
+        progress_stride = int(training.get("progress_stride", 10))
+        if progress_stride <= 0:
+            raise ValueError(
+                "training_samples.progress_stride must be a positive integer."
+            )
         return cls(
             fn_config=fn_config,
-            sample=AnalyzeSampleConfig(
-                dir=_resolve_path(
+            training_samples=AnalyzeTrainingSamplesConfig(
+                manifest=_resolve_path(
                     base_dir,
-                    sample_dir,
-                    kind='sample campaign directory',
+                    training["manifest"],
+                    kind="sample campaign manifest",
                 ),
-                start=int(sample.get('start', 1)),
-                stop=sample.get('stop'),
-                step=int(sample.get('step', 1)),
-                workers=int(sample.get('workers', -1)),
-                progress_stride=int(sample.get('progress_stride', 10)),
+                system_ids=tuple(selected_ids),
+                frames=cls._frames(
+                    training.get("frames"), field="training_samples.frames"
+                ),
+                workers=workers,
+                progress_stride=progress_stride,
             ),
             reference=AnalyzeReferenceConfig(
-                systems=systems,
-                start=int(reference.get('start', 0)),
-                stop=reference.get('stop', -1),
-                step=int(reference.get('step', 1)),
+                systems=tuple(reference_systems),
+                frames=cls._frames(reference.get("frames"), field="reference.frames"),
             ),
-            run=run,
+            routines=routines,
+            run=normalize_analysis_runtime_config(config.get("run")),
             output=AnalyzeOutputConfig(
-                path=_resolve_path(
-                    base_dir,
-                    output.get('path', './analysis'),
-                    must_exist=False,
-                    kind='analysis output path',
-                ),
+                directory=output_dir,
                 log=_resolve_path(
                     base_dir,
-                    output.get('log', './out.log'),
+                    output_raw.get("log", output_dir.parent / "analyze.log"),
                     must_exist=False,
-                    kind='log file',
+                    kind="analyze log file",
                 ),
-                write_raw=bool(output.get('write_raw', False)),
+                write_raw=_strict_bool(
+                    output_raw.get("write_raw", False), field="output.write_raw"
+                ),
             ),
         )

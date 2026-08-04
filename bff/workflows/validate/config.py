@@ -18,7 +18,31 @@ class ValidateConfig(SimulationCampaignConfig):
 
     @classmethod
     def load(cls, fn_config: PathLike) -> 'ValidateConfig':
-        _, base_dir, config, common = _load_campaign_common(fn_config)
+        _, base_dir, config, common = _load_campaign_common(
+            fn_config, log_name="validate.log"
+        )
+
+        allowed = {
+            'campaign_dir',
+            'log',
+            'gmx_cmd',
+            'job_scheduler',
+            'source',
+            'systems',
+            'dispatch',
+            'compress',
+            'cleanup',
+            'store',
+            'slurm',
+            'specs',
+            'parameters',
+        }
+        unknown = set(config) - allowed
+        if unknown:
+            raise ValueError(
+                'Validate configuration contains unsupported key(s): '
+                + ', '.join(sorted(unknown))
+            )
 
         if 'specs' not in config:
             raise ValueError("Validation mode requires 'specs'.")

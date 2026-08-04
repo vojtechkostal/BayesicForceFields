@@ -5,6 +5,7 @@ from typing import Any, Callable, Optional, Tuple
 
 import torch
 
+from ..io.utils import atomic_torch_save
 from .convergence import (
     ConvergenceInfo,
     integrated_autocorr_time,
@@ -33,6 +34,7 @@ class Checkpoint:
     rng_state: Optional[torch.Tensor] = None
     proposal_state: Optional[dict[str, Any]] = None
     converged: bool = False
+    compatibility: Optional[dict[str, Any]] = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -53,6 +55,7 @@ class Checkpoint:
             "scale": self.scale,
             "it_per_sec": self.it_per_sec,
             "convergence": self._serialize_convergence(self.convergence),
+            "compatibility": self.compatibility,
         }
 
     @classmethod
@@ -79,6 +82,7 @@ class Checkpoint:
             rng_state=data["rng_state"],
             proposal_state=data["proposal_state"],
             converged=bool(data.get("converged", False)),
+            compatibility=data.get("compatibility"),
         )
 
     @classmethod
@@ -86,7 +90,7 @@ class Checkpoint:
         return cls.from_dict(torch.load(fn, weights_only=False))
 
     def write(self, fn: Path | str) -> None:
-        torch.save(self.to_dict(), fn)
+        atomic_torch_save(self.to_dict(), fn)
 
     def restore(
         self,
@@ -197,6 +201,7 @@ class Sampler:
         self._thin = 1
         self._progress_stride = 1
         self._total_steps = 0
+        self._checkpoint_compatibility: dict[str, Any] | None = None
 
     @property
     def chain(self) -> torch.Tensor:
@@ -299,6 +304,11 @@ class Sampler:
                 f"Checkpoint thin={checkpoint.thin} "
                 f"does not match requested thin={self._thin}."
             )
+        if checkpoint.compatibility != self._checkpoint_compatibility:
+            raise ValueError(
+                "Checkpoint compatibility metadata does not match the requested "
+                "specifications, models, dimensions, walkers, proposal, or target."
+            )
 
     def _should_stop(
         self,
@@ -314,8 +324,25 @@ class Sampler:
         ess_ok = conv.min_ess is not None and conv.min_ess > ess_min
         return rhat_ok and ess_ok
 
-    def write_posterior(self, fn: Path | str) -> None:
-        torch.save({"posterior": self.chain.detach().cpu()}, fn)
+    def write_posterior(
+        self,
+        fn: Path | str,
+        *,
+        metadata: Optional[dict[str, Any]] = None,
+        priors: Any = None,
+        sample_labels: Optional[list[str]] = None,
+        specs: Any = None,
+    ) -> None:
+        payload: dict[str, Any] = {"posterior": self.chain.detach().cpu()}
+        if metadata is not None:
+            payload["metadata"] = metadata
+        if priors is not None:
+            payload["priors"] = [prior.to_dict() for prior in priors]
+        if sample_labels is not None:
+            payload["sample_labels"] = list(sample_labels)
+        if specs is not None:
+            payload["specs"] = specs.to_dict()
+        atomic_torch_save(payload, fn)
 
     def run(
         self,
@@ -328,6 +355,7 @@ class Sampler:
         restart: bool = False,
         rhat_tol: float = 1.01,
         ess_min: int = 100,
+        checkpoint_compatibility: Optional[dict[str, Any]] = None,
     ):
         """
         Run the sampler.
@@ -368,6 +396,11 @@ class Sampler:
         self._thin = thin
         self._progress_stride = progress_stride
         self._total_steps = total_steps
+        self._checkpoint_compatibility = (
+            None
+            if checkpoint_compatibility is None
+            else dict(checkpoint_compatibility)
+        )
 
         if restart:
             if fn_checkpoint is None or not fn_checkpoint.exists():
@@ -469,6 +502,7 @@ class Sampler:
                 rng_state=self.rng.get_state(),
                 proposal_state=self.proposal.state_dict(),
                 converged=self.converged,
+                compatibility=self._checkpoint_compatibility,
             )
 
             if fn_checkpoint is not None:

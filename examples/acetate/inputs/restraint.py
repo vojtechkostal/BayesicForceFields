@@ -12,12 +12,10 @@ from bff.tools import get_unitcell
 def distance_distribution(
     universe: Any,
     *,
-    atom_pair: Sequence[str] = ("C2", "CAL"),
-    start: int = 0,
-    stop: int | None = None,
-    step: int = 1,
-    r_range: tuple[float, float] = (1.0, 7.0),
-    n_bins: int = 200,
+    frames: slice,
+    system_id: str,
+    sample_id: str,
+    options: dict[str, Any],
 ) -> QoI:
     """Compute one capped-distance distribution for a requested atom-name pair.
 
@@ -39,6 +37,9 @@ def distance_distribution(
     QoI
         Flattened distance distribution for the requested pair.
     """
+    atom_pair: Sequence[str] = options.get("atom_pair", ("C2", "CAL"))
+    r_range = options.get("range", (1.0, 7.0))
+    n_bins = int(options.get("bins", 200))
     if len(atom_pair) != 2:
         raise ValueError("'atom_pair' must contain exactly two atom names.")
 
@@ -52,13 +53,9 @@ def distance_distribution(
 
     edges = np.linspace(r_range[0], r_range[1], n_bins + 1, dtype=float)
     counts = np.zeros(n_bins, dtype=float)
-    start = 0 if start is None else start
-    stop = len(universe.trajectory) if stop is None else stop
-    step = 1 if step is None else step
-
     min_cutoff = None if r_range[0] <= 0 else float(r_range[0])
     max_cutoff = float(r_range[1])
-    for ts in universe.trajectory[start:stop:step]:
+    for ts in universe.trajectory[frames]:
         box = get_unitcell(universe, ts)
         _, distances = capped_distance(
             atoms_1,

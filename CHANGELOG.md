@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### Breaking Changes
+
+- Replaced positional system identities and inferred inputs with stable
+  `system_id` values, fixed stage-directory contracts, and explicit sample
+  metadata.
+- Replaced `prepare-assets` with reference-only `prepare-reference`; sampling
+  and validation now consume build systems directly.
+- Replaced positional analysis pairing with ID-based pairing and moved QoI
+  routines to a selection-driven top-level analysis configuration.
+- Renamed `bff fit` and the Python `fit` workflow to `lgpfit` without an alias.
+- Standardized learning on one output root with fixed `output/` and `plots/`
+  children, explicit `resume`/`overwrite`, and strict checkpoint validation.
+
+### Fixed
+
+- Corrected RDF normalization for changing and triclinic periodic boxes and
+  made hydrogen-bond atom groups explicit MDAnalysis selections.
+- Made raw QoI JSON lossless, progress output stream-aware, model cache reuse
+  fingerprinted, and learning plots mandatory.
+
+See the [pipeline migration guide](docs/migration.md) for required config and
+artifact changes.
+
 ## `0.3.0` - 2026-06-11
 
 ### Breaking Changes

@@ -57,15 +57,16 @@ nav:
   - Home: index.md
   - Installation: installation.md
   - Architecture: architecture.md
+  - Migration: migration.md
   - Changelog: changelog.md
   - CLI: cli.md
   - Configuration:
       - Build: configuration/build.md
-      - Prepare Assets: configuration/prepare-assets.md
+      - Prepare Reference: configuration/prepare-reference.md
       - Evaluate Snapshots: configuration/evaluate-snapshots.md
       - Sample: configuration/sample.md
       - Analyze: configuration/analyze.md
-      - Fit: configuration/fit.md
+      - LGP Fit: configuration/lgpfit.md
       - Learn: configuration/learn.md
       - Validate: configuration/validate.md
   - Examples:

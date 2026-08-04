@@ -1,3 +1,5 @@
+import hashlib
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -29,6 +31,8 @@ class QoI:
             raise ValueError(
                 "Number of values does not match labels * values_per_label in QoI."
             )
+        if not np.all(np.isfinite(values)):
+            raise ValueError("QoI values must all be finite.")
 
         self.values = values
         self.labels = labels
@@ -93,6 +97,13 @@ class QoIDataset:
                 f"Number of input samples ({self.inputs.shape[0]}) does not match "
                 f"number of output samples ({self.outputs.shape[0]})."
             )
+        for field_name, values in (
+            ("inputs", self.inputs),
+            ("outputs", self.outputs),
+            ("outputs_ref", self.outputs_ref),
+        ):
+            if not np.all(np.isfinite(values)):
+                raise ValueError(f"QoIDataset {field_name} must all be finite.")
 
         if self.outputs.shape[1] != self.outputs_ref.shape[0]:
             raise ValueError(
@@ -146,6 +157,31 @@ class QoIDataset:
         if self.nuisance is not None:
             data["nuisance"] = self.nuisance
         return data
+
+    def fingerprint(self) -> str:
+        """Return a deterministic fingerprint of all model-training inputs."""
+        digest = hashlib.sha256()
+        metadata = {
+            "name": self.name,
+            "labels": self.labels,
+            "values_per_label": self.values_per_label,
+            "nuisance": self.nuisance,
+            "settings": self.settings,
+            "metadata": self.metadata,
+        }
+        digest.update(
+            json.dumps(
+                metadata,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            ).encode("utf-8")
+        )
+        for values in (self.inputs, self.outputs, self.outputs_ref):
+            array = np.ascontiguousarray(values, dtype=np.float64)
+            digest.update(str(array.shape).encode("ascii"))
+            digest.update(array.tobytes())
+        return digest.hexdigest()
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "QoIDataset":

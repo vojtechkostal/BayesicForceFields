@@ -11,7 +11,7 @@ mamba activate bfflearn
 
 The environment installs BFF in editable mode with the developer, docs, and
 notebook extras. Install the PyTorch build that matches your machine before
-running `bff fit`, `bff learn`, or posterior notebooks.
+running `bff lgpfit`, `bff learn`, or posterior notebooks.
 
 ## Start A Feature Branch
 

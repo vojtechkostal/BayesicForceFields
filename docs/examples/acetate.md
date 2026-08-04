@@ -27,10 +27,10 @@ cd 01-build
 bff build config.yaml
 cd ..
 
-mkdir -p 02-assets
-cp configs/prepare-assets.yaml 02-assets/config.yaml
-cd 02-assets
-bff prepare-assets config.yaml
+mkdir -p 02-reference
+cp configs/prepare-reference.yaml 02-reference/config.yaml
+cd 02-reference
+bff prepare-reference config.yaml
 cd ..
 
 mkdir -p 03-reference
@@ -38,7 +38,7 @@ cp configs/evaluate-run-local.yaml 03-reference/config-snapshots.yaml
 cd 03-reference
 bff evaluate-snapshots config-snapshots.yaml
 mkdir -p trajectories
-# Generate or place reference trajectories under trajectories/system-*/.
+# Generate or place reference trajectories under trajectories/<system_id>/.
 cd ..
 
 mkdir -p 03-sample
@@ -53,16 +53,18 @@ cd 04-analyze
 bff analyze config.yaml
 cd ..
 
-mkdir -p 05-fit
-cp configs/fit.yaml 05-fit/config.yaml
-cd 05-fit
-bff fit config.yaml
+mkdir -p 05-lgpfit
+cp configs/lgpfit.yaml 05-lgpfit/config.yaml
+cd 05-lgpfit
+bff lgpfit config.yaml
 cd ..
 
 mkdir -p 06-learn
 cp configs/learn.yaml 06-learn/config.yaml
 cd 06-learn
 bff learn config.yaml
+# Export selected explicit draws from output/posterior.pt to
+# posterior-samples.yaml with PosteriorResults.sample_posterior.
 cd ..
 
 mkdir -p 07-validate
@@ -74,15 +76,17 @@ cd ..
 
 The copied config is the record of what was run for that stage. Stage
 directories are generated outputs and are ignored by git.
-The learn stage writes `marginals.pdf`, `qoi-marginals.pdf`, and `corner.pdf`.
+The learn stage writes restartable Torch artifacts under `output/` and the
+mandatory `marginals.pdf`, `qoi-marginals.pdf`, and `corner.pdf` under
+`plots/`.
 
 The `03-reference` stage keeps snapshot datasets and analysis trajectories as
 sibling directories:
 
 ```text
 03-reference/
-  snapshots/system-*/
-  trajectories/system-*/
+  snapshots/systems/<system_id>/
+  trajectories/<system_id>/
 ```
 
 ## Layout
@@ -98,16 +102,16 @@ examples/acetate/
 
 - Colvars build config:
   [configs/build-colvars.yaml][acetate-build-colvars]
-- asset-preparation config:
-  [configs/prepare-assets.yaml][acetate-prepare-assets]
+- reference-preparation config:
+  [configs/prepare-reference.yaml][acetate-prepare-reference]
 - local CP2K snapshot evaluation config:
   [configs/evaluate-run-local.yaml][acetate-evaluate-run]
 - local sampling config:
   [configs/sample-local.yaml][acetate-sample]
 - analyze config:
   [configs/analyze.yaml][acetate-analyze]
-- fit config:
-  [configs/fit.yaml][acetate-fit]
+- LGP-fit config:
+  [configs/lgpfit.yaml][acetate-lgpfit]
 - learn config:
   [configs/learn.yaml][acetate-learn]
 - validate config:
@@ -141,13 +145,13 @@ for your cluster before running them.
 [acetate-root]: https://github.com/vojtechkostal/BayesicForceFields/tree/main/examples/acetate
 [acetate-build-colvars]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/build-colvars.yaml
 [acetate-build-plumed]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/build-plumed.yaml
-[acetate-prepare-assets]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/prepare-assets.yaml
+[acetate-prepare-reference]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/prepare-reference.yaml
 [acetate-evaluate-run]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/evaluate-run-local.yaml
 [acetate-evaluate-slurm]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/evaluate-run-slurm.yaml
 [acetate-sample]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/sample-local.yaml
 [acetate-sample-slurm]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/sample-slurm.yaml
 [acetate-analyze]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/analyze.yaml
-[acetate-fit]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/fit.yaml
+[acetate-lgpfit]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/lgpfit.yaml
 [acetate-learn]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/learn.yaml
 [acetate-validate]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/validate.yaml
 [acetate-restraint]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/inputs/restraint.py

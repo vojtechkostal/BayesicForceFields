@@ -1,194 +1,171 @@
+"""Execution helpers for explicit QoI routine inputs."""
+
+from __future__ import annotations
+
 import gc
 import multiprocessing as mp
-import warnings
 from functools import partial
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 import MDAnalysis as mda
 
-from ..domain.sample import TrajectorySet
 from ..io.logs import Logger
 from ..io.progress import iter_progress
 from ..tools import _normalized_dimensions
 from ..topology import prepare_universe
 from .data import QoI
-from .routines import RuntimeRoutine, run_analysis_routines
-
-PathLike = str | Path
-
-
-warnings.filterwarnings(
-    "ignore", category=DeprecationWarning, module="MDAnalysis.coordinates.DCD"
-)
-warnings.filterwarnings(
-    "ignore", category=UserWarning, module="MDAnalysis.coordinates.XDR"
-)
+from .routines import RuntimeRoutine, run_analysis_routine
 
 
 def _cleanup_universe(universe: mda.Universe | None) -> None:
-    """Release trajectory resources after one analysis task."""
-    if universe is not None:
-        trajectory = getattr(universe, "trajectory", None)
-        if trajectory is not None:
-            close = getattr(trajectory, "close", None)
-            if callable(close):
-                close()
-        raw_trajectory = getattr(universe, "_trajectory", None)
-        if raw_trajectory is not None and raw_trajectory is not trajectory:
-            close = getattr(raw_trajectory, "close", None)
-            if callable(close):
-                close()
+    if universe is None:
+        return
+    trajectory = getattr(universe, "trajectory", None)
+    close = getattr(trajectory, "close", None)
+    if callable(close):
+        close()
 
 
-def _prepare_universe(
-    fn_topol: PathLike,
-    fn_coord: PathLike,
-    fn_trj: PathLike,
+def _require_path(
+    inputs: Mapping[str, Any],
+    role: str,
     *,
+    system_id: str,
+    sample_id: str,
+) -> Path:
+    value = inputs.get(role)
+    if not isinstance(value, Path):
+        raise ValueError(
+            f"System {system_id!r}, sample {sample_id!r}, input role {role!r}: "
+            f"expected one path, got {value!r}."
+        )
+    return value
+
+
+def analyze_system_inputs(
+    task: tuple[str, str, dict[str, Any]],
+    *,
+    routines: Sequence[RuntimeRoutine],
     start: int,
     stop: int | None,
     step: int,
     in_memory: bool,
-) -> mda.Universe:
-    """Prepare one MDAnalysis universe for trajectory analysis."""
-    universe = prepare_universe(str(fn_topol), str(fn_coord), dt=1)
-    default_dimensions = _normalized_dimensions(universe.dimensions)
-    universe.load_new(str(fn_trj))
-    universe._bff_default_dimensions = default_dimensions
-    if in_memory:
-        universe.transfer_to_memory(start=start, stop=stop, step=step)
-        if default_dimensions is not None:
-            for ts in universe.trajectory:
-                if ts.dimensions is None:
-                    ts.dimensions = default_dimensions
-    return universe
-
-
-def analyze_trajectory_set(
-    trajectory_set: TrajectorySet,
-    *,
-    routines_by_system: Sequence[tuple[RuntimeRoutine, ...]],
-    start: int = 0,
-    stop: int | None = None,
-    step: int = 1,
-    in_memory: bool = False,
-) -> list[dict[str, QoI]]:
-    """Analyze all trajectories that belong to one sample or reference set."""
-    if len(routines_by_system) != len(trajectory_set.fn_trj):
-        raise ValueError(
-            "Analysis routine count must match the number of trajectories in the set."
-        )
-
-    results: list[dict[str, QoI]] = []
-    routine_start = 0 if in_memory else start
-    routine_stop = None if in_memory else stop
-    routine_step = 1 if in_memory else step
-    for fn_topol, fn_coord, fn_trj, routines in zip(
-        trajectory_set.fn_topol,
-        trajectory_set.fn_coord,
-        trajectory_set.fn_trj,
-        routines_by_system,
-    ):
-        universe = None
-        try:
-            universe = _prepare_universe(
-                fn_topol,
-                fn_coord,
-                fn_trj,
-                start=start,
-                stop=stop,
-                step=step,
-                in_memory=in_memory,
+) -> tuple[str, str, dict[str, QoI]]:
+    """Run all applicable routines while sharing one Universe."""
+    sample_id, system_id, inputs = task
+    universe: mda.Universe | None = None
+    routine_start, routine_stop, routine_step = start, stop, step
+    try:
+        if any(routine.loader == "mdanalysis" for routine in routines):
+            topology = _require_path(
+                inputs, "topology", system_id=system_id, sample_id=sample_id
             )
-            result = run_analysis_routines(
-                routines,
+            coordinates = _require_path(
+                inputs, "coordinates", system_id=system_id, sample_id=sample_id
+            )
+            trajectory = _require_path(
+                inputs, "trajectory", system_id=system_id, sample_id=sample_id
+            )
+            universe = prepare_universe(str(topology), str(coordinates), dt=1)
+            default_dimensions = _normalized_dimensions(universe.dimensions)
+            universe.load_new(str(trajectory))
+            universe._bff_default_dimensions = default_dimensions
+            if in_memory:
+                universe.transfer_to_memory(start=start, stop=stop, step=step)
+                if default_dimensions is not None:
+                    for ts in universe.trajectory:
+                        if ts.dimensions is None:
+                            ts.dimensions = default_dimensions
+                routine_start, routine_stop, routine_step = 0, None, 1
+
+        results: dict[str, QoI] = {}
+        for routine in routines:
+            qoi = run_analysis_routine(
+                routine,
                 universe=universe,
+                inputs=inputs,
+                system_id=system_id,
+                sample_id=sample_id,
                 start=routine_start,
                 stop=routine_stop,
                 step=routine_step,
             )
-            if not result:
-                raise ValueError("Analysis routine returned no QoI outputs.")
-            results.append(result)
-        finally:
-            _cleanup_universe(universe)
-    return results
+            results[routine.name] = qoi
+        return sample_id, system_id, results
+    finally:
+        _cleanup_universe(universe)
 
 
-def _iter_analyzed_sets(
-    trajectory_sets: Sequence[TrajectorySet],
+def _iter_results(
+    tasks: Sequence[tuple[str, str, dict[str, Any]]],
     *,
     analyze_one: Any,
     workers: int,
     maxtasksperchild: int,
-) -> Iterable[list[dict[str, QoI]]]:
-    """Yield analyzed trajectory sets from the serial or multiprocessing path."""
+) -> Iterable[tuple[str, str, dict[str, QoI]]]:
     if workers <= 1:
-        yield from (analyze_one(trajectory_set) for trajectory_set in trajectory_sets)
+        yield from (analyze_one(task) for task in tasks)
         return
-
-    context = mp.get_context()
-    with context.Pool(workers, maxtasksperchild=maxtasksperchild) as pool:
-        yield from pool.imap(
-            analyze_one,
-            trajectory_sets,
-            chunksize=1,
-        )
+    with mp.get_context().Pool(
+        workers, maxtasksperchild=maxtasksperchild
+    ) as pool:
+        yield from pool.imap(analyze_one, tasks, chunksize=1)
 
 
-def analyze_trajectory_sets(
-    trajectory_sets: Sequence[TrajectorySet],
+def analyze_input_sets(
+    tasks: Sequence[tuple[str, str, dict[str, Any]]],
     *,
-    routines_by_system: Sequence[tuple[RuntimeRoutine, ...]],
-    start: int = 0,
-    stop: int | None = None,
-    step: int = 1,
-    workers: int = 1,
-    progress_stride: int = 10,
-    progress_label: str = "Trajectory QoI",
-    logger: Logger | None = None,
-    in_memory: bool = False,
-    gc_collect: bool = False,
-    maxtasksperchild: int = 100,
-) -> list[list[dict[str, QoI]]]:
-    """Analyze multiple trajectory sets with one shared routine setup."""
-    logger = logger or Logger(progress_label)
-    n_sets = len(trajectory_sets)
-    if n_sets == 0:
-        return []
+    routines_by_system: Mapping[str, Sequence[RuntimeRoutine]],
+    start: int,
+    stop: int | None,
+    step: int,
+    workers: int,
+    progress_stride: int,
+    progress_label: str,
+    logger: Logger,
+    in_memory: bool,
+    gc_collect: bool,
+    maxtasksperchild: int,
+) -> dict[str, dict[str, dict[str, QoI]]]:
+    """Analyze explicit (sample, system, inputs) tasks."""
+    grouped_tasks: dict[str, list[tuple[str, str, dict[str, Any]]]] = {}
+    for task in tasks:
+        grouped_tasks.setdefault(task[1], []).append(task)
+    results: dict[str, dict[str, dict[str, QoI]]] = {}
+    completed = 0
+    total = len(tasks)
+    worker_count = mp.cpu_count() if workers == -1 else workers
+    if worker_count == 0 or worker_count < -1:
+        raise ValueError("workers must be a positive integer or -1.")
 
-    analyze_one = partial(
-        analyze_trajectory_set,
-        routines_by_system=routines_by_system,
-        start=start,
-        stop=stop,
-        step=step,
-        in_memory=in_memory,
-    )
-
-    workers = mp.cpu_count() if workers == -1 else workers
-    completed_sets = _iter_analyzed_sets(
-        trajectory_sets,
-        analyze_one=analyze_one,
-        workers=workers,
-        maxtasksperchild=maxtasksperchild,
-    )
-    qoi = []
-    for completed, result in enumerate(
-        iter_progress(
-            completed_sets,
-            total=n_sets,
+    for system_id in sorted(grouped_tasks):
+        routines = tuple(routines_by_system.get(system_id, ()))
+        analyze_one = partial(
+            analyze_system_inputs,
+            routines=routines,
+            start=start,
+            stop=stop,
+            step=step,
+            in_memory=in_memory,
+        )
+        analyzed = _iter_results(
+            grouped_tasks[system_id],
+            analyze_one=analyze_one,
+            workers=worker_count,
+            maxtasksperchild=maxtasksperchild,
+        )
+        for sample_id, returned_system_id, qois in iter_progress(
+            analyzed,
+            total=len(grouped_tasks[system_id]),
             stride=progress_stride,
             logger=logger,
-            label=progress_label,
-        ),
-        start=1,
-    ):
-        qoi.append(result)
-        if gc_collect and (
-            completed % progress_stride == 0
-            or completed == n_sets
+            label=f"{progress_label} [{system_id}]",
         ):
-            gc.collect()
-    return qoi
+            results.setdefault(sample_id, {})[returned_system_id] = qois
+            completed += 1
+            if gc_collect and (
+                completed % progress_stride == 0 or completed == total
+            ):
+                gc.collect()
+    return results

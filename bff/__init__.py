@@ -21,11 +21,11 @@ _INTERNAL_MODULES = {
 __all__ = [
     "Project",
     "build",
-    "prepare_assets",
+    "prepare_reference",
     "evaluate_snapshots",
     "sample",
     "analyze",
-    "fit",
+    "lgpfit",
     "learn",
     "validate",
     "QoI",
@@ -43,8 +43,8 @@ def build(fn_config: str | Path):
     return _run_workflow("bff.workflows.build", fn_config)
 
 
-def prepare_assets(fn_config: str | Path):
-    return _run_workflow("bff.workflows.prepare_assets", fn_config)
+def prepare_reference(fn_config: str | Path):
+    return _run_workflow("bff.workflows.prepare_reference", fn_config)
 
 
 def evaluate_snapshots(fn_config: str | Path):
@@ -59,8 +59,8 @@ def analyze(fn_config: str | Path):
     return _run_workflow("bff.workflows.analyze", fn_config)
 
 
-def fit(fn_config: str | Path):
-    return _run_workflow("bff.workflows.fit", fn_config)
+def lgpfit(fn_config: str | Path):
+    return _run_workflow("bff.workflows.lgpfit", fn_config)
 
 
 def learn(fn_config: str | Path):
@@ -84,8 +84,8 @@ class Project:
     def build(self, fn_config: str | Path):
         return build(self._resolve(fn_config))
 
-    def prepare_assets(self, fn_config: str | Path):
-        return prepare_assets(self._resolve(fn_config))
+    def prepare_reference(self, fn_config: str | Path):
+        return prepare_reference(self._resolve(fn_config))
 
     def evaluate_snapshots(self, fn_config: str | Path):
         return evaluate_snapshots(self._resolve(fn_config))
@@ -96,8 +96,8 @@ class Project:
     def analyze(self, fn_config: str | Path):
         return analyze(self._resolve(fn_config))
 
-    def fit(self, fn_config: str | Path):
-        return fit(self._resolve(fn_config))
+    def lgpfit(self, fn_config: str | Path):
+        return lgpfit(self._resolve(fn_config))
 
     def learn(self, fn_config: str | Path):
         return learn(self._resolve(fn_config))

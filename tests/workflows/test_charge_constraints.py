@@ -18,7 +18,7 @@ ACE_IONS_TOP = ROOT / "examples/acetate/inputs/common/topol-ions.top"
 def _config(tmp_path: Path, bounds: dict, constraints: list[dict]) -> SimpleNamespace:
     return SimpleNamespace(
         campaign_dir=tmp_path,
-        systems=[SimpleNamespace(fn_topol=ACE_TOP)],
+        systems=[SimpleNamespace(topology_path=ACE_TOP)],
         bounds=bounds,
         charge_constraints=tuple(
             ChargeConstraintConfig(**constraint) for constraint in constraints
@@ -75,7 +75,7 @@ def test_system_constraint_can_reconstruct_charge_across_molecule_types(
 ) -> None:
     config = SimpleNamespace(
         campaign_dir=tmp_path,
-        systems=[SimpleNamespace(fn_topol=ACE_IONS_TOP)],
+        systems=[SimpleNamespace(topology_path=ACE_IONS_TOP)],
         bounds={"charge C2": [0.0, 1.0], "charge CAL": [0.0, 2.0]},
         charge_constraints=(
             ChargeConstraintConfig(

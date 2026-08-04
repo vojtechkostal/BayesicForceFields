@@ -35,11 +35,11 @@ class Logger:
     }
     _TITLE_STYLES = {
         "build": ("bold", "bright_cyan"),
-        "prepare-assets": ("bold", "bright_cyan"),
+        "prepare-reference": ("bold", "bright_cyan"),
         "evaluate-snapshots": ("bold", "bright_blue"),
         "sample": ("bold", "bright_yellow"),
         "analyze": ("bold", "bright_magenta"),
-        "fit": ("bold", "bright_green"),
+        "lgpfit": ("bold", "bright_green"),
         "learn": ("bold", "cyan"),
         "validate": ("bold", "bright_red"),
     }
@@ -57,6 +57,7 @@ class Logger:
         self.fn_log = None if fn_log is None else str(Path(fn_log).resolve())
         self.width = width
         self.verbose = verbose
+        self._interactive = bool(sys.stdout.isatty())
         self._last_console_len = 0
         if color not in {True, False, "auto"}:
             raise ValueError("'color' must be True, False, or 'auto'.")
@@ -72,6 +73,10 @@ class Logger:
                 log_path.write_text("", encoding="utf-8")
             elif not log_path.exists():
                 log_path.touch()
+
+    @property
+    def interactive(self) -> bool:
+        return self._interactive
 
     def _prefix(self, level: int) -> str:
         if level <= 0:
@@ -105,7 +110,7 @@ class Logger:
             return
 
         console_line = self._style(line, style)
-        if overwrite:
+        if overwrite and self._interactive:
             clear = max(self._last_console_len - len(line), 0)
             sys.stdout.write("\r" + console_line + (" " * clear))
             sys.stdout.flush()
@@ -332,9 +337,9 @@ def print_progress_mcmc(
                 line += f" | acc: {state.acceptance_rate:.3f}"
             if state.it_per_sec is not None:
                 line += f" | {state.it_per_sec:>3.0f} it/s"
-        logger.info(line, level=1, overwrite=True, style="magenta")
+        if not state.converged and state.step < state.total_steps:
+            logger.info(line, level=1, overwrite=True, style="magenta")
 
-    logger.info(line, level=1, style="magenta")
     logger.blank()
     if sampler.converged:
         logger.done("Posterior sampling", level=1)

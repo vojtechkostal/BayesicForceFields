@@ -10,7 +10,9 @@ defaults:
     prod: 100000
 
 systems:
-  - topology: ../inputs/common/topol.top
+  - system_id: acetate
+    system_name: Aqueous acetate
+    topology: ../inputs/common/topol.top
     templates:
       ACE: ../inputs/common/ace.gro
     mdp:
@@ -21,7 +23,9 @@ systems:
     multiplicity: 1
     box: [15.7107, 15.7107, 15.7107, 90, 90, 90]
 
-  - topology: ../inputs/common/topol-ions.top
+  - system_id: acetate-contact
+    system_name: Acetate-calcium contact pair
+    topology: ../inputs/common/topol-ions.top
     templates:
       ACE: ../inputs/common/ace.gro
     mdp:
@@ -34,7 +38,9 @@ systems:
     bias:
       plumed_file: ../inputs/biases/plumed-001.dat
 
-  - topology: ../inputs/common/topol-ions.top
+  - system_id: acetate-separated
+    system_name: Acetate-calcium separated pair
+    topology: ../inputs/common/topol-ions.top
     templates:
       ACE: ../inputs/common/ace.gro
     mdp:

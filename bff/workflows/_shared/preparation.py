@@ -6,7 +6,6 @@ import subprocess
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import MDAnalysis as mda
 import numpy as np
@@ -14,12 +13,14 @@ from gmxtopology import Topology
 from MDAnalysis.selections.gromacs import SelectionWriter
 
 from ...domain.bias import BiasSpec
+from ...domain.systems import (
+    load_build_system_metadata,
+    validate_system_id,
+)
 from ...io.colvars import write_mdp_with_colvars
 from ...io.commands import build_command
 from ...io.extxyz import write_extxyz_frame
 from ...io.plumed import ensure_plumed_kernel
-from ...io.utils import load_yaml
-from .config import _resolve_path
 
 PathLike = str | Path
 
@@ -34,167 +35,84 @@ warnings.filterwarnings(
 @dataclass(frozen=True, slots=True)
 class PreparedSystem:
     system_id: str
+    system_name: str | None
     charge: int
     multiplicity: int
     box: np.ndarray
-    fn_topol: Path
-    fn_coordinates: Path
-    fn_mdp_em: Path
-    fn_mdp_npt: Path
-    fn_mdp_prod: Path
-    fn_ndx: Path
-    fn_prod_coord: Path
-    fn_prod_trj: Path
+    topology_path: Path
+    coordinates_path: Path
+    mdp_em_path: Path
+    mdp_npt_path: Path
+    mdp_production_path: Path
+    index_path: Path
+    production_coordinates_path: Path
+    production_trajectory_path: Path
     bias: BiasSpec
     nsteps_prod: int
     maxwarn: int
 
 
-@dataclass(frozen=True, slots=True)
-class BuildManifest:
-    fn_manifest: Path
-    gmx_cmd: str
-    systems: list[PreparedSystem]
-
-    @classmethod
-    def load(cls, fn_manifest: PathLike) -> "BuildManifest":
-        fn_manifest = Path(fn_manifest).resolve()
-        data = load_yaml(fn_manifest)
-        if not isinstance(data, dict):
-            raise ValueError("Build manifest must contain a mapping.")
-        if data.get("version") != 1:
-            raise ValueError("Unsupported build manifest version.")
-
-        base_dir = fn_manifest.parent
-        systems_raw = data.get("systems")
-        if not isinstance(systems_raw, list) or not systems_raw:
-            raise ValueError("Build manifest must contain non-empty 'systems'.")
-
-        systems: list[PreparedSystem] = []
-        for index, system in enumerate(systems_raw):
-            if not isinstance(system, dict):
-                raise ValueError(
-                    f"systems[{index}] in build manifest must be a mapping."
-                )
-            mdp = system.get("mdp")
-            production = system.get("production")
-            if not isinstance(mdp, dict):
-                raise ValueError(f"systems[{index}].mdp must be a mapping.")
-            if not isinstance(production, dict):
-                raise ValueError(f"systems[{index}].production must be a mapping.")
-
-            system_id = normalize_system_id(system.get("system_id", f"{index:03d}"))
-            systems.append(
-                PreparedSystem(
-                    system_id=system_id,
-                    charge=int(system["charge"]),
-                    multiplicity=int(system["multiplicity"]),
-                    box=np.asarray(system["box"], dtype=float),
-                    fn_topol=_resolve_path(
-                        base_dir,
-                        system["topology"],
-                        kind=f"manifest system {system_id} topology",
-                    ),
-                    fn_coordinates=_resolve_path(
-                        base_dir,
-                        system["coordinates"],
-                        kind=f"manifest system {system_id} coordinates",
-                    ),
-                    fn_mdp_em=_resolve_path(
-                        base_dir,
-                        mdp["em"],
-                        kind=f"manifest system {system_id} EM MDP",
-                    ),
-                    fn_mdp_npt=_resolve_path(
-                        base_dir,
-                        mdp["npt"],
-                        kind=f"manifest system {system_id} NpT MDP",
-                    ),
-                    fn_mdp_prod=_resolve_path(
-                        base_dir,
-                        mdp["prod"],
-                        kind=f"manifest system {system_id} production MDP",
-                    ),
-                    fn_ndx=_resolve_path(
-                        base_dir,
-                        system["index"],
-                        kind=f"manifest system {system_id} index",
-                    ),
-                    fn_prod_coord=_resolve_path(
-                        base_dir,
-                        production["coordinates"],
-                        kind=f"manifest system {system_id} production coordinates",
-                    ),
-                    fn_prod_trj=_resolve_path(
-                        base_dir,
-                        production["trajectory"],
-                        kind=f"manifest system {system_id} production trajectory",
-                    ),
-                    bias=BiasSpec.from_any(system.get("bias"), base_dir=base_dir),
-                    nsteps_prod=int(production["n_steps"]),
-                    maxwarn=int(system.get("maxwarn", 0)),
-                )
-            )
-
-        return cls(
-            fn_manifest=fn_manifest,
-            gmx_cmd=str(data.get("gmx_cmd", "gmx")),
-            systems=systems,
+def _required_file(system_dir: Path, name: str, *, system_id: str) -> Path:
+    path = system_dir / name
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"system {system_id!r}: expected build output {name!r} at {path}; "
+            "regenerate the build stage or correct 'source'."
         )
+    return path
 
 
-def system_name(system_index: int | str) -> str:
-    return f"system-{int(system_index):03d}"
-
-
-def normalize_system_id(value: int | str) -> str:
-    text = str(value)
-    if text.startswith("system-"):
-        text = text.split("-", maxsplit=1)[1]
-    return f"{int(text):03d}"
-
-
-def select_prepared_systems(
-    systems: list[PreparedSystem],
-    system_ids: tuple[str, ...] | None,
-) -> list[PreparedSystem]:
-    if system_ids is None:
-        return list(systems)
-
-    by_id = {system.system_id: system for system in systems}
-    missing = [system_id for system_id in system_ids if system_id not in by_id]
-    if missing:
+def load_build_system(source: PathLike, system_id: str) -> PreparedSystem:
+    """Resolve one system from the documented build-directory contract."""
+    source = Path(source).resolve()
+    system_id = validate_system_id(system_id)
+    system_dir = source / "systems" / system_id
+    metadata = load_build_system_metadata(source, system_id)
+    colvars = system_dir / "bias.colvars.dat"
+    plumed = system_dir / "bias.plumed.dat"
+    if colvars.is_file() and plumed.is_file():
         raise ValueError(
-            "Build manifest does not contain requested system id(s): "
-            + ", ".join(missing)
+            f"system {system_id!r}: both reserved bias files exist ({colvars} and "
+            f"{plumed}); retain exactly one."
         )
-    return [by_id[system_id] for system_id in system_ids]
-
-
-def load_manifest_system_ids(raw: Any) -> tuple[str, ...] | None:
-    if raw is None:
-        return None
-    if not isinstance(raw, list) or not raw:
-        raise ValueError("'systems' must be a non-empty list when provided.")
-
-    system_ids: list[str] = []
-    for index, item in enumerate(raw):
-        if isinstance(item, dict):
-            if "system_id" not in item:
-                raise ValueError(f"systems[{index}] must define 'system_id'.")
-            item = item["system_id"]
-        if not isinstance(item, (int, str)):
-            raise ValueError(f"systems[{index}] must be a system id.")
-        system_ids.append(normalize_system_id(item))
-    return tuple(system_ids)
+    if colvars.is_file():
+        bias = BiasSpec(kind="colvars", colvars_file=colvars)
+    elif plumed.is_file():
+        bias = BiasSpec(kind="plumed", plumed_file=plumed)
+    else:
+        bias = BiasSpec()
+    return PreparedSystem(
+        system_id=system_id,
+        system_name=metadata.system_name,
+        charge=metadata.charge,
+        multiplicity=metadata.multiplicity,
+        box=np.asarray(metadata.box, dtype=float),
+        topology_path=_required_file(
+            system_dir, "topology.top", system_id=system_id
+        ),
+        coordinates_path=_required_file(
+            system_dir, "coordinates.gro", system_id=system_id
+        ),
+        mdp_em_path=_required_file(system_dir, "em.mdp", system_id=system_id),
+        mdp_npt_path=_required_file(system_dir, "npt.mdp", system_id=system_id),
+        mdp_production_path=_required_file(
+            system_dir, "production.mdp", system_id=system_id
+        ),
+        index_path=_required_file(system_dir, "index.ndx", system_id=system_id),
+        production_coordinates_path=_required_file(
+            system_dir, "production.gro", system_id=system_id
+        ),
+        production_trajectory_path=_required_file(
+            system_dir, "production.xtc", system_id=system_id
+        ),
+        bias=bias,
+        nsteps_prod=metadata.production_steps,
+        maxwarn=metadata.maxwarn,
+    )
 
 
 def topology_name(topology_index: int) -> str:
     return f"topology-{topology_index:03d}"
-
-
-def system_run_name(system_index: int | str) -> str:
-    return f"{system_name(system_index)}-prod"
 
 
 def check_gmx_available(gmx_cmd: str = "gmx") -> None:

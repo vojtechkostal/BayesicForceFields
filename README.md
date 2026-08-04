@@ -24,8 +24,8 @@ Full documentation:
 ## Workflow
 
 ```text
-build -> prepare-assets -> evaluate-snapshots
-                       -> sample -> analyze -> fit -> learn -> validate
+build -> prepare-reference -> evaluate-snapshots
+      -> sample -> analyze -> lgpfit -> learn -> validate
 ```
 
 The command-line interface guides a force-field model from prepared molecular
