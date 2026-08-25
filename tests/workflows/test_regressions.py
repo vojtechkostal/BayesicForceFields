@@ -11,28 +11,11 @@ import yaml
 from bff.io.cp2k import (
     HARTREE_TO_EV,
     collect_single_atom_energies,
-    strip_cp2k_gfn_type,
 )
-from bff.workflows.evaluate_snapshots.config import EvaluateSnapshotsConfig
+from bff.workflows.label_snapshots.config import LabelSnapshotsConfig
 from bff.workflows.learn.config import LearnConfig
 from bff.workflows.learn.main import _write_default_plots
 from bff.workflows.md.main import check_success
-
-
-def test_strip_cp2k_gfn_type_removes_keyword(tmp_path: Path) -> None:
-    fn_input = tmp_path / "md.inp"
-    fn_input.write_text(
-        "&XTB\n"
-        "  GFN_TYPE 1\n"
-        "  SOME_OTHER_KEY 2\n"
-        "&END XTB\n"
-    )
-
-    changed = strip_cp2k_gfn_type(fn_input)
-
-    assert changed is True
-    assert "GFN_TYPE" not in fn_input.read_text()
-    assert "SOME_OTHER_KEY 2" in fn_input.read_text()
 
 
 def test_collect_single_atom_energies_uses_atomic_numbers(tmp_path: Path) -> None:
@@ -57,10 +40,10 @@ def test_collect_single_atom_energies_uses_atomic_numbers(tmp_path: Path) -> Non
     assert energies[20] == pytest.approx(-1.25 * HARTREE_TO_EV)
 
 
-def test_evaluate_snapshots_rejects_import_mode(
+def test_label_snapshots_rejects_import_mode(
     tmp_path: Path,
 ) -> None:
-    fn_config = tmp_path / "evaluate-snapshots.yaml"
+    fn_config = tmp_path / "label-snapshots.yaml"
     fn_config.write_text(
         yaml.safe_dump(
             {
@@ -72,7 +55,7 @@ def test_evaluate_snapshots_rejects_import_mode(
     )
 
     with pytest.raises(ValueError, match="unsupported key.*mode"):
-        EvaluateSnapshotsConfig.load(fn_config)
+        LabelSnapshotsConfig.load(fn_config)
 
 
 def test_check_success_uses_expected_saved_frame_count(

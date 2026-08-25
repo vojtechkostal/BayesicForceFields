@@ -18,7 +18,7 @@ _PBC_RE = re.compile(r'pbc="([^"]+)"')
 
 def _atom_symbols(atoms: Any) -> list[str]:
     if hasattr(atoms, 'elements'):
-        elements = [str(element) for element in atoms.elements]
+        elements = [str(element).capitalize() for element in atoms.elements]
         if all(elements):
             return elements
     return [str(name) for name in atoms.names]
@@ -218,7 +218,7 @@ def write_extxyz_frames(frames: Sequence[dict[str, object]], path: PathLike) -> 
             if forces is None:
                 for atom, position in zip(atoms, positions, strict=True):
                     handle.write(
-                        atom
+                        atom.capitalize()
                         + ' '
                         + ' '.join(f'{value:.12g}' for value in position)
                         + '\n'
@@ -228,6 +228,9 @@ def write_extxyz_frames(frames: Sequence[dict[str, object]], path: PathLike) -> 
             for atom, position, force in zip(atoms, positions, forces, strict=True):
                 values = [*position, *force]
                 handle.write(
-                    atom + ' ' + ' '.join(f'{value:.12g}' for value in values) + '\n'
+                    atom.capitalize()
+                    + ' '
+                    + ' '.join(f'{value:.12g}' for value in values)
+                    + '\n'
                 )
     tmp.replace(path)

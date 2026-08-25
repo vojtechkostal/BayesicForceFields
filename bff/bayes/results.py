@@ -402,6 +402,7 @@ class PosteriorResults:
         enforce_bounds: bool = True,
         max_attempts: Optional[int] = None,
         include_implicit_charge: bool = False,
+        include_mean: bool = False,
     ) -> np.ndarray:
         """Draw parameter samples from a fitted posterior approximation."""
         if self._prepared_samples is None:
@@ -417,6 +418,8 @@ class PosteriorResults:
             )
 
         posterior_samples, labels = self._parameter_draw_source()
+        posterior_mean = np.mean(posterior_samples, axis=0, keepdims=True)
+
         distribution = distribution.lower()
         if distribution not in {'empirical', 'kde', 'normal', 'uniform'}:
             raise ValueError(
@@ -471,12 +474,31 @@ class PosteriorResults:
 
             explicit_draws = np.concatenate(accepted, axis=0)[:n_samples]
 
+        if include_mean:
+            if self.specs is not None:
+                full_mean = self.specs.with_implicit_charges(posterior_mean)
+                lower, upper = self.specs.bounds.array.T
+                valid_mean = np.logical_and(
+                    full_mean >= lower,
+                    full_mean <= upper,
+                ).all()
+                if not valid_mean:
+                    raise ValueError(
+                        'Posterior mean violates the embedded parameter bounds.'
+                    )
+            explicit_samples = np.concatenate(
+                [posterior_mean, explicit_draws],
+                axis=0,
+            )
+        else:
+            explicit_samples = explicit_draws
+
         if include_implicit_charge:
             assert self.specs is not None
-            draws = self.specs.with_implicit_charges(explicit_draws)
+            draws = self.specs.with_implicit_charges(explicit_samples)
             labels = list(self.specs.parameter_names(explicit_only=False))
         else:
-            draws = explicit_draws
+            draws = explicit_samples
 
         if fn_out:
             fn_out = Path(fn_out).resolve()

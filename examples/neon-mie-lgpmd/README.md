@@ -16,7 +16,7 @@ The upstream tutorial accompanies:
 The committed files under `upstream/` were copied verbatim from LGPMD commit
 `e2787cf0d830758f65f133fd1d2f7258a2ad3dee`. See `SOURCE.md` for the precise
 file list and license information.
-The fitting and learning cells use CUDA by default.
+Fitting and learning use CUDA when available and otherwise run on CPU.
 
 ## Run
 

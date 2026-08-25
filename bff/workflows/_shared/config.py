@@ -285,18 +285,10 @@ class SimulationCampaignConfig:
     store: tuple[str, ...] = ()
     slurm: Optional[SlurmConfig] = None
 
-    @classmethod
-    def _load_common(
-        cls,
-        fn_config: PathLike,
-    ) -> tuple[Path, Path, dict[str, Any], dict[str, Any]]:
-        return _load_campaign_common(fn_config)
-
-
 def _load_campaign_common(
     fn_config: PathLike,
     *,
-    log_name: str = "sample.log",
+    log_name: str = "sample-parameters.log",
 ) -> tuple[Path, Path, dict[str, Any], dict[str, Any]]:
     fn_config = Path(fn_config).resolve()
     base_dir = fn_config.parent

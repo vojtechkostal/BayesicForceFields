@@ -2,15 +2,50 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Mapping
 
 import MDAnalysis as mda
 import numpy as np
+from MDAnalysis.exceptions import NoDataError, SelectionError
 from MDAnalysis.lib.distances import distance_array
 from MDAnalysis.lib.mdamath import triclinic_vectors
 from scipy.ndimage import gaussian_filter
 
 from .data import QoI
+
+
+def validate_rdf_options(
+    options: Mapping[str, Any],
+    *,
+    context: str = "RDF options",
+) -> None:
+    """Validate RDF options without requiring a trajectory."""
+    boolean_values = [
+        options.get("pbc", True),
+        options.get("update_selections", False),
+        options.get("smooth", False),
+    ]
+    if not all(isinstance(value, bool) for value in boolean_values):
+        raise ValueError(f"{context}: boolean options must be true or false.")
+
+    bins = options.get("bins", 200)
+    if not isinstance(bins, int) or isinstance(bins, bool) or bins <= 0:
+        raise ValueError(f"{context}.bins must be a positive integer, got {bins!r}.")
+
+    distance_range = options.get("range", (0.0, 10.0))
+    if not (
+        isinstance(distance_range, (list, tuple))
+        and len(distance_range) == 2
+        and all(
+            isinstance(value, (int, float)) and not isinstance(value, bool)
+            for value in distance_range
+        )
+        and 0 <= distance_range[0] < distance_range[1]
+    ):
+        raise ValueError(
+            f"{context}.range must contain two increasing non-negative numbers, "
+            f"got {distance_range!r}."
+        )
 
 
 def _select_group(
@@ -22,7 +57,7 @@ def _select_group(
 ) -> mda.AtomGroup:
     try:
         group = universe.select_atoms(selection, updating=updating)
-    except Exception as exc:
+    except SelectionError as exc:
         raise ValueError(
             f"Invalid atom selection for {field}: {selection!r}."
         ) from exc
@@ -56,31 +91,28 @@ def compute_rdf(
     stop: int | None = None,
     step: int = 1,
     smooth: bool = False,
+    center_type: str | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Compute an RDF with per-frame triclinic PBC and normalization."""
-    if not all(
-        isinstance(value, bool) for value in (pbc, update_selections, smooth)
-    ):
-        raise ValueError(
-            "RDF pbc, update_selections, and smooth options must be booleans."
-        )
-    if bins <= 0:
-        raise ValueError("RDF bins must be a positive integer.")
-    if (
-        len(distance_range) != 2
-        or distance_range[0] < 0
-        or distance_range[1] <= distance_range[0]
-    ):
-        raise ValueError(
-            f"RDF range must contain increasing non-negative bounds, got "
-            f"{distance_range!r}."
-        )
+    validate_rdf_options(
+        {
+            "range": distance_range,
+            "bins": bins,
+            "pbc": pbc,
+            "update_selections": update_selections,
+            "smooth": smooth,
+        }
+    )
     atoms_a = _select_group(
         universe, group_a, updating=update_selections, field="selections.group_a"
     )
     atoms_b = _select_group(
         universe, group_b, updating=update_selections, field="selections.group_b"
     )
+    if center_type is not None and not np.any(atoms_a.types == center_type):
+        raise ValueError(
+            f"RDF group_a contains no atoms of type {center_type!r}: {group_a!r}."
+        )
     edges = np.linspace(distance_range[0], distance_range[1], bins + 1)
     shell_volumes = (4.0 * np.pi / 3.0) * (
         edges[1:] ** 3 - edges[:-1] ** 3
@@ -92,7 +124,12 @@ def compute_rdf(
     for frame_index, ts in enumerate(
         universe.trajectory[slice(start, stop, step)], start=start
     ):
-        if len(atoms_a) == 0 or len(atoms_b) == 0:
+        frame_atoms_a = (
+            atoms_a
+            if center_type is None
+            else atoms_a[atoms_a.types == center_type]
+        )
+        if len(frame_atoms_a) == 0 or len(atoms_b) == 0:
             raise ValueError(
                 "RDF selections became empty at frame "
                 f"{frame_index}: group_a={group_a!r}, group_b={group_b!r}."
@@ -102,11 +139,11 @@ def compute_rdf(
         if pbc:
             box, volume = _box_and_volume(ts, context=f"RDF frame {frame_index}")
         distances = distance_array(
-            atoms_a.positions,
+            frame_atoms_a.positions,
             atoms_b.positions,
             box=box,
         )
-        same_atoms = atoms_a.indices[:, None] == atoms_b.indices[None, :]
+        same_atoms = frame_atoms_a.indices[:, None] == atoms_b.indices[None, :]
         valid_distances = distances[~same_atoms]
         n_pairs = valid_distances.size
         if n_pairs <= 0:
@@ -143,20 +180,52 @@ def compute_rdf_qoi(
     stop: int | None = None,
     step: int = 1,
 ) -> QoI:
-    _, values = compute_rdf(
+    validate_rdf_options(
+        {
+            "range": range,
+            "bins": bins,
+            "pbc": pbc,
+            "update_selections": update_selections,
+            "smooth": smooth,
+        }
+    )
+    centers = _select_group(
         universe,
         group_a,
-        group_b,
-        distance_range=tuple(float(value) for value in range),
-        bins=int(bins),
-        pbc=pbc,
-        update_selections=update_selections,
-        start=start,
-        stop=stop,
-        step=step,
-        smooth=smooth,
+        updating=update_selections,
+        field="selections.group_a",
     )
-    label = f"{group_a} -> {group_b}"
+    try:
+        centers = centers[centers.masses > 0.5]
+    except NoDataError as exc:
+        raise ValueError(
+            "RDF group_a requires topology masses to exclude virtual sites."
+        ) from exc
+    if len(centers) == 0:
+        raise ValueError(
+            f"RDF group_a contains no atoms with mass greater than 0.5: "
+            f"{group_a!r}."
+        )
+
+    labels = tuple(sorted({str(atom_type) for atom_type in centers.types}))
+    curves: list[np.ndarray] = []
+    for atom_type in labels:
+        _, values = compute_rdf(
+            universe,
+            group_a,
+            group_b,
+            distance_range=tuple(float(value) for value in range),
+            bins=int(bins),
+            pbc=pbc,
+            update_selections=update_selections,
+            start=start,
+            stop=stop,
+            step=step,
+            smooth=smooth,
+            center_type=atom_type,
+        )
+        curves.append(values)
+
     settings = {
         "group_a": group_a,
         "group_b": group_b,
@@ -168,8 +237,8 @@ def compute_rdf_qoi(
     }
     return QoI(
         name="rdf",
-        values=values,
-        labels=(label,),
+        values=np.concatenate(curves),
+        labels=labels,
         values_per_label=int(bins),
         settings=settings,
     )

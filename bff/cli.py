@@ -6,7 +6,7 @@ from typing import Callable
 import typer
 
 app = typer.Typer(
-    help="BayesicForceFields: Bayesian optimization of molecular force fields.",
+    help="BayesicForceFields: Bayesian learning of molecular force fields.",
     no_args_is_help=True,
     add_completion=True,
 )
@@ -96,55 +96,47 @@ def examples(
 @app.command()
 def build(fn_config: Path = config_argument()) -> None:
     """Build equilibrated systems and seeded production trajectories."""
-    from bff.workflows.build import main as build_main
+    from bff.workflows.build.main import main as build_main
 
     run_workflow(fn_config, build_main, "build")
 
 
-@app.command(name="prepare-reference")
-def prepare_reference(fn_config: Path = config_argument()) -> None:
-    """Prepare CP2K reference inputs from a BFF build stage."""
-    from bff.workflows.prepare_reference import main as prepare_main
+@app.command(name="label-snapshots")
+def label_snapshots(fn_config: Path = config_argument()) -> None:
+    """Extract and label trajectory snapshots with CP2K."""
+    from bff.workflows.label_snapshots.main import main as label_main
 
-    run_workflow(fn_config, prepare_main, "prepare-reference")
-
-
-@app.command(name="evaluate-snapshots")
-def evaluate_snapshots(fn_config: Path = config_argument()) -> None:
-    """Evaluate staged CP2K snapshots."""
-    from bff.workflows.evaluate_snapshots import main as evaluate_main
-
-    run_workflow(fn_config, evaluate_main, "evaluate-snapshots")
+    run_workflow(fn_config, label_main, "label-snapshots")
 
 
-@app.command()
-def sample(fn_config: Path = config_argument()) -> None:
+@app.command(name="sample-parameters")
+def sample_parameters(fn_config: Path = config_argument()) -> None:
     """Sample force-field parameters and run FFMD training simulations."""
-    from bff.workflows.sample import main as sample_main
+    from bff.workflows.sample_parameters.main import main as sample_main
 
-    run_workflow(fn_config, sample_main, "sample")
+    run_workflow(fn_config, sample_main, "sample-parameters")
 
 
-@app.command()
-def analyze(fn_config: Path = config_argument()) -> None:
+@app.command(name="build-qoi-datasets")
+def build_qoi_datasets(fn_config: Path = config_argument()) -> None:
     """Analyze reference and FFMD trajectories into matched QoI datasets."""
-    from bff.workflows.analyze import main as analyze_main
+    from bff.workflows.build_qoi_datasets.main import main as build_datasets_main
 
-    run_workflow(fn_config, analyze_main, "analyze")
+    run_workflow(fn_config, build_datasets_main, "build-qoi-datasets")
 
 
-@app.command()
-def lgpfit(fn_config: Path = config_argument()) -> None:
+@app.command(name="fit-lgp")
+def fit_lgp(fn_config: Path = config_argument()) -> None:
     """Fit surrogate models from analyzed QoI datasets."""
-    from bff.workflows.lgpfit import main as lgpfit_main
+    from bff.workflows.fit_lgp.main import main as fit_lgp_main
 
-    run_workflow(fn_config, lgpfit_main, "lgpfit")
+    run_workflow(fn_config, fit_lgp_main, "fit-lgp")
 
 
 @app.command()
 def learn(fn_config: Path = config_argument()) -> None:
     """Run Bayesian posterior learning over force-field parameters."""
-    from bff.workflows.learn import main as learn_main
+    from bff.workflows.learn.main import main as learn_main
 
     run_workflow(fn_config, learn_main, "learn")
 
@@ -152,7 +144,7 @@ def learn(fn_config: Path = config_argument()) -> None:
 @app.command()
 def validate(fn_config: Path = config_argument()) -> None:
     """Run explicit validation simulations for selected parameter samples."""
-    from bff.workflows.validate import main as validate_main
+    from bff.workflows.validate.main import main as validate_main
 
     run_workflow(fn_config, validate_main, "validate")
 
@@ -160,17 +152,17 @@ def validate(fn_config: Path = config_argument()) -> None:
 @app.command(hidden=True)
 def md(fn_config: Path = config_argument()) -> None:
     """Run molecular dynamics from a configuration file."""
-    from bff.workflows.md import main as md_main
+    from bff.workflows.md.main import main as md_main
 
     run_workflow(fn_config, md_main, "md")
 
 
-@app.command(name="evaluate-snapshot-job", hidden=True)
-def evaluate_snapshot_job(fn_config: Path = config_argument()) -> None:
+@app.command(name="label-snapshot-job", hidden=True)
+def label_snapshot_job(fn_config: Path = config_argument()) -> None:
     """Run one staged CP2K snapshot job from a configuration file."""
-    from bff.workflows.evaluate_snapshots import run_job
+    from bff.workflows.label_snapshots.main import run_job
 
-    run_workflow(fn_config, run_job, "evaluate-snapshot-job")
+    run_workflow(fn_config, run_job, "label-snapshot-job")
 
 
 if __name__ == "__main__":

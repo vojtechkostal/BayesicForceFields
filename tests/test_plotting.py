@@ -1,5 +1,4 @@
 import numpy as np
-import pytest
 from matplotlib.legend import Legend
 
 from bff.bayes.priors import Priors
@@ -159,43 +158,9 @@ def test_plot_marginals_annotates_posterior_mean(monkeypatch) -> None:
     figure, axes = plotted[0]
     ax = np.atleast_1d(axes)[0]
     assert [text.get_text() for text in ax.texts] == [f"{values.mean():.3f}"]
-    plotting.plt.close(figure)
-
-
-@pytest.mark.parametrize(
-    ("count", "figsize", "bounds"),
-    [
-        (4, (3.0, 2.4), (-0.001, 0.001)),
-        (8, (5.0, 2.8), (-1_000_000.0, 1_000_000.0)),
-    ],
-)
-def test_marginal_annotation_lanes_do_not_overlap(
-    count: int,
-    figsize: tuple[float, float],
-    bounds: tuple[float, float],
-) -> None:
-    import bff.plotting as plotting
-
-    figure, ax = plotting.plt.subplots(figsize=figsize)
-    ax.set_xlim(-0.5, count - 0.5)
-    ax.set_xticks(range(count), [f"long parameter label {i}" for i in range(count)])
-    ax.plot([], [], label="posterior with a long label")
-    ax.legend(loc="upper center")
-    means = np.linspace(bounds[0] * 0.1, bounds[1] * 0.1, count)
-    artists = plotting._layout_marginal_mean_annotations(
-        figure,
-        [ax],
-        [
-            (ax, index, mean, bounds[0], bounds[1])
-            for index, mean in enumerate(means)
-        ],
-    )
-
-    renderer = figure.canvas.get_renderer()
-    boxes = [artist.get_window_extent(renderer) for artist in artists]
-    assert not any(
-        first.overlaps(second)
-        for index, first in enumerate(boxes)
-        for second in boxes[index + 1 :]
-    )
+    annotation = ax.texts[0]
+    assert annotation.get_position()[0] == 0
+    assert ax.get_ylim()[0] < annotation.get_position()[1] < 0.0
+    assert annotation.get_color() == "tab:red"
+    assert annotation.get_fontweight() == "bold"
     plotting.plt.close(figure)

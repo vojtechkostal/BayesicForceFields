@@ -2,8 +2,9 @@
 
 Choose the example that matches the data you already have.
 
-- [Acetate workflow](acetate.md): run the complete staged BFF workflow from
-  system construction through validation. Requires MD software.
+- [Acetate workflow](acetate.md): adapt the complete set of BFF-owned stages
+  from system construction through validation. Requires MD software and an
+  external MLIP workflow.
 - [Arbitrary-data notebook](arbitrary-data.md): start from sampled parameters,
   simulated observables, and reference targets in tables. No MD software is
   required.

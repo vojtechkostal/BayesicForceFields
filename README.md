@@ -24,8 +24,8 @@ Full documentation:
 ## Workflow
 
 ```text
-build -> prepare-reference -> evaluate-snapshots
-      -> sample -> analyze -> lgpfit -> learn -> validate
+build -> label-snapshots -> external MLIP workflow
+      -> sample-parameters -> build-qoi-datasets -> fit-lgp -> learn -> validate
 ```
 
 The command-line interface guides a force-field model from prepared molecular
@@ -71,7 +71,7 @@ cd examples/acetate
 ```
 
 - [Acetate](https://github.com/vojtechkostal/BayesicForceFields/tree/main/examples/acetate):
-  complete staged MD workflow.
+  complete BFF stage template with an explicit external MLIP handoff.
 - [Arbitrary data](https://github.com/vojtechkostal/BayesicForceFields/tree/main/examples/arbitrary-data):
   notebook using existing tabular
   simulation results and targets.
@@ -96,7 +96,7 @@ BFF currently updates and learns four GROMACS force-field parameter families:
 
 Multiple names in one label share one learned value. Charges can additionally
 participate in hierarchical residue- or system-level constraints. The [sample
-configuration reference](https://vojtechkostal.github.io/BayesicForceFields/configuration/sample/#parameter-labels)
+configuration reference](https://vojtechkostal.github.io/BayesicForceFields/configuration/sample-parameters/#parameter-labels)
 documents the complete syntax and matching rules.
 
 ## Architecture
@@ -122,6 +122,7 @@ repository layout.
 - [Architecture](https://vojtechkostal.github.io/BayesicForceFields/architecture/)
 - [Changelog](https://github.com/vojtechkostal/BayesicForceFields/blob/main/CHANGELOG.md)
 - [Development](https://vojtechkostal.github.io/BayesicForceFields/development/)
+- [AI agent guidance](https://github.com/vojtechkostal/BayesicForceFields/blob/main/AGENTS.md)
 - [Contributing](https://github.com/vojtechkostal/BayesicForceFields/blob/main/CONTRIBUTING.md)
 - [Support](https://github.com/vojtechkostal/BayesicForceFields/blob/main/SUPPORT.md)
 - [Security](https://github.com/vojtechkostal/BayesicForceFields/blob/main/SECURITY.md)

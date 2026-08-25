@@ -28,6 +28,7 @@ class MDJobConfig:
     gmx_cmd: str
     job_scheduler: SchedulerName
     store: tuple[str, ...]
+    cleanup: bool
     run: bool
     systems: list[SimulationSystemConfig]
 
@@ -46,6 +47,7 @@ class MDJobConfig:
             'gmx_cmd',
             'job_scheduler',
             'store',
+            'cleanup',
             'run',
             'systems',
         }
@@ -95,6 +97,7 @@ class MDJobConfig:
             gmx_cmd=str(config['gmx_cmd']),
             job_scheduler=config['job_scheduler'],
             store=tuple(_normalize_store(config.get('store'))),
+            cleanup=_strict_bool(config.get('cleanup', False), field='cleanup'),
             run=_strict_bool(config.get('run', True), field='run'),
             systems=_load_simulation_systems(
                 base_dir,

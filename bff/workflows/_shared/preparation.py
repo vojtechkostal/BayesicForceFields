@@ -19,7 +19,6 @@ from ...domain.systems import (
 )
 from ...io.colvars import write_mdp_with_colvars
 from ...io.commands import build_command
-from ...io.extxyz import write_extxyz_frame
 from ...io.plumed import ensure_plumed_kernel
 
 PathLike = str | Path
@@ -185,7 +184,12 @@ def run_md(
             shutil.copy2(bias.input_file, fn_bias_local)
         fn_mdp_run = Path(f"{name}-colvars.mdp").resolve()
         run_cwd = fn_mdp_run.parent
-        write_mdp_with_colvars(fn_mdp_path, fn_bias_local, fn_mdp_run)
+        write_mdp_with_colvars(
+            fn_mdp_path,
+            fn_bias_local,
+            fn_mdp_run,
+            working_dir=run_cwd,
+        )
     elif bias is not None and bias.kind == "plumed" and bias.input_file is not None:
         kernel = ensure_plumed_kernel()
         run_env = dict(os.environ)
@@ -238,27 +242,70 @@ def get_average_box(
     return np.round(np.mean(box, axis=0), 4)
 
 
-def strip_topol(
+def write_reference_system(
     fn_topol: PathLike,
     fn_coords: PathLike,
     fn_out_topol: PathLike,
-    *fn_out_coords: PathLike,
-) -> None:
+    fn_out_coords: PathLike,
+) -> int:
+    """Write matching topology and coordinates with virtual sites removed."""
     top = Topology(fn_topol)
     universe = mda.Universe(fn_topol, fn_coords, topology_format="ITP")
 
-    for mol, _ in top.molecules.values():
+    virtual_site_indices: list[int] = []
+    atom_offset = 0
+    for mol, count in top.molecules.values():
+        molecule_virtual_sites = {
+            virtual_site.ai.nr - 1
+            for section in mol.VSITE_SECTIONS
+            for virtual_site in getattr(mol, section)
+        }
+        for molecule_index in range(count):
+            molecule_offset = atom_offset + molecule_index * len(mol.atoms)
+            virtual_site_indices.extend(
+                molecule_offset + atom_index
+                for atom_index in molecule_virtual_sites
+            )
+        atom_offset += count * len(mol.atoms)
         mol.remove_vsites()
+
+    if atom_offset != len(universe.atoms):
+        raise ValueError(
+            f"Topology {fn_topol} expands to {atom_offset} atoms, but coordinates "
+            f"{fn_coords} contain {len(universe.atoms)} atoms."
+        )
+
+    keep = np.ones(len(universe.atoms), dtype=bool)
+    keep[virtual_site_indices] = False
+    atoms = universe.atoms[keep]
+
+    fn_out_topol = Path(fn_out_topol)
+    fn_out_coords = Path(fn_out_coords)
+    fn_out_topol.parent.mkdir(parents=True, exist_ok=True)
+    fn_out_coords.parent.mkdir(parents=True, exist_ok=True)
     top.write(fn_out_topol, overwrite=True)
 
-    atoms = universe.select_atoms("not mass -1 to 0.5")
-    ts = universe.trajectory[-1]
-    for fn_out in fn_out_coords:
-        fn_out = Path(fn_out)
-        if fn_out.suffix.lower() == ".xyz":
-            write_extxyz_frame(atoms, fn_out, dimensions=ts.dimensions)
-        else:
-            atoms.write(fn_out, frames=universe.trajectory[[-1]])
+    universe.trajectory[-1]
+    with mda.Writer(fn_out_coords, n_atoms=len(atoms)) as writer:
+        writer.write(atoms)
+
+    reference = mda.Universe(
+        fn_out_topol,
+        fn_out_coords,
+        topology_format="ITP",
+    )
+    if len(reference.atoms) != len(atoms):
+        raise ValueError(
+            f"Generated reference topology {fn_out_topol} contains "
+            f"{len(reference.atoms)} atoms, but {fn_out_coords} contains "
+            f"{len(atoms)} atoms."
+        )
+    if not np.array_equal(reference.atoms.names, atoms.names):
+        raise ValueError(
+            "Generated reference topology and coordinates have different atom "
+            "ordering."
+        )
+    return len(virtual_site_indices)
 
 
 def sample_snapshot_indices(n_frames: int, n_snapshots: int) -> np.ndarray:
@@ -266,23 +313,3 @@ def sample_snapshot_indices(n_frames: int, n_snapshots: int) -> np.ndarray:
         raise ValueError("Cannot sample snapshots from an empty trajectory.")
     count = min(int(n_snapshots), int(n_frames))
     return np.unique(np.linspace(0, n_frames - 1, num=count, dtype=int))
-
-
-def write_snapshot_xyz_files(
-    universe: mda.Universe,
-    *,
-    snapshots_dir: Path,
-    n_snapshots: int,
-) -> list[Path]:
-    snapshots_dir.mkdir(parents=True, exist_ok=True)
-    indices = sample_snapshot_indices(universe.trajectory.n_frames, n_snapshots)
-    atoms = universe.select_atoms("not mass -1 to 0.5")
-    written: list[Path] = []
-
-    for output_index, frame_index in enumerate(indices):
-        fn_snapshot = snapshots_dir / f"snapshot-{output_index:04d}.xyz"
-        ts = universe.trajectory[frame_index]
-        write_extxyz_frame(atoms, fn_snapshot, dimensions=ts.dimensions)
-        written.append(fn_snapshot)
-
-    return written

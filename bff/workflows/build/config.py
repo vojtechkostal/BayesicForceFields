@@ -45,7 +45,6 @@ class BuildConfig:
         unknown_top = set(config) - {
             'project',
             'gromacs',
-            'defaults',
             'systems',
             'fn_log',
         }
@@ -102,33 +101,6 @@ class BuildConfig:
             )
         if 'command' not in gromacs:
             raise ValueError('gromacs.command is required.')
-        defaults = config.get('defaults', {})
-        if defaults is None:
-            defaults = {}
-        if not isinstance(defaults, dict):
-            raise ValueError("'defaults' must be a mapping.")
-        unknown_defaults = set(defaults) - {'nsteps'}
-        if unknown_defaults:
-            raise ValueError(
-                'defaults contains unsupported key(s): '
-                + ', '.join(sorted(unknown_defaults))
-            )
-        default_steps = defaults.get('nsteps', {})
-        if default_steps is None:
-            default_steps = {}
-        if not isinstance(default_steps, dict):
-            raise ValueError("'defaults.nsteps' must be a mapping.")
-        unknown_default_steps = set(default_steps) - {'npt', 'prod'}
-        if unknown_default_steps:
-            raise ValueError(
-                'defaults.nsteps contains unsupported key(s): '
-                + ', '.join(sorted(unknown_default_steps))
-            )
-        nsteps_npt_default = int(default_steps.get('npt', 0))
-        nsteps_prod_default = int(default_steps.get('prod', 100000))
-        if nsteps_npt_default < 0 or nsteps_prod_default < 0:
-            raise ValueError('defaults.nsteps values must be non-negative.')
-
         systems_raw = config['systems']
         if not isinstance(systems_raw, list) or not systems_raw:
             raise ValueError("'systems' must be a non-empty list.")
@@ -154,7 +126,13 @@ class BuildConfig:
                     f'systems[{i}] contains unsupported key(s): '
                     + ', '.join(sorted(unknown_system))
                 )
-            for key in ('system_id', 'topology', 'charge', 'multiplicity'):
+            for key in (
+                'system_id',
+                'topology',
+                'charge',
+                'multiplicity',
+                'nsteps',
+            ):
                 if key not in system:
                     raise ValueError(f'System {i} is missing required key {key!r}.')
             templates_raw = system.get('templates', {})
@@ -183,9 +161,7 @@ class BuildConfig:
                     box = [*box, 90.0, 90.0, 90.0]
                 box_values = [float(value) for value in box]
 
-            steps = system.get('nsteps', {})
-            if steps is None:
-                steps = {}
+            steps = system['nsteps']
             if not isinstance(steps, dict):
                 raise ValueError(f'System {i} nsteps must be a mapping.')
             unknown_steps = set(steps) - {'npt', 'prod'}
@@ -194,17 +170,16 @@ class BuildConfig:
                     f'systems[{i}].nsteps contains unsupported key(s): '
                     + ', '.join(sorted(unknown_steps))
                 )
-            nsteps_npt = int(steps.get('npt', nsteps_npt_default))
-            nsteps_prod = int(steps.get('prod', nsteps_prod_default))
+            missing_steps = [key for key in ('npt', 'prod') if key not in steps]
+            if missing_steps:
+                raise ValueError(
+                    f'systems[{i}].nsteps is missing required key(s): '
+                    + ', '.join(repr(key) for key in missing_steps)
+                )
+            nsteps_npt = int(steps['npt'])
+            nsteps_prod = int(steps['prod'])
             if nsteps_npt < 0 or nsteps_prod < 0:
                 raise ValueError(f'System {i} nsteps values must be non-negative.')
-            if (
-                box_values is not None
-                and len(box_values) == 6
-                and box_values[3:] == [90.0, 90.0, 90.0]
-                and len(system.get('box', [])) == 3
-            ):
-                nsteps_npt = 0
 
             mdp = system.get('mdp')
             if not isinstance(mdp, dict):

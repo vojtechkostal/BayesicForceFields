@@ -1,4 +1,0 @@
-source: ../01-build
-output: ./
-systems: [acetate, acetate-contact, acetate-separated]
-n_single_point_snapshots: 5

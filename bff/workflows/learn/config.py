@@ -39,10 +39,11 @@ class LearnOutputConfig:
     overwrite: bool
     log: Path
     plots_dir: Path
-    artifacts_dir: Path
+    outputs_dir: Path
     prior: Path
     posterior: Path
     checkpoint: Path
+    specs: Path
     marginals: Path
     qoi_marginals: Path
     corner: Path
@@ -54,6 +55,7 @@ class LearnOutputConfig:
             self.prior,
             self.posterior,
             self.checkpoint,
+            self.specs,
             self.marginals,
             self.qoi_marginals,
             self.corner,
@@ -219,16 +221,17 @@ class LearnConfig:
         if mcmc.resume and overwrite:
             raise ValueError("mcmc.resume and output.overwrite cannot both be true.")
         plots_dir = output_dir / "plots"
-        artifacts_dir = output_dir / "output"
+        outputs_dir = output_dir / "outputs"
         output = LearnOutputConfig(
             directory=output_dir,
             overwrite=overwrite,
             log=output_dir / "learn.log",
             plots_dir=plots_dir,
-            artifacts_dir=artifacts_dir,
-            prior=artifacts_dir / "prior.pt",
-            posterior=artifacts_dir / "posterior.pt",
-            checkpoint=artifacts_dir / "mcmc.ckpt",
+            outputs_dir=outputs_dir,
+            prior=outputs_dir / "prior.pt",
+            posterior=outputs_dir / "posterior.pt",
+            checkpoint=outputs_dir / "mcmc.ckpt",
+            specs=outputs_dir / "specs.yaml",
             marginals=plots_dir / "marginals.pdf",
             qoi_marginals=plots_dir / "qoi-marginals.pdf",
             corner=plots_dir / "corner.pdf",

@@ -1,140 +1,102 @@
-# Acetate Example
+# Acetate Workflow
 
-This example uses stage-local configs. For each stage, create the output
-directory, copy the needed template files into that directory, edit them if
-needed, then run BFF from inside the stage directory. The stage writes its own
-outputs to `./`.
+This is a complete template for the stages BFF owns, not a one-command or
+self-contained reproduction. Reference MLIP training and molecular dynamics
+remain an explicit external handoff between snapshot labeling and QoI
+construction.
 
-## Run Order
+Run each BFF command from its stage directory. The numeric config prefix shows
+where the config belongs; copy it to `config.yaml` so all relative paths resolve
+from the stage directory.
+
+| Stage | Responsibility | Config or handoff | Main output |
+| --- | --- | --- | --- |
+| `01-build` | Build and equilibrate the classical systems. | `01-build-colvars.yaml` or `01-build-plumed.yaml` | Classical systems plus vsite-free reference topology/coordinates. |
+| `02-reference-snapshots` | Extract and label CP2K reference snapshots. | `02-reference-snapshots-local.yaml` or `02-reference-snapshots-slurm.yaml` | Per-system `train.extxyz` and `test.extxyz`. |
+| `02-reference-md` | Train and simulate an MLIP outside BFF. | External workflow | Reference trajectories under `trajectories/<system_id>/trajectory.xtc`. |
+| `03-sample` | Design parameters and run classical training simulations. | `03-sample-local.yaml` or `03-sample-slurm.yaml` | `specs.yaml`, `samples.yaml`, and sampled trajectories. |
+| `04-qoi` | Analyze reference and sampled systems. | `04-build-qoi-datasets.yaml` | One `qoi/<name>.pt` dataset per routine. |
+| `05-lgp` | Fit local-GP surrogate models. | `05-fit-lgp.yaml` | `models/<name>.lgp`. |
+| `06-learn` | Sample the Bayesian posterior. | `06-learn.yaml` | `outputs/`, `plots/`, and `learn.log`. |
+| `07-validate` | Simulate selected posterior parameters. | `07-validate.yaml` | Validation campaign manifest and trajectories. |
+
+## Prerequisites
+
+- Install BFF and PyTorch as described in the main installation guide.
+- Provide GROMACS for build, parameter sampling, and validation; provide CP2K
+  for snapshot labeling.
+- Use a GROMACS build with Colvars or PLUMED support for the matching build
+  template.
+- Supply an external MLIP trainer and MD engine for `02-reference-md`.
+- Edit every Slurm `setup` and `teardown` block for the target cluster.
+- The fit and learn templates use `device: cuda`; change both to `cpu` on a
+  machine without an available CUDA GPU.
+
+## Run the BFF stages
 
 ```bash
-cd examples/acetate
-
 mkdir -p 01-build
-cp configs/build-colvars.yaml 01-build/config.yaml
-cd 01-build
-bff build config.yaml
-cd ..
+cp configs/01-build-colvars.yaml 01-build/config.yaml
+(cd 01-build && bff build config.yaml)
 
-mkdir -p 02-reference
-cp configs/prepare-reference.yaml 02-reference/config.yaml
-cd 02-reference
-bff prepare-reference config.yaml
-cd ..
-
-mkdir -p 03-reference
-cp configs/evaluate-run-slurm.yaml 03-reference/config-snapshots.yaml
-cd 03-reference
-bff evaluate-snapshots config-snapshots.yaml
-mkdir -p trajectories
-# Generate or place reference trajectories under trajectories/<system_id>/.
-cd ..
+mkdir -p 02-reference-snapshots
+cp configs/02-reference-snapshots-local.yaml 02-reference-snapshots/config.yaml
+(cd 02-reference-snapshots && bff label-snapshots config.yaml)
 
 mkdir -p 03-sample
-cp configs/sample-local.yaml 03-sample/config.yaml
-cd 03-sample
-bff sample config.yaml
-cd ..
+cp configs/03-sample-local.yaml 03-sample/config.yaml
+(cd 03-sample && bff sample-parameters config.yaml)
 
-mkdir -p 04-analyze
-cp configs/analyze.yaml 04-analyze/config.yaml
-cd 04-analyze
-bff analyze config.yaml
-cd ..
+mkdir -p 04-qoi
+cp configs/04-build-qoi-datasets.yaml 04-qoi/config.yaml
+(cd 04-qoi && bff build-qoi-datasets config.yaml)
 
-mkdir -p 05-lgpfit
-cp configs/lgpfit.yaml 05-lgpfit/config.yaml
-cd 05-lgpfit
-bff lgpfit config.yaml
-cd ..
+mkdir -p 05-lgp
+cp configs/05-fit-lgp.yaml 05-lgp/config.yaml
+(cd 05-lgp && bff fit-lgp config.yaml)
 
 mkdir -p 06-learn
-cp configs/learn.yaml 06-learn/config.yaml
-cd 06-learn
-bff learn config.yaml
-cd ..
+cp configs/06-learn.yaml 06-learn/config.yaml
+(cd 06-learn && bff learn config.yaml)
 
+# Validate directly from 06-learn/outputs/posterior.pt. The notebook also
+# demonstrates exporting posterior-samples.yaml for the alternative explicit
+# parameter-file mode.
 mkdir -p 07-validate
-cp configs/validate.yaml 07-validate/config.yaml
-cd 07-validate
-bff validate config.yaml
-cd ..
+cp configs/07-validate.yaml 07-validate/config.yaml
+(cd 07-validate && bff validate config.yaml)
 ```
 
-The copied config is the record of what was run for that stage. Stage
-directories are runtime outputs and are ignored by git.
-
-## Source Layout
+Between labeling and QoI analysis, train an MLIP from each system's
+`train.extxyz` and `test.extxyz`. Run reference MD and place these three
+trajectories:
 
 ```text
-examples/acetate/
-  configs/      config templates copied into stage directories
-  inputs/       committed molecular inputs and optional reference trajectories
-  notebooks/    optional interactive analysis notebooks
+02-reference-md/trajectories/acetate/trajectory.xtc
+02-reference-md/trajectories/acetate-contact/trajectory.xtc
+02-reference-md/trajectories/acetate-separated/trajectory.xtc
 ```
 
-## Configs
+Each trajectory must match the corresponding
+`01-build/systems/<system_id>/reference/topology.top` and
+`reference/coordinates.gro`: same atom count, same atom order, and no declared
+virtual sites. BFF deliberately does not own this MLIP stage.
 
-- `build-colvars.yaml`: equilibrates systems and writes self-contained
-  `./systems/<system_id>/` directories.
-- `prepare-reference.yaml`: reads `../01-build` and stages CP2K inputs under
-  `./systems/<system_id>/` without copying FFMD files.
-- `evaluate-run-local.yaml`: runs CP2K snapshot evaluation on
-  the systems in `../02-reference` and writes `train.extxyz`
-  and `valid.extxyz` under `./snapshots/systems/<system_id>/`.
-- `evaluate-run-slurm.yaml`: same snapshot-evaluation stage through Slurm.
-- `sample-local.yaml`: samples force-field parameters and runs local FFMD into
-  `./`.
-- `analyze.yaml`: compares `../03-sample/` against reference trajectories in
-  `../03-reference/trajectories/` and writes QoI datasets into `./`.
-- `lgpfit.yaml`: fits fingerprinted surrogate models into `./models/`.
-- `learn.yaml`: assigns effective observations, learns the posterior, and
-  writes Torch artifacts under `./output/` and mandatory plots under
-  `./plots/`.
-- `validate.yaml`: reruns selected posterior samples into `./`.
+`inputs/common/` contains molecular inputs, `inputs/biases/` contains Colvars
+and PLUMED restraints, and `inputs/reference-inputs/` contains xTB short-MD
+inputs, revPBE-D3 MD, single-point, and isolated-atom inputs, and revPBE0-D3
+single-point and isolated-atom inputs.
 
-Before validation, use `PosteriorResults.sample_posterior` to select explicit
-parameter draws from `06-learn/output/posterior.pt` and write
-`06-learn/posterior-samples.yaml`, which is the input configured by the example.
+Each built system includes `reference/topology.top` and
+`reference/coordinates.gro`. This atom-order-matched, vsite-free pair is the
+starting topology for the external reference MD. The custom trajectory routine
+used during QoI construction is defined in `inputs/restraint.py`.
 
-## Reference Trajectories
+## Adapt the Template
 
-`bff evaluate-snapshots` evaluates short CP2K snapshot jobs and writes
-`train.extxyz` and `valid.extxyz`; it does not generate the reference MD
-trajectories used by `bff analyze`. After the snapshots are evaluated, generate
-those trajectories yourself. You can run AIMD directly from the CP2K inputs in
-`02-reference/systems/<system_id>/`, or train a machine-learning potential of
-your choice from the evaluated snapshots and use that potential to run the
-reference trajectories.
-
-Keep evaluated snapshot datasets in `03-reference/snapshots/`. A good place for
-the generated reference trajectories is
-`03-reference/trajectories/<system_id>/trajectory.xtc`, alongside `system.top` and
-`system.gro`. The `system.top` and `system.gro` files can be copied from the
-matching `02-reference/systems/<system_id>/` directory.
-
-```text
-03-reference/
-  snapshots/systems/<system_id>/  evaluated snapshot datasets
-  trajectories/<system_id>/   reference trajectories for analysis
-```
-
-## Variants
-
-- `build-plumed.yaml` uses PLUMED restraint files instead of Colvars.
-- `sample-slurm.yaml` runs the sampling campaign through Slurm.
-
-The Slurm configs keep scheduler setup commands in the YAML. Edit those blocks
-for your cluster before running them.
-
-## Inputs
-
-- `inputs/common/`: topologies, force-field includes, template coordinates, and
-  GROMACS MDP files.
-- `inputs/biases/`: Colvars and PLUMED restraint files.
-- `inputs/reference-trajectories/`: optional committed AIMD trajectories that
-  can be copied into `03-reference/trajectories/`.
-- `inputs/reference-inputs/`: optional CP2K input overrides for customized
-  reference runs.
-- `inputs/restraint.py`: custom distance-distribution QoI for the calcium-bound
-  systems.
+For a new system, update the build topologies, coordinate templates, MDP and
+bias files; keep the same stable `system_id` through every stage; supply CP2K
+inputs with matching charge and multiplicity; choose parameter bounds and
+charge constraints; replace the QoI selections and custom routines; then set
+simulation lengths, sample counts, scheduler commands, and the compute device
+for the available hardware.

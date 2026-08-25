@@ -32,14 +32,17 @@ jobs:
       - name: Compile package
         run: python -m compileall bff
 
-      - name: Lint package
-        run: ruff check bff
+      - name: Lint repository
+        run: ruff check .
 
       - name: Test package
         run: python -m pytest -q
 
       - name: Build package
         run: python -m build
+
+      - name: Check package metadata
+        run: python -m twine check dist/*
 
       - name: Build documentation
         run: mkdocs build --strict

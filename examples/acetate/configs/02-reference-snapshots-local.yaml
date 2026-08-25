@@ -1,0 +1,43 @@
+output_dir: ./
+job_scheduler: local
+cp2k_cmd: cp2k.psmp
+single_atoms: true
+train_fraction: 0.8
+seed: 2026
+
+systems:
+  - system_id: acetate
+    topology: ../01-build/systems/acetate/production.gro
+    trajectory: ../01-build/systems/acetate/production.xtc
+    md_input: ../inputs/reference-inputs/xtb/md-0.inp
+    sp_input: ../inputs/reference-inputs/revpbe0-d3/sp-0.inp
+    single_atom_inputs:
+      H: ../inputs/reference-inputs/revpbe0-d3/single-atom-h.inp
+      C: ../inputs/reference-inputs/revpbe0-d3/single-atom-c.inp
+      O: ../inputs/reference-inputs/revpbe0-d3/single-atom-o.inp
+    n_snapshots: 5
+    atom_selection: "not name IW"
+  - system_id: acetate-contact
+    topology: ../01-build/systems/acetate-contact/production.gro
+    trajectory: ../01-build/systems/acetate-contact/production.xtc
+    md_input: ../inputs/reference-inputs/xtb/md-1.inp
+    sp_input: ../inputs/reference-inputs/revpbe0-d3/sp-1.inp
+    single_atom_inputs:
+      H: ../inputs/reference-inputs/revpbe0-d3/single-atom-h.inp
+      C: ../inputs/reference-inputs/revpbe0-d3/single-atom-c.inp
+      O: ../inputs/reference-inputs/revpbe0-d3/single-atom-o.inp
+      Ca: ../inputs/reference-inputs/revpbe0-d3/single-atom-ca.inp
+    n_snapshots: 5
+    atom_selection: "not name IW"
+  - system_id: acetate-separated
+    topology: ../01-build/systems/acetate-separated/production.gro
+    trajectory: ../01-build/systems/acetate-separated/production.xtc
+    md_input: ../inputs/reference-inputs/xtb/md-2.inp
+    sp_input: ../inputs/reference-inputs/revpbe0-d3/sp-2.inp
+    single_atom_inputs:
+      H: ../inputs/reference-inputs/revpbe0-d3/single-atom-h.inp
+      C: ../inputs/reference-inputs/revpbe0-d3/single-atom-c.inp
+      O: ../inputs/reference-inputs/revpbe0-d3/single-atom-o.inp
+      Ca: ../inputs/reference-inputs/revpbe0-d3/single-atom-ca.inp
+    n_snapshots: 5
+    atom_selection: "not name IW"

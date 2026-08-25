@@ -1,157 +1,60 @@
 # Acetate Walkthrough
 
-Source files:
+The acetate example calibrates partial charges against three reference systems.
+It is a complete template for the stages BFF owns, with external MLIP training
+and reference MD as an explicit handoff rather than a self-contained
+reproduction. Its numbered config templates mirror the runtime stages:
 
-- [examples/acetate/][acetate-root]
+| Stage | Command | Config |
+| --- | --- | --- |
+| `01-build` | `bff build` | `01-build-colvars.yaml` or `01-build-plumed.yaml` |
+| `02-reference-snapshots` | `bff label-snapshots` | `02-reference-snapshots-local.yaml` or `02-reference-snapshots-slurm.yaml` |
+| `02-reference-md` | external MLIP training and MD | external handoff |
+| `03-sample` | `bff sample-parameters` | `03-sample-local.yaml` or `03-sample-slurm.yaml` |
+| `04-qoi` | `bff build-qoi-datasets` | `04-build-qoi-datasets.yaml` |
+| `05-lgp` | `bff fit-lgp` | `05-fit-lgp.yaml` |
+| `06-learn` | `bff learn` | `06-learn.yaml` |
+| `07-validate` | `bff validate` | `07-validate.yaml` |
 
-## Goal
-
-The acetate example optimizes acetate partial charges using three systems:
-
-- aqueous acetate
-- acetate with calcium at contact distance
-- acetate with calcium in a solvent-shared configuration
-
-## Stage-Local Workflow
-
-The config files under `configs/` are templates. For each stage, make the stage
-directory, copy the needed template files into it, edit them there, and run BFF
-from inside that directory. Each stage writes its own outputs to `./`.
+For each BFF stage, create the directory, copy its config to `config.yaml`, and
+run the command there. For example:
 
 ```bash
 cd examples/acetate
-
 mkdir -p 01-build
-cp configs/build-colvars.yaml 01-build/config.yaml
-cd 01-build
-bff build config.yaml
-cd ..
+cp configs/01-build-colvars.yaml 01-build/config.yaml
+(cd 01-build && bff build config.yaml)
 
-mkdir -p 02-reference
-cp configs/prepare-reference.yaml 02-reference/config.yaml
-cd 02-reference
-bff prepare-reference config.yaml
-cd ..
-
-mkdir -p 03-reference
-cp configs/evaluate-run-local.yaml 03-reference/config-snapshots.yaml
-cd 03-reference
-bff evaluate-snapshots config-snapshots.yaml
-mkdir -p trajectories
-# Generate or place reference trajectories under trajectories/<system_id>/.
-cd ..
-
-mkdir -p 03-sample
-cp configs/sample-local.yaml 03-sample/config.yaml
-cd 03-sample
-bff sample config.yaml
-cd ..
-
-mkdir -p 04-analyze
-cp configs/analyze.yaml 04-analyze/config.yaml
-cd 04-analyze
-bff analyze config.yaml
-cd ..
-
-mkdir -p 05-lgpfit
-cp configs/lgpfit.yaml 05-lgpfit/config.yaml
-cd 05-lgpfit
-bff lgpfit config.yaml
-cd ..
-
-mkdir -p 06-learn
-cp configs/learn.yaml 06-learn/config.yaml
-cd 06-learn
-bff learn config.yaml
-# Export selected explicit draws from output/posterior.pt to
-# posterior-samples.yaml with PosteriorResults.sample_posterior.
-cd ..
-
-mkdir -p 07-validate
-cp configs/validate.yaml 07-validate/config.yaml
-cd 07-validate
-bff validate config.yaml
-cd ..
+mkdir -p 02-reference-snapshots
+cp configs/02-reference-snapshots-local.yaml 02-reference-snapshots/config.yaml
+(cd 02-reference-snapshots && bff label-snapshots config.yaml)
 ```
 
-The copied config is the record of what was run for that stage. Stage
-directories are generated outputs and are ignored by git.
-The learn stage writes restartable Torch artifacts under `output/` and the
-mandatory `marginals.pdf`, `qoi-marginals.pdf`, and `corner.pdf` under
-`plots/`.
+Continue with the same pattern using the table above. The repository
+`examples/acetate/README.md` contains the complete command sequence.
 
-The `03-reference` stage keeps snapshot datasets and analysis trajectories as
-sibling directories:
+GROMACS is required for build, sampling, and validation, and CP2K is required
+for labeling. Use the Colvars or PLUMED build matching the selected template,
+edit cluster-specific Slurm setup commands, and change `device: cuda` to
+`device: cpu` in the fit and learn configs when no CUDA GPU is available.
 
-```text
-03-reference/
-  snapshots/systems/<system_id>/
-  trajectories/<system_id>/
-```
+`label-snapshots` produces `train.extxyz`, `test.extxyz`, optional isolated-atom
+energies, and `label-results.yaml`. BFF deliberately does not train or run an
+MLIP. Train from the per-system EXTXYZ files and simulate it externally, then
+place one reference trajectory per system at
+`02-reference-md/trajectories/<system_id>/trajectory.xtc`.
 
-## Layout
+Every built system contains `reference/topology.top` and
+`reference/coordinates.gro`. These files omit declared virtual sites while
+preserving the atom order used by the external reference trajectory.
+Every trajectory must have the same atom count and order as this pair and must
+omit its declared virtual sites.
 
-```text
-examples/acetate/
-  configs/      config templates copied into stage directories
-  inputs/       committed molecular inputs and optional reference trajectories
-  notebooks/    optional interactive notebooks
-```
+`inputs/reference-inputs/` contains per-system xTB short-MD inputs, revPBE-D3
+MD, single-point, and isolated-atom inputs, and revPBE0-D3 single-point and
+isolated-atom inputs.
 
-## Main Configs
-
-- Colvars build config:
-  [configs/build-colvars.yaml][acetate-build-colvars]
-- reference-preparation config:
-  [configs/prepare-reference.yaml][acetate-prepare-reference]
-- local CP2K snapshot evaluation config:
-  [configs/evaluate-run-local.yaml][acetate-evaluate-run]
-- local sampling config:
-  [configs/sample-local.yaml][acetate-sample]
-- analyze config:
-  [configs/analyze.yaml][acetate-analyze]
-- LGP-fit config:
-  [configs/lgpfit.yaml][acetate-lgpfit]
-- learn config:
-  [configs/learn.yaml][acetate-learn]
-- validate config:
-  [configs/validate.yaml][acetate-validate]
-
-## Variants
-
-- PLUMED build config:
-  [configs/build-plumed.yaml][acetate-build-plumed]
-- Slurm snapshot evaluation config:
-  [configs/evaluate-run-slurm.yaml][acetate-evaluate-slurm]
-- Slurm sampling config:
-  [configs/sample-slurm.yaml][acetate-sample-slurm]
-
-The Slurm configs keep scheduler setup commands in the YAML. Edit those blocks
-for your cluster before running them.
-
-## Inputs
-
-- shared force-field files, topologies, template coordinates, and MDP inputs:
-  `inputs/common/`
-- Colvars and PLUMED restraint files:
-  `inputs/biases/`
-- optional ab initio reference trajectories for QoI analysis:
-  `inputs/reference-trajectories/`
-- optional CP2K input overrides for customized reference runs:
-  `inputs/reference-inputs/`
-- custom QoI routine:
-  [inputs/restraint.py][acetate-restraint]
-
-[acetate-root]: https://github.com/vojtechkostal/BayesicForceFields/tree/main/examples/acetate
-[acetate-build-colvars]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/build-colvars.yaml
-[acetate-build-plumed]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/build-plumed.yaml
-[acetate-prepare-reference]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/prepare-reference.yaml
-[acetate-evaluate-run]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/evaluate-run-local.yaml
-[acetate-evaluate-slurm]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/evaluate-run-slurm.yaml
-[acetate-sample]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/sample-local.yaml
-[acetate-sample-slurm]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/sample-slurm.yaml
-[acetate-analyze]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/analyze.yaml
-[acetate-lgpfit]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/lgpfit.yaml
-[acetate-learn]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/learn.yaml
-[acetate-validate]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/configs/validate.yaml
-[acetate-restraint]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/acetate/inputs/restraint.py
+To adapt the template, replace the molecular and MD inputs, preserve stable
+system IDs across configs, supply charge- and multiplicity-correct CP2K inputs,
+and update parameter bounds, charge constraints, QoI selections, run lengths,
+scheduler commands, and the fitting device.

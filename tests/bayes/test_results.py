@@ -291,3 +291,98 @@ def test_sample_posterior_can_return_implicit_charges_satisfying_specs() -> None
     )
     lower, upper = specs.bounds.array.T
     assert np.logical_and(draws >= lower, draws <= upper).all()
+
+
+def test_sample_posterior_prepends_mean_and_excludes_nuisance() -> None:
+    specs = Specs(
+        {
+            "bounds": {
+                "charge A": [-1.0, 1.0],
+                "charge B": [-1.0, 1.0],
+            },
+            "charge_constraints": [
+                {
+                    "selection": "name A B",
+                    "target": 0.0,
+                    "scope": "residue",
+                    "implicit": "charge B",
+                    "coefficients": {"charge A": 1.0, "charge B": 1.0},
+                }
+            ],
+        }
+    )
+    priors = Priors(
+        [
+            Prior("normal", 0.0, 0.2, name="charge A"),
+            Prior("normal", -2.0, 0.1, name="log_sigma_rdf"),
+        ]
+    )
+    charge = np.linspace(-0.6, 0.4, 20)
+    nuisance = np.linspace(-2.2, -1.8, 20)
+    posterior = np.column_stack([charge, nuisance]).reshape(10, 2, 2)
+    results = PosteriorResults(posterior, priors=priors, specs=specs)
+    results.prepare_samples(discard=0, thin=1, strip_outliers=False)
+
+    draws = results.sample_posterior(
+        n_samples=3,
+        distribution="empirical",
+        random_state=12,
+        include_mean=True,
+    )
+
+    assert draws.shape == (4, 1)
+    np.testing.assert_allclose(draws[0], [np.mean(charge)])
+
+
+def test_sample_posterior_supports_validated_mean_only_with_implicit_charge() -> None:
+    specs = Specs(
+        {
+            "bounds": {
+                "charge A": [-1.0, 1.0],
+                "charge B": [-1.0, 1.0],
+            },
+            "charge_constraints": [
+                {
+                    "selection": "name A B",
+                    "target": 0.0,
+                    "scope": "residue",
+                    "implicit": "charge B",
+                    "coefficients": {"charge A": 1.0, "charge B": 1.0},
+                }
+            ],
+        }
+    )
+    posterior = np.linspace(-0.4, 0.2, 20).reshape(10, 2, 1)
+    results = PosteriorResults(
+        posterior,
+        sample_labels=["charge A"],
+        specs=specs,
+    )
+    results.prepare_samples(discard=0, thin=1, strip_outliers=False)
+
+    samples = results.sample_posterior(
+        n_samples=0,
+        include_mean=True,
+        include_implicit_charge=True,
+    )
+
+    assert samples.shape == (1, 2)
+    np.testing.assert_allclose(samples[0, 0] + samples[0, 1], 0.0)
+
+
+def test_sample_posterior_rejects_mean_outside_embedded_bounds() -> None:
+    specs = Specs(
+        {
+            "bounds": {"x": [-1.0, 1.0]},
+            "charge_constraints": [],
+        }
+    )
+    results = PosteriorResults(
+        np.full((5, 2, 1), 2.0),
+        sample_labels=["x"],
+        specs=specs,
+    )
+    results.prepare_samples(discard=0, thin=1, strip_outliers=False)
+
+    with pytest.raises(ValueError, match="mean.*bounds"):
+        results.sample_posterior(n_samples=0, include_mean=True)

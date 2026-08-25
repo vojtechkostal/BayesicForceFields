@@ -11,8 +11,8 @@ reference targets already exist outside the built-in trajectory-analysis
 workflow. It calibrates two water-like Lennard-Jones parameters against
 realistic synthetic density, enthalpy-of-vaporization, and diffusion data.
 
-No GROMACS installation is required.
-The fitting and learning cells use CUDA by default.
+No GROMACS installation is required. Fitting and learning use CUDA when
+available and otherwise run on CPU.
 
 ## Run
 
@@ -36,7 +36,7 @@ demonstrates the complete data-facing workflow:
 4. build a constrained `LearningProblem`;
 5. sample the posterior and write standard and QoI-attributed marginal plots.
 
-The generated QoI datasets can also be passed to `bff lgpfit`. All
+The generated QoI datasets can also be passed to `bff fit-lgp`. All
 notebook-generated files are written under `generated/`.
 The plot `generated/qoi-marginals.pdf` colors each posterior marginal by the
 local contribution from density, enthalpy of vaporization, and diffusion.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import time
 from pathlib import Path
 
@@ -9,21 +10,6 @@ from ...domain.specs import ChargeConstraint
 from ...io.logs import Logger
 from ...io.utils import file_sha256
 from .config import LearnConfig
-
-
-def _import_learning_stack():
-    try:
-        from ...bayes.effective_observations import estimate_curve_n_eff
-        from ...bayes.gaussian_process import LGPCommittee
-        from ...bayes.learning import LearningProblem
-    except ModuleNotFoundError as exc:
-        if exc.name == "torch":
-            raise RuntimeError(
-                "PyTorch is required for 'bff learn'. Install a CPU or CUDA "
-                "build of PyTorch first."
-            ) from exc
-        raise
-    return LGPCommittee, LearningProblem, estimate_curve_n_eff
 
 
 def _prepare_output(config: LearnConfig) -> None:
@@ -34,6 +20,16 @@ def _prepare_output(config: LearnConfig) -> None:
             raise ValueError(
                 f"mcmc.resume=true requires checkpoint {output.checkpoint}; "
                 "set resume: false to start a new run."
+            )
+        if not output.specs.is_file():
+            raise ValueError(
+                "mcmc.resume=true requires the copied specifications at "
+                f"{output.specs}; restore them or start a new run."
+            )
+        if file_sha256(config.specs) != file_sha256(output.specs):
+            raise ValueError(
+                "Configured specs do not match the specifications copied into "
+                f"the learning outputs: {output.specs}."
             )
     elif output.overwrite:
         for path in existing:
@@ -52,7 +48,9 @@ def _prepare_output(config: LearnConfig) -> None:
         )
     output.directory.mkdir(parents=True, exist_ok=True)
     output.plots_dir.mkdir(parents=True, exist_ok=True)
-    output.artifacts_dir.mkdir(parents=True, exist_ok=True)
+    output.outputs_dir.mkdir(parents=True, exist_ok=True)
+    if not config.mcmc.resume:
+        shutil.copy2(config.specs, output.specs)
 
 
 def _write_default_plots(results, config: LearnConfig, problem) -> None:
@@ -125,13 +123,23 @@ def main(fn_config: str | Path):
     logger.kv("Resume", config.mcmc.resume)
     logger.blank()
 
-    committee_type, problem_type, estimate_curve_n_eff = _import_learning_stack()
+    try:
+        from ...bayes.effective_observations import estimate_curve_n_eff
+        from ...bayes.gaussian_process import LGPCommittee
+        from ...bayes.learning import LearningProblem
+    except ModuleNotFoundError as exc:
+        if exc.name == "torch":
+            raise RuntimeError(
+                "PyTorch is required for 'bff learn'. Install a CPU or CUDA "
+                "build of PyTorch first."
+            ) from exc
+        raise
     constraint = ChargeConstraint(config.specs)
     models = {}
     model_fingerprints = {}
     target_configuration = {}
     for name, model_config in config.models.items():
-        model = committee_type.load(model_config.model_path)
+        model = LGPCommittee.load(model_config.model_path)
         if model_config.n_eff is not None:
             model.n_eff = model_config.n_eff
         elif model_config.independent_observations:
@@ -152,7 +160,8 @@ def main(fn_config: str | Path):
         }
         logger.kv(f"{name} effective observations", f"{model.n_eff:.3f}")
 
-    problem = problem_type.from_models(models, constraint=constraint)
+    logger.blank()
+    problem = LearningProblem.from_models(models, constraint=constraint)
     results = problem.learn(
         priors_disttype=config.mcmc.priors_disttype,
         total_steps=config.mcmc.total_steps,
@@ -176,6 +185,7 @@ def main(fn_config: str | Path):
         },
     )
     for artifact in (
+        config.output.specs,
         config.output.prior,
         config.output.posterior,
         config.output.checkpoint,
@@ -185,6 +195,7 @@ def main(fn_config: str | Path):
                 f"Mandatory learning artifact was not written: {artifact}"
             )
 
+    logger.blank()
     _write_default_plots(results, config, problem)
     for plot in (
         config.output.marginals,
@@ -194,6 +205,7 @@ def main(fn_config: str | Path):
         if not plot.is_file():
             raise RuntimeError(f"Mandatory learning plot was not written: {plot}")
         logger.kv("Plot", plot)
+    logger.blank()
     logger.done(
         "Posterior learning",
         detail=f"finished in {time.perf_counter() - workflow_start:.2f}s",

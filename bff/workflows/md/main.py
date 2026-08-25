@@ -47,26 +47,40 @@ def _sample_output_paths(
     return sorted(path for path in system_dir.iterdir() if path.is_file())
 
 
-def _prune_unstored_outputs(
-    files: list[Path],
+def _collect_working_outputs(
+    working_dir: Path,
+    system_run_dir: Path,
+    state_before_run: dict[Path, tuple[int, int]],
     store: tuple[str, ...],
-) -> None:
-    """Remove generated files whose suffix is not requested in ``store``."""
-    keep_suffixes = {"." + ext.lstrip(".") for ext in store}
-    for file in files:
-        if file.suffix in keep_suffixes:
+    cleanup: bool,
+) -> list[Path]:
+    """Move files created in the shared cwd into the producing system."""
+    keep_suffixes = {"." + extension.lstrip(".") for extension in store}
+    operational_names = {
+        "config.yaml",
+        "gmx.log",
+        "result.yaml",
+        "run.out",
+        "run.sh",
+    }
+    collected: list[Path] = []
+    for path in working_dir.iterdir():
+        if (
+            not path.is_file()
+            or path.name in operational_names
+            or (cleanup and path.suffix not in keep_suffixes)
+        ):
             continue
-        file.unlink(missing_ok=True)
-
-
-def _prune_auxiliary_outputs(run_dir: Path, store: tuple[str, ...]) -> None:
-    """Remove shared GROMACS or PLUMED aux files that are not requested."""
-    keep_suffixes = {"." + ext.lstrip(".") for ext in store}
-    for pattern in ("mdout.mdp", "PLUMED.OUT", "bck*.PLUMED.OUT"):
-        for file in run_dir.glob(pattern):
-            if file.suffix in keep_suffixes:
-                continue
-            file.unlink(missing_ok=True)
+        stat = path.stat()
+        current_state = (stat.st_mtime_ns, stat.st_size)
+        if state_before_run.get(path) == current_state:
+            continue
+        destination = system_run_dir / path.name
+        if destination.exists():
+            destination.unlink()
+        shutil.move(path, destination)
+        collected.append(destination)
+    return collected
 
 
 def check_success(
@@ -89,7 +103,7 @@ def check_success(
 
         with XTCReader(str(fn_trj)) as reader:
             n_frames = reader.n_frames
-    except Exception:
+    except (EOFError, OSError, ValueError):
         return False
 
     return n_frames >= expected_frames
@@ -136,7 +150,6 @@ def modify_topology(
 
     if fn_out:
         top_modifier.write(fn_out)
-    return top_modifier
 
 
 def main(fn_config: PathLike) -> None:
@@ -157,13 +170,12 @@ def main(fn_config: PathLike) -> None:
     ):
         ensure_plumed_kernel()
 
-    # Determine the run directory
-    job_scheduler = config.job_scheduler
-    run_dir = campaign_dir
+    working_dir = campaign_dir / "outputs" / sample_id
+    working_dir.mkdir(parents=True, exist_ok=True)
 
-    fn_log = campaign_dir / f"gmx-{sample_id}.log"
+    fn_log = working_dir / "gmx.log"
     success = []
-    outputs: list[dict[str, str | None]] = []
+    outputs: list[dict[str, object]] = []
     status = "failed"
     try:
         with open(fn_log, 'a+') as log:
@@ -178,7 +190,7 @@ def main(fn_config: PathLike) -> None:
 
                 # Define the output file names
                 system_run_dir = (
-                    run_dir / "samples" / sample_id / system.system_id
+                    campaign_dir / "samples" / sample_id / system.system_id
                 )
                 system_run_dir.mkdir(parents=True, exist_ok=True)
                 deffnm = system_run_dir / "production"
@@ -187,7 +199,7 @@ def main(fn_config: PathLike) -> None:
 
                 # Create topology with new parameters
                 fn_top_new = system_run_dir / "topology.top"
-                _ = modify_topology(top, specs, params, implicit, fn_top_new)
+                modify_topology(top, specs, params, implicit, fn_top_new)
                 fn_prod_mdp = prod
                 mdrun_extra_args: list[str] = []
                 run_env = None
@@ -196,7 +208,12 @@ def main(fn_config: PathLike) -> None:
                     if Path(bias.input_file).resolve() != fn_bias_local.resolve():
                         shutil.copy2(bias.input_file, fn_bias_local)
                     fn_prod_mdp = system_run_dir / "production-colvars.mdp"
-                    write_mdp_with_colvars(prod, fn_bias_local, fn_prod_mdp)
+                    write_mdp_with_colvars(
+                        prod,
+                        fn_bias_local,
+                        fn_prod_mdp,
+                        working_dir=working_dir,
+                    )
                 elif bias.kind == "plumed" and bias.input_file is not None:
                     kernel = ensure_plumed_kernel()
                     run_env = dict(os.environ)
@@ -235,7 +252,7 @@ def main(fn_config: PathLike) -> None:
                             '-maxwarn',
                             '2',
                         ),
-                        cwd=run_dir, stdout=log, stderr=log, check=True
+                        cwd=working_dir, stdout=log, stderr=log, check=True
                     )
 
                     subprocess.run(
@@ -247,7 +264,7 @@ def main(fn_config: PathLike) -> None:
                             '-deffnm',
                             deffnm_em,
                         ),
-                        cwd=run_dir,
+                        cwd=working_dir,
                         stdout=log,
                         stderr=log,
                         check=True,
@@ -275,9 +292,14 @@ def main(fn_config: PathLike) -> None:
                         '-maxwarn',
                         '2',
                     ),
-                    cwd=run_dir, stdout=log, stderr=log, check=True
+                    cwd=working_dir, stdout=log, stderr=log, check=True
                 )
 
+                working_state = {
+                    path: (path.stat().st_mtime_ns, path.stat().st_size)
+                    for path in working_dir.iterdir()
+                    if path.is_file()
+                }
                 subprocess.run(
                     build_command(
                         gmx_cmd,
@@ -290,62 +312,68 @@ def main(fn_config: PathLike) -> None:
                         'yes',
                         *mdrun_extra_args,
                     ),
-                    cwd=run_dir, stdout=log, stderr=log, check=True, env=run_env
+                    cwd=working_dir,
+                    stdout=log,
+                    stderr=log,
+                    check=True,
+                    env=run_env,
+                )
+                _collect_working_outputs(
+                    working_dir,
+                    system_run_dir,
+                    working_state,
+                    config.store,
+                    config.cleanup,
                 )
 
                 # Check if the simulation finished aka has the expected number of frames
                 success.append(
                     check_success(f'{deffnm}.xtc', fn_prod_mdp, steps)
                 )
-                generated_files = _sample_output_paths(
-                    run_dir, sample_id, system.system_id
-                )
-                if job_scheduler == "local":
-                    _prune_unstored_outputs(generated_files, config.store)
                 trajectory_name = (
                     str(deffnm.with_suffix(".xtc").relative_to(campaign_dir))
                     if "xtc" in config.store
                     else None
                 )
+                stored_inputs: dict[str, str | list[str]] = {}
+                for extension in config.store:
+                    role = extension.lstrip(".")
+                    if role == "xtc":
+                        continue
+                    matches = sorted(
+                        path
+                        for path in system_run_dir.iterdir()
+                        if path.is_file() and path.suffix == f".{role}"
+                    )
+                    relative_paths = [
+                        str(path.relative_to(campaign_dir)) for path in matches
+                    ]
+                    if len(relative_paths) == 1:
+                        stored_inputs[role] = relative_paths[0]
+                    elif relative_paths:
+                        stored_inputs[role] = relative_paths
                 outputs.append(
                     {
                         "system_id": system.system_id,
                         "trajectory": trajectory_name,
+                        "inputs": stored_inputs,
                     }
                 )
 
         if np.all(success):
             status = "completed"
-            if job_scheduler == 'local':
-                _prune_auxiliary_outputs(run_dir, config.store)
-        else:
+    finally:
+        if status != "completed" and config.cleanup:
             for system in config.systems:
                 for file in _sample_output_paths(
-                    run_dir, sample_id, system.system_id
+                    campaign_dir, sample_id, system.system_id
                 ):
                     file.unlink(missing_ok=True)
-
-    except Exception:
-        for system in config.systems:
-            for file in _sample_output_paths(
-                run_dir, sample_id, system.system_id
-            ):
-                file.unlink(missing_ok=True)
         save_yaml(
             {
                 "sample_id": sample_id,
                 "status": status,
                 "outputs": outputs,
             },
-            campaign_dir / f"result-{sample_id}.yaml",
+            working_dir / "result.yaml",
         )
-        raise
-
-    save_yaml(
-        {
-            "sample_id": sample_id,
-            "status": status,
-            "outputs": outputs,
-        },
-        campaign_dir / f"result-{sample_id}.yaml",
-    )

@@ -35,11 +35,10 @@ class Logger:
     }
     _TITLE_STYLES = {
         "build": ("bold", "bright_cyan"),
-        "prepare-reference": ("bold", "bright_cyan"),
-        "evaluate-snapshots": ("bold", "bright_blue"),
-        "sample": ("bold", "bright_yellow"),
-        "analyze": ("bold", "bright_magenta"),
-        "lgpfit": ("bold", "bright_green"),
+        "label-snapshots": ("bold", "bright_blue"),
+        "sample-parameters": ("bold", "bright_yellow"),
+        "build-qoi-datasets": ("bold", "bright_magenta"),
+        "fit-lgp": ("bold", "bright_green"),
         "learn": ("bold", "cyan"),
         "validate": ("bold", "bright_red"),
     }
@@ -166,12 +165,16 @@ class Logger:
         detail: str | None = None,
         level: int = 1,
         overwrite: bool = False,
+        write_file: bool = True,
     ) -> None:
         """Write one workflow status line."""
         message = f"{label}: {state}"
         if detail:
             message += f" | {detail}"
-        self.info(message, level=level, overwrite=overwrite, style="magenta")
+        line = f"{self._prefix(level)}{message}"
+        if write_file:
+            self._write_file(line)
+        self._write_console(line, overwrite=overwrite, style="magenta")
 
     def done(
         self,

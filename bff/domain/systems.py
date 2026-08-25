@@ -13,13 +13,6 @@ from ..io.utils import load_yaml, save_yaml
 
 PathValue = Path | tuple[Path, ...] | dict[str, "PathValue"] | None
 _SYSTEM_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
-_ELEMENTS = frozenset(
-    "H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co "
-    "Ni Cu Zn Ga Ge As Se Br Kr Rb Sr Y Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb "
-    "Te I Xe Cs Ba La Ce Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm Yb Lu Hf Ta W Re Os "
-    "Ir Pt Au Hg Tl Pb Bi Po At Rn Fr Ra Ac Th Pa U Np Pu Am Cm Bk Cf Es Fm Md "
-    "No Lr Rf Db Sg Bh Hs Mt Ds Rg Cn Nh Fl Mc Lv Ts Og".split()
-)
 
 
 def validate_system_id(value: object, *, field: str = "system_id") -> str:
@@ -263,73 +256,4 @@ def load_build_system_metadata(
         box=_box(data["box"], path=path),
         maxwarn=maxwarn,
         production_steps=steps,
-    )
-
-
-@dataclass(frozen=True, slots=True)
-class ReferenceSystemMetadata:
-    system_name: str | None
-    charge: int
-    multiplicity: int
-    box: tuple[float, ...]
-    snapshot_count: int
-    elements: tuple[str, ...]
-
-
-def write_reference_system_metadata(
-    root: str | Path, system_id: str, metadata: ReferenceSystemMetadata
-) -> Path:
-    path = _metadata_path(root, system_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    save_yaml(
-        {
-            "system_name": metadata.system_name,
-            "charge": metadata.charge,
-            "multiplicity": metadata.multiplicity,
-            "box": list(metadata.box),
-            "snapshot_count": metadata.snapshot_count,
-            "elements": list(metadata.elements),
-        },
-        path,
-    )
-    return path
-
-
-def load_reference_system_metadata(
-    root: str | Path, system_id: str
-) -> ReferenceSystemMetadata:
-    expected = {
-        "system_name", "charge", "multiplicity", "box", "snapshot_count", "elements"
-    }
-    data = _load_metadata(root, system_id, expected=expected)
-    path = _metadata_path(root, system_id)
-    charge = _integer(data["charge"], field="charge", path=path)
-    multiplicity = _integer(data["multiplicity"], field="multiplicity", path=path)
-    count = _integer(data["snapshot_count"], field="snapshot_count", path=path)
-    if count <= 0:
-        raise ValueError(f"snapshot_count in {path} must be positive, got {count}.")
-    if multiplicity <= 0:
-        raise ValueError(
-            f"multiplicity in {path} must be positive, got {multiplicity}."
-        )
-    raw_elements = data["elements"]
-    if not isinstance(raw_elements, list) or not raw_elements:
-        raise ValueError(f"elements in {path} must be a non-empty list.")
-    elements = tuple(str(value) for value in raw_elements)
-    if len(set(elements)) != len(elements) or list(elements) != sorted(elements):
-        raise ValueError(
-            f"elements in {path} must be unique and sorted, got {elements!r}."
-        )
-    unknown = [element for element in elements if element not in _ELEMENTS]
-    if unknown:
-        raise ValueError(
-            f"elements in {path} contains unknown element(s): {unknown!r}."
-        )
-    return ReferenceSystemMetadata(
-        system_name=data.get("system_name"),
-        charge=charge,
-        multiplicity=multiplicity,
-        box=_box(data["box"], path=path),
-        snapshot_count=count,
-        elements=elements,
     )

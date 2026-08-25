@@ -120,7 +120,9 @@ def test_resolve_mean_builds_sigmoid_for_concatenated_rdfs() -> None:
         inputs=np.zeros((2, 1)),
         outputs=np.zeros((2, 6)),
         outputs_ref=np.zeros(6),
-        settings={"n_bins": 3, "r_range": (0.0, 3.0)},
+        labels=("A", "B"),
+        values_per_label=3,
+        settings={"bins": 3, "range": (0.0, 3.0)},
     )
 
     mean = _resolve_mean(dataset, "sigmoid")
@@ -128,3 +130,18 @@ def test_resolve_mean_builds_sigmoid_for_concatenated_rdfs() -> None:
     assert mean.shape == (6,)
     assert np.allclose(mean[:3], mean[3:])
     assert np.all(np.diff(mean[:3]) > 0)
+
+
+def test_resolve_mean_rejects_rdf_bin_count_mismatch() -> None:
+    dataset = QoIDataset(
+        name="rdf",
+        inputs=np.zeros((2, 1)),
+        outputs=np.zeros((2, 6)),
+        outputs_ref=np.zeros(6),
+        labels=("A", "B"),
+        values_per_label=3,
+        settings={"bins": 2, "range": (0.0, 3.0)},
+    )
+
+    with pytest.raises(ValueError, match="each RDF curve contains 3 values"):
+        _resolve_mean(dataset, "sigmoid")

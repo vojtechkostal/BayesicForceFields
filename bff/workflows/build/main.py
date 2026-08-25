@@ -18,6 +18,7 @@ from .._shared.preparation import (
     make_ndx,
     run_md,
     topology_name,
+    write_reference_system,
 )
 from .config import BuildConfig
 
@@ -254,6 +255,19 @@ def main(fn_config: PathLike) -> None:
             fn_log=fn_gmx_log,
         )
         logger.done("Production seed run", level=2)
+
+        reference_dir = system_dir / "reference"
+        removed_virtual_sites = write_reference_system(
+            fn_topol_local,
+            deffnm_prod.with_suffix(".gro"),
+            reference_dir / "topology.top",
+            reference_dir / "coordinates.gro",
+        )
+        logger.done(
+            "Reference-compatible system",
+            detail=f"removed {removed_virtual_sites} virtual sites",
+            level=2,
+        )
 
         write_build_system_metadata(
             project_dir,

@@ -1,5 +1,5 @@
 site_name: Bayesic Force Fields
-site_description: Bayesian optimization workflows for fixed-charge molecular force fields
+site_description: Bayesian learning workflows for fixed-charge molecular force fields
 site_url: https://vojtechkostal.github.io/BayesicForceFields/
 repo_url: https://github.com/vojtechkostal/BayesicForceFields
 repo_name: vojtechkostal/BayesicForceFields
@@ -62,11 +62,10 @@ nav:
   - CLI: cli.md
   - Configuration:
       - Build: configuration/build.md
-      - Prepare Reference: configuration/prepare-reference.md
-      - Evaluate Snapshots: configuration/evaluate-snapshots.md
-      - Sample: configuration/sample.md
-      - Analyze: configuration/analyze.md
-      - LGP Fit: configuration/lgpfit.md
+      - Label Snapshots: configuration/label-snapshots.md
+      - Sample Parameters: configuration/sample-parameters.md
+      - Build QoI Datasets: configuration/build-qoi-datasets.md
+      - Fit LGP: configuration/fit-lgp.md
       - Learn: configuration/learn.md
       - Validate: configuration/validate.md
   - Examples:

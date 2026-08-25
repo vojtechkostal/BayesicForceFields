@@ -4,10 +4,10 @@
 specs: ../03-sample/specs.yaml
 models:
   rdf:
-    model_path: ../05-lgpfit/models/rdf.lgp
+    model_path: ../05-lgp/models/rdf.lgp
     tolerance: 0.1
   pmf:
-    model_path: ../05-lgpfit/models/pmf.lgp
+    model_path: ../05-lgp/models/pmf.lgp
     n_eff: 5
 mcmc:
   total_steps: 10000
@@ -33,7 +33,8 @@ plots/
   marginals.pdf
   qoi-marginals.pdf
   corner.pdf
-output/
+outputs/
+  specs.yaml
   prior.pt
   posterior.pt
   mcmc.ckpt
@@ -44,8 +45,10 @@ only the paths listed above. `mcmc.resume: true` requires a checkpoint,
 regenerates posterior and plots, and appends a delimited run to `learn.log`.
 Resume and overwrite cannot be combined.
 
-The prior, posterior, and checkpoint are written atomically. Resume validates
+The configured `specs.yaml` is copied unchanged into `outputs/`. The prior,
+posterior, and checkpoint are written atomically. Resume requires the copied
+specifications and validates
 the specification fingerprint, ordered models and their hashes, target
 settings, dimensions, walkers, warmup, thinning, prior family, and proposal.
 All three artifacts and all three plots are mandatory for command success.
-Marginal annotations show posterior means and are placed from rendered bounds.
+Marginal annotations show posterior means directly below their lower bounds.

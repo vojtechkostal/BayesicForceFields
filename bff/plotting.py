@@ -6,9 +6,7 @@ import numpy as np
 import torch
 from matplotlib.colors import ListedColormap
 from matplotlib.patches import Patch
-from matplotlib.text import Text
 from matplotlib.ticker import MaxNLocator
-from matplotlib.transforms import blended_transform_factory
 from scipy.special import softmax
 from scipy.stats import gaussian_kde
 
@@ -19,7 +17,7 @@ PathLike = Union[str, Path]
 ArrayLike = Union[np.ndarray, torch.Tensor]
 
 
-def _wrap_label(text: str, max_per_line: int = 4) -> str:
+def _wrap_label(text: str, max_per_line: int = 3) -> str:
     words = text.split()
     return "\n".join(
         " ".join(words[i:i + max_per_line])
@@ -98,76 +96,6 @@ def _format_range_value(value: float, lower: float, upper: float) -> str:
     return f"{value:.{decimals}f}"
 
 
-def _layout_marginal_mean_annotations(
-    fig,
-    axes,
-    annotations: Sequence[tuple[Any, float, float, float, float]],
-):
-    """Place mean labels in deterministic lanes using rendered bounds."""
-    artists = []
-    for ax, xpos, mean, lower, upper in annotations:
-        artists.append(
-            ax.text(
-                xpos,
-                1.02,
-                _format_range_value(mean, lower, upper),
-                transform=blended_transform_factory(ax.transData, ax.transAxes),
-                color="tab:red",
-                fontweight="bold",
-                ha="center",
-                va="bottom",
-                clip_on=False,
-            )
-        )
-
-    top = 0.82
-    annotation_ids = {id(artist) for artist in artists}
-    for _ in range(6):
-        fig.subplots_adjust(top=top)
-        fig.canvas.draw()
-        renderer = fig.canvas.get_renderer()
-        obstacles = []
-        for ax in axes:
-            obstacles.append(ax.get_window_extent(renderer))
-            obstacles.extend(
-                text_artist.get_window_extent(renderer)
-                for text_artist in ax.findobj(match=Text)
-                if id(text_artist) not in annotation_ids
-                and text_artist.get_visible()
-                and text_artist.get_text()
-            )
-            if ax.get_legend() is not None:
-                obstacles.append(ax.get_legend().get_window_extent(renderer))
-
-        lane_boxes: dict[tuple[int, int], list[Any]] = {}
-        max_lane = 0
-        for artist in artists:
-            ax = artist.axes
-            lane = 0
-            while True:
-                artist.set_y(1.02 + 0.10 * lane)
-                fig.canvas.draw()
-                box = artist.get_window_extent(fig.canvas.get_renderer()).expanded(
-                    1.08, 1.12
-                )
-                key = (id(ax), lane)
-                conflicts = any(
-                    box.overlaps(other) for other in lane_boxes.get(key, [])
-                )
-                conflicts |= any(box.overlaps(other) for other in obstacles)
-                if not conflicts:
-                    lane_boxes.setdefault(key, []).append(box)
-                    max_lane = max(max_lane, lane)
-                    break
-                lane += 1
-        required_top = max(0.45, 0.82 - 0.055 * (max_lane + 1))
-        if abs(required_top - top) < 1e-6:
-            break
-        top = required_top
-    fig.canvas.draw()
-    return artists
-
-
 def plot_marginals(
     results: PosteriorResults,
     specs: Specs | PathLike,
@@ -208,8 +136,6 @@ def plot_marginals(
     prior_index = {name: i for i, name in enumerate(explicit_names)}
     show_prior = results.priors is not None
     legend_used = {"prior": False, "posterior": False, "bounds": False}
-    mean_annotations = []
-
     for ax, (kind, indices) in zip(axes, param_groups.items()):
         bounds_block = np.asarray(
             [specs.bounds.by_name[param_names[i]] for i in indices],
@@ -295,7 +221,15 @@ def plot_marginals(
             )
             legend_used["bounds"] = True
 
-            mean_annotations.append((ax, xpos, posterior_mean, lower, upper))
+            ax.text(
+                xpos,
+                lower - 0.25 * y_pad,
+                _format_range_value(posterior_mean, lower, upper),
+                color="tab:red",
+                fontweight="bold",
+                ha="center",
+                va="top",
+            )
 
         ax.set_xlim(-prior_width - 0.25, len(indices) - 1 + posterior_width + 0.25)
         ax.set_ylim(y_min - y_pad, y_max + y_pad)
@@ -317,8 +251,6 @@ def plot_marginals(
             ncol=3,
             frameon=False,
         )
-    _layout_marginal_mean_annotations(fig, axes, mean_annotations)
-
     if fn_out is not None:
         plt.savefig(fn_out, bbox_inches="tight")
         plt.close(fig)

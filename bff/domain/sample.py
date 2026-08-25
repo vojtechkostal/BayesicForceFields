@@ -4,7 +4,7 @@ from typing import Union
 
 import numpy as np
 
-from ..io.utils import extract_train_dir, prepare_path
+from .campaign import load_sample_manifest
 from .specs import Specs
 from .systems import (
     PathValue,
@@ -95,15 +95,30 @@ class SampleSet:
         manifest: PathLike | None = None,
         strict: bool = True,
     ) -> 'SampleSet':
-        prepared_dir = prepare_path(Path(campaign_dir).resolve())
-        specs_data, systems_data, samples_data = extract_train_dir(
-            prepared_dir,
-            manifest=None if manifest is None else Path(manifest).resolve(),
+        prepared_dir = Path(campaign_dir).resolve()
+        if not prepared_dir.is_dir():
+            raise ValueError(
+                f"Sampling campaign must be an existing directory: {prepared_dir}."
+            )
+        specs_path = prepared_dir / 'specs.yaml'
+        if not specs_path.is_file():
+            raise ValueError(
+                f"Sampling campaign is missing specifications: {specs_path}."
+            )
+        manifest_path = (
+            prepared_dir / 'samples.yaml'
+            if manifest is None
+            else Path(manifest).resolve()
         )
-        if specs_data is None:
-            raise ValueError('Sampling campaign is missing specs information.')
-
-        specs = Specs(specs_data)
+        if manifest_path.parent != prepared_dir:
+            raise ValueError(
+                f"Sample manifest {manifest_path} must be located in campaign "
+                f"directory {prepared_dir} beside specs.yaml."
+            )
+        campaign = load_sample_manifest(manifest_path)
+        systems_data = campaign['systems']
+        samples_data = campaign['samples']
+        specs = Specs(specs_path)
         systems = [
             SimulationSystem(
                 system_id=validate_system_id(
@@ -289,10 +304,6 @@ class SampleSet:
     @property
     def sample_ids(self) -> list[str]:
         return [sample.sample_id for sample in self.samples]
-
-    @property
-    def hashes(self) -> list[str]:
-        return self.sample_ids
 
     @property
     def inputs(self) -> np.ndarray:

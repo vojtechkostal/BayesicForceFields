@@ -12,8 +12,8 @@ three observables:
 - self-diffusion coefficient
 
 The values are realistic synthetic data, intended to stand in for simulation
-results and experimental targets produced outside BFF.
-The fitting and learning cells use CUDA by default.
+results and experimental targets produced outside BFF. Fitting and learning
+use CUDA when available and otherwise run on CPU.
 
 ## Run
 

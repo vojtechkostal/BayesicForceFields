@@ -15,7 +15,7 @@ experimental RDF.
 
 No molecular dynamics run is required. The committed upstream files include
 the simulation training set, held-out validation set, and experimental RDF.
-The fitting and learning cells use CUDA by default.
+Fitting and learning use CUDA when available and otherwise run on CPU.
 
 ## Run
 

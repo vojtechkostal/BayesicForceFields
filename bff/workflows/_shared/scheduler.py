@@ -108,11 +108,6 @@ def get_job_state_counts(
     return counts
 
 
-def get_active_jobs(ids: list[int], scheduler: str, chunk_size: int = 1000) -> int:
-    """Count active jobs for the supported scheduler."""
-    return get_job_state_counts(ids, scheduler, chunk_size)['active']
-
-
 def wait_for_scheduler_slot(
     *,
     job_ids: list[int],

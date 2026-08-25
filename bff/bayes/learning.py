@@ -340,15 +340,26 @@ def _resolve_mean(
     mean: MeanFunction | str,
 ) -> MeanFunction:
     """Resolve a configured surrogate mean specification."""
-    if dataset.name == "rdf" and isinstance(mean, str) and mean == "sigmoid":
-        n_bins = dataset.settings.get("n_bins")
-        r_range = dataset.settings.get("r_range")
-        if n_bins is None or r_range is None:
-            raise ValueError(
-                "RDF sigmoid mean requires shared RDF settings in the dataset. "
-                "Analyze with one consistent RDF routine definition per QoI."
-            )
-        return rdf_sigmoid_mean(n_bins, r_range, dataset.outputs_ref)
+    if isinstance(mean, str):
+        if mean == "sigmoid":
+            bins = dataset.settings.get("bins")
+            distance_range = dataset.settings.get("range")
+            if bins is None or distance_range is None:
+                raise ValueError(
+                    "RDF sigmoid mean requires shared RDF settings in the dataset. "
+                    "Build the dataset with one consistent RDF routine definition "
+                    "per QoI."
+                )
+            if bins != dataset.curve_length:
+                raise ValueError(
+                    "RDF dataset settings declare "
+                    f"bins={bins!r}, but each RDF curve contains "
+                    f"{dataset.curve_length} values."
+                )
+            return rdf_sigmoid_mean(bins, distance_range, dataset.outputs_ref)
+        else:
+            raise NotImplementedError(
+                "Other than 'sigmoid' or single-value mean is not implemented")
     return mean
 
 
@@ -377,7 +388,7 @@ def fit_lgp_committee(
 ) -> LGPCommittee:
     """Fit a committee of local Gaussian-process surrogates."""
     check_device(device)
-    logger = logger or Logger("lgpfit")
+    logger = logger or Logger("fit-lgp")
     opt_kwargs = dict(opt_kwargs or {})
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_fraction)
@@ -491,7 +502,7 @@ def fit_surrogates(
 ) -> dict[str, LGPCommittee]:
     """Fit or load QoI surrogate models."""
     owns_logger = logger is None
-    logger = logger or Logger("lgpfit")
+    logger = logger or Logger("fit-lgp")
     y_means = dict(y_means or {})
     hyperpriors = dict(hyperpriors or {})
     model_paths = dict(model_paths or {})
@@ -521,7 +532,7 @@ def fit_surrogates(
             if models[qoi].dataset_fingerprint != fingerprint:
                 raise ValueError(
                     f"Cached surrogate for {qoi!r} at {fn_model} was fitted "
-                    "from different QoI data. Set lgpfit.reuse_models: false "
+                    "from different QoI data. Set fit.reuse_models: false "
                     "or remove the stale model."
                 )
             models[qoi].reference_values = np.asarray(

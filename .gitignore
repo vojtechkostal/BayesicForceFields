@@ -11,6 +11,8 @@ __pycache__/
 /site/
 
 # Local scratch artifacts from old/manual test workflow runs
+/.flake8
+/testing-ntb/
 tests/acetate-test/
 tests/workflow-test/
 tests/version-2.0/
@@ -52,20 +54,18 @@ examples/acetate/**
 !examples/acetate/inputs/common/**
 !examples/acetate/inputs/biases/*.dat
 !examples/acetate/inputs/reference-inputs/*.inp
+!examples/acetate/inputs/reference-inputs/**/*.inp
 !examples/acetate/inputs/reference-trajectories/*.xtc
 examples/acetate/inputs/common/mdp/mdout.mdp
 
 # Runtime stage outputs for the acetate walkthrough
 examples/acetate/configs/*/
-examples/acetate/01-build-colvars/
-examples/acetate/01-build-plumed/
-examples/acetate/02-evaluate-run-local/
-examples/acetate/02-evaluate-run-slurm/
-examples/acetate/02-evaluate-import/
-examples/acetate/03-sample-local/
-examples/acetate/03-sample-slurm/
-examples/acetate/04-analyze/
-examples/acetate/05-fit/
+examples/acetate/01-build/
+examples/acetate/02-reference-snapshots/
+examples/acetate/02-reference-md/
+examples/acetate/03-sample/
+examples/acetate/04-qoi/
+examples/acetate/05-lgp/
 examples/acetate/06-learn/
 examples/acetate/07-validate/
 examples/acetate/notebooks/*.png
