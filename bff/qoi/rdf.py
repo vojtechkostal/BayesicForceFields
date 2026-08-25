@@ -80,39 +80,26 @@ def _box_and_volume(ts: Any, *, context: str) -> tuple[np.ndarray, float]:
 
 def compute_rdf(
     universe: mda.Universe,
-    group_a: str,
-    group_b: str,
+    atoms_a: mda.AtomGroup,
+    atoms_b: mda.AtomGroup,
     *,
     distance_range: tuple[float, float] = (0.0, 10.0),
     bins: int = 200,
     pbc: bool = True,
-    update_selections: bool = False,
     start: int = 0,
     stop: int | None = None,
     step: int = 1,
     smooth: bool = False,
-    center_type: str | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Compute an RDF with per-frame triclinic PBC and normalization."""
+    """Compute an RDF between two AtomGroups over a trajectory slice."""
     validate_rdf_options(
         {
             "range": distance_range,
             "bins": bins,
             "pbc": pbc,
-            "update_selections": update_selections,
             "smooth": smooth,
         }
     )
-    atoms_a = _select_group(
-        universe, group_a, updating=update_selections, field="selections.group_a"
-    )
-    atoms_b = _select_group(
-        universe, group_b, updating=update_selections, field="selections.group_b"
-    )
-    if center_type is not None and not np.any(atoms_a.types == center_type):
-        raise ValueError(
-            f"RDF group_a contains no atoms of type {center_type!r}: {group_a!r}."
-        )
     edges = np.linspace(distance_range[0], distance_range[1], bins + 1)
     shell_volumes = (4.0 * np.pi / 3.0) * (
         edges[1:] ** 3 - edges[:-1] ** 3
@@ -124,32 +111,22 @@ def compute_rdf(
     for frame_index, ts in enumerate(
         universe.trajectory[slice(start, stop, step)], start=start
     ):
-        frame_atoms_a = (
-            atoms_a
-            if center_type is None
-            else atoms_a[atoms_a.types == center_type]
-        )
-        if len(frame_atoms_a) == 0 or len(atoms_b) == 0:
-            raise ValueError(
-                "RDF selections became empty at frame "
-                f"{frame_index}: group_a={group_a!r}, group_b={group_b!r}."
-            )
         box = None
         volume = 1.0
         if pbc:
             box, volume = _box_and_volume(ts, context=f"RDF frame {frame_index}")
         distances = distance_array(
-            frame_atoms_a.positions,
+            atoms_a.positions,
             atoms_b.positions,
             box=box,
         )
-        same_atoms = frame_atoms_a.indices[:, None] == atoms_b.indices[None, :]
+        same_atoms = atoms_a.indices[:, None] == atoms_b.indices[None, :]
         valid_distances = distances[~same_atoms]
         n_pairs = valid_distances.size
         if n_pairs <= 0:
             raise ValueError(
-                f"RDF frame {frame_index} has no non-self atom pairs for "
-                f"{group_a!r} and {group_b!r}."
+                f"RDF frame {frame_index} has no non-self atom pairs "
+                f"(centers={len(atoms_a)}, neighbors={len(atoms_b)})."
             )
         counts += np.histogram(valid_distances, bins=edges)[0]
         normalization += n_pairs * shell_volumes / volume
@@ -189,40 +166,55 @@ def compute_rdf_qoi(
             "smooth": smooth,
         }
     )
-    centers = _select_group(
+    atoms_a = _select_group(
         universe,
         group_a,
         updating=update_selections,
         field="selections.group_a",
     )
+    atoms_b = _select_group(
+        universe,
+        group_b,
+        updating=update_selections,
+        field="selections.group_b",
+    )
     try:
-        centers = centers[centers.masses > 0.5]
+        physical_atoms = universe.atoms[universe.atoms.masses > 0.5]
     except NoDataError as exc:
         raise ValueError(
             "RDF group_a requires topology masses to exclude virtual sites."
         ) from exc
-    if len(centers) == 0:
+    atoms_a = atoms_a.select_atoms(
+        "group physical_atoms",
+        physical_atoms=physical_atoms,
+        updating=update_selections,
+    )
+    if len(atoms_a) == 0:
         raise ValueError(
             f"RDF group_a contains no atoms with mass greater than 0.5: "
             f"{group_a!r}."
         )
 
-    labels = tuple(sorted({str(atom_type) for atom_type in centers.types}))
+    labels = tuple(sorted({str(atom_type) for atom_type in atoms_a.types}))
     curves: list[np.ndarray] = []
     for atom_type in labels:
+        matching_atoms = physical_atoms[physical_atoms.types == atom_type]
+        centers = atoms_a.select_atoms(
+            "group matching_atoms",
+            matching_atoms=matching_atoms,
+            updating=update_selections,
+        )
         _, values = compute_rdf(
             universe,
-            group_a,
-            group_b,
+            centers,
+            atoms_b,
             distance_range=tuple(float(value) for value in range),
             bins=int(bins),
             pbc=pbc,
-            update_selections=update_selections,
             start=start,
             stop=stop,
             step=step,
             smooth=smooth,
-            center_type=atom_type,
         )
         curves.append(values)
 
