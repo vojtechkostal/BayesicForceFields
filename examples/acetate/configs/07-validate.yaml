@@ -1,0 +1,21 @@
+campaign_dir: ./
+posterior:
+  file: ../06-learn/outputs/posterior.pt
+  n_samples: 10
+  include_mean: true
+  distribution: normal
+  confidence: 0.9
+  seed: null
+source: ../01-build
+systems:
+  - system_id: acetate
+    n_steps: 1000
+  - system_id: acetate-contact
+    n_steps: 1000
+  - system_id: acetate-separated
+    n_steps: 1000
+compress: false
+cleanup: true
+store: ["xtc"]
+gmx_cmd: gmx
+job_scheduler: local

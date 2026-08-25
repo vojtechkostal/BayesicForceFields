@@ -7,9 +7,9 @@ import numpy as np
 from MDAnalysis import transformations as trans
 
 from ...domain.bias import BiasSpec
+from ...domain.systems import BuildSystemMetadata, write_build_system_metadata
 from ...io.logs import Logger
 from ...io.plumed import ensure_plumed_kernel
-from ...io.utils import save_yaml
 from ...topology import create_box
 from .._shared.preparation import (
     check_gmx_available,
@@ -17,9 +17,8 @@ from .._shared.preparation import (
     get_average_box,
     make_ndx,
     run_md,
-    system_name,
-    system_run_name,
     topology_name,
+    write_reference_system,
 )
 from .config import BuildConfig
 
@@ -28,7 +27,7 @@ PathLike = str | Path
 
 @dataclass(slots=True)
 class EquilibratedTopology:
-    fn_topol_processed: Path
+    topology_path: Path
     universe: mda.Universe
     box: np.ndarray
     maxwarn: int
@@ -96,7 +95,7 @@ def build_equilibrated_topology(
             to_guess=("elements", "masses"),
         )
         return EquilibratedTopology(
-            fn_topol_processed=fn_topol_processed,
+            topology_path=fn_topol_processed,
             universe=em_universe,
             box=np.asarray(em_universe.dimensions, dtype=float),
             maxwarn=maxwarn,
@@ -127,7 +126,7 @@ def build_equilibrated_topology(
     logger.done("NpT equilibration", level=2)
 
     return EquilibratedTopology(
-        fn_topol_processed=fn_topol_processed,
+        topology_path=fn_topol_processed,
         universe=universe,
         box=box_avg,
         maxwarn=maxwarn,
@@ -144,10 +143,10 @@ def main(fn_config: PathLike) -> None:
     equilibration_dir = project_dir / "equilibration"
     equilibration_dir.mkdir(parents=True, exist_ok=True)
 
-    fn_gmx_log = project_dir / "gmx.log"
+    systems_dir = project_dir / "systems"
+    systems_dir.mkdir(parents=True, exist_ok=True)
+    fn_gmx_log = project_dir / "gromacs.log"
     fn_gmx_log.parent.mkdir(parents=True, exist_ok=True)
-    fn_manifest = project_dir / "build-manifest.yaml"
-
     logger = Logger(
         "build",
         str(config.fn_log) if config.fn_log else None,
@@ -157,7 +156,7 @@ def main(fn_config: PathLike) -> None:
     logger.kv("Config", Path(fn_config).resolve())
     logger.kv("Project directory", project_dir)
     logger.kv("Equilibration directory", equilibration_dir)
-    logger.kv("Build manifest", fn_manifest)
+    logger.kv("Systems directory", systems_dir)
     logger.kv("Systems", len(config.systems))
     logger.kv("GROMACS command", config.gmx_cmd)
     if any(system.bias.is_biased for system in config.systems):
@@ -170,30 +169,28 @@ def main(fn_config: PathLike) -> None:
         logger.kv("Log file", config.fn_log.resolve())
     logger.blank()
 
-    def rel(path: Path) -> str:
-        return str(path.resolve().relative_to(project_dir))
-
     equilibrated_topologies: dict[str, EquilibratedTopology] = {}
-    manifest_systems: list[dict[str, object]] = []
 
     n_total = len(config.systems)
     for i, system in enumerate(config.systems):
-        logger.info(f"System {i + 1}/{n_total}", level=1)
+        logger.info(
+            f"System {i + 1}/{n_total}: {system.system_id}", level=1
+        )
 
-        topology_key = str(system.fn_topol)
+        topology_key = str(system.topology_path)
         if topology_key not in equilibrated_topologies:
             topol_index = next(
                 j
                 for j, candidate in enumerate(config.systems)
-                if candidate.fn_topol == system.fn_topol
+                if candidate.topology_path == system.topology_path
             )
             equilibrated_topologies[topology_key] = build_equilibrated_topology(
                 topol_index=topol_index,
-                fn_topol=system.fn_topol,
+                fn_topol=system.topology_path,
                 templates=system.templates,
                 box=system.box,
-                fn_mdp_em=system.fn_mdp_em,
-                fn_mdp_npt=system.fn_mdp_npt,
+                fn_mdp_em=system.mdp_em_path,
+                fn_mdp_npt=system.mdp_npt_path,
                 nsteps_npt=system.nsteps_npt,
                 equilibration_dir=equilibration_dir,
                 gmx_cmd=config.gmx_cmd,
@@ -202,18 +199,19 @@ def main(fn_config: PathLike) -> None:
             )
 
         topology_state = equilibrated_topologies[topology_key]
-        system_label = system_name(i)
-        fn_topol_local = equilibration_dir / f"{system_label}.top"
-        fn_coord = equilibration_dir / f"{system_label}.gro"
-        fn_ndx = equilibration_dir / f"{system_label}.ndx"
-        fn_mdp_em = equilibration_dir / f"{system_label}.em.mdp"
-        fn_mdp_npt = equilibration_dir / f"{system_label}.npt.mdp"
-        fn_mdp_prod = equilibration_dir / f"{system_label}.mdp"
+        system_dir = systems_dir / system.system_id
+        system_dir.mkdir(parents=True, exist_ok=True)
+        fn_topol_local = system_dir / "topology.top"
+        fn_coord = system_dir / "coordinates.gro"
+        fn_ndx = system_dir / "index.ndx"
+        fn_mdp_em = system_dir / "em.mdp"
+        fn_mdp_npt = system_dir / "npt.mdp"
+        fn_mdp_prod = system_dir / "production.mdp"
 
-        shutil.copy2(topology_state.fn_topol_processed, fn_topol_local)
-        shutil.copy2(system.fn_mdp_em, fn_mdp_em)
-        shutil.copy2(system.fn_mdp_npt, fn_mdp_npt)
-        shutil.copy2(system.fn_mdp_prod, fn_mdp_prod)
+        shutil.copy2(topology_state.topology_path, fn_topol_local)
+        shutil.copy2(system.mdp_em_path, fn_mdp_em)
+        shutil.copy2(system.mdp_npt_path, fn_mdp_npt)
+        shutil.copy2(system.mdp_production_path, fn_mdp_prod)
 
         with mda.Writer(fn_coord, "w") as writer:
             ts = topology_state.universe.trajectory[-1]
@@ -223,7 +221,7 @@ def main(fn_config: PathLike) -> None:
 
         fn_bias_input = None
         for suffix in ("bias.colvars.dat", "bias.plumed.dat"):
-            stale = equilibration_dir / f"{system_label}.{suffix}"
+            stale = system_dir / suffix
             if stale.exists():
                 stale.unlink()
         if (
@@ -231,7 +229,7 @@ def main(fn_config: PathLike) -> None:
             and system.bias.input_filename is not None
         ):
             fn_bias_input = (
-                equilibration_dir / f"{system_label}.{system.bias.input_filename}"
+                system_dir / system.bias.input_filename
             )
             shutil.copy2(system.bias.input_file, fn_bias_input)
 
@@ -242,7 +240,7 @@ def main(fn_config: PathLike) -> None:
         else:
             bias_run = BiasSpec(kind="plumed", plumed_file=fn_bias_input)
 
-        deffnm_prod = equilibration_dir / system_run_name(i)
+        deffnm_prod = system_dir / "production"
         logger.status("Production seed run", "in progress...", overwrite=True, level=2)
         run_md(
             deffnm_prod,
@@ -258,37 +256,30 @@ def main(fn_config: PathLike) -> None:
         )
         logger.done("Production seed run", level=2)
 
-        manifest_systems.append(
-            {
-                "system_id": f"{i:03d}",
-                "topology": rel(fn_topol_local),
-                "coordinates": rel(fn_coord),
-                "index": rel(fn_ndx),
-                "mdp": {
-                    "em": rel(fn_mdp_em),
-                    "npt": rel(fn_mdp_npt),
-                    "prod": rel(fn_mdp_prod),
-                },
-                "bias": None if fn_bias_input is None else rel(fn_bias_input),
-                "charge": system.charge,
-                "multiplicity": system.mult,
-                "box": topology_state.box.tolist(),
-                "maxwarn": topology_state.maxwarn,
-                "production": {
-                    "coordinates": rel(deffnm_prod.with_suffix(".gro")),
-                    "trajectory": rel(deffnm_prod.with_suffix(".xtc")),
-                    "n_steps": system.nsteps_prod,
-                },
-            }
+        reference_dir = system_dir / "reference"
+        removed_virtual_sites = write_reference_system(
+            fn_topol_local,
+            deffnm_prod.with_suffix(".gro"),
+            reference_dir / "topology.top",
+            reference_dir / "coordinates.gro",
         )
-        logger.blank()
+        logger.done(
+            "Reference-compatible system",
+            detail=f"removed {removed_virtual_sites} virtual sites",
+            level=2,
+        )
 
-    save_yaml(
-        {
-            "version": 1,
-            "gmx_cmd": config.gmx_cmd,
-            "systems": manifest_systems,
-        },
-        fn_manifest,
-    )
-    logger.done("Build manifest", level=1)
+        write_build_system_metadata(
+            project_dir,
+            system.system_id,
+            BuildSystemMetadata(
+                system_name=system.system_name,
+                charge=system.charge,
+                multiplicity=system.mult,
+                box=tuple(float(value) for value in topology_state.box),
+                maxwarn=topology_state.maxwarn,
+                production_steps=system.nsteps_prod,
+            ),
+        )
+        logger.done("System metadata", detail=str(system_dir / "system.yaml"), level=2)
+        logger.blank()

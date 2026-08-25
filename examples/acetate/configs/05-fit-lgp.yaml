@@ -1,0 +1,20 @@
+datasets:
+  rdf:
+    data: ../04-qoi/qoi/rdf.pt
+    mean: sigmoid
+  hb:
+    data: ../04-qoi/qoi/hb.pt
+    mean: 0
+  contact-distance:
+    data: ../04-qoi/qoi/contact-distance.pt
+    mean: 0
+  separated-distance:
+    data: ../04-qoi/qoi/separated-distance.pt
+    mean: 0
+fit:
+  model_dir: ./models
+  reuse_models: true
+  n_hyper_max: 200
+  committee_size: 1
+  test_fraction: 0.2
+  device: cuda

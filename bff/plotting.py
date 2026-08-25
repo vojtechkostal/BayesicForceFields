@@ -17,7 +17,7 @@ PathLike = Union[str, Path]
 ArrayLike = Union[np.ndarray, torch.Tensor]
 
 
-def _wrap_label(text: str, max_per_line: int = 4) -> str:
+def _wrap_label(text: str, max_per_line: int = 3) -> str:
     words = text.split()
     return "\n".join(
         " ".join(words[i:i + max_per_line])
@@ -87,6 +87,15 @@ def _axis_labels(kind: str) -> tuple[str, str]:
     return kind.capitalize(), kind.capitalize()
 
 
+def _format_range_value(value: float, lower: float, upper: float) -> str:
+    """Format a value using precision derived from its parameter range."""
+    span = abs(float(upper) - float(lower))
+    if not np.isfinite(span) or span == 0:
+        return f"{value:.3g}"
+    decimals = max(0, min(8, 3 - int(np.floor(np.log10(span)))))
+    return f"{value:.{decimals}f}"
+
+
 def plot_marginals(
     results: PosteriorResults,
     specs: Specs | PathLike,
@@ -127,7 +136,6 @@ def plot_marginals(
     prior_index = {name: i for i, name in enumerate(explicit_names)}
     show_prior = results.priors is not None
     legend_used = {"prior": False, "posterior": False, "bounds": False}
-
     for ax, (kind, indices) in zip(axes, param_groups.items()):
         bounds_block = np.asarray(
             [specs.bounds.by_name[param_names[i]] for i in indices],
@@ -136,7 +144,6 @@ def plot_marginals(
         y_min = bounds_block[:, 0].min()
         y_max = bounds_block[:, 1].max()
         y_pad = max(0.05, 0.18 * (y_max - y_min))
-        label_y = y_min - 0.80 * y_pad
         posterior_peaks: list[float] = []
         prior_peaks: list[float] = []
         curves: dict[
@@ -162,8 +169,8 @@ def plot_marginals(
 
             posterior_density = gaussian_kde(posterior[:, idx])(y)
             posterior_peaks.append(float(np.max(posterior_density)))
-            mode = float(y[np.argmax(posterior_density)])
-            curves[idx] = (y, posterior_density, prior_density, mode)
+            posterior_mean = float(np.mean(posterior[:, idx]))
+            curves[idx] = (y, posterior_density, prior_density, posterior_mean)
 
         max_posterior_peak = max(posterior_peaks, default=1.0)
         max_prior_peak = max(prior_peaks, default=max_posterior_peak)
@@ -175,7 +182,7 @@ def plot_marginals(
         for xpos, idx in enumerate(indices):
             name = param_names[idx]
             lower, upper = specs.bounds.by_name[name]
-            y, posterior_density, prior_density, mode = curves[idx]
+            y, posterior_density, prior_density, posterior_mean = curves[idx]
 
             if prior_density is not None:
                 ax.fill_betweenx(
@@ -216,16 +223,16 @@ def plot_marginals(
 
             ax.text(
                 xpos,
-                label_y,
-                f"{mode:.3f}",
-                color=color_posterior,
+                lower - 0.25 * y_pad,
+                _format_range_value(posterior_mean, lower, upper),
+                color="tab:red",
                 fontweight="bold",
                 ha="center",
                 va="top",
             )
 
         ax.set_xlim(-prior_width - 0.25, len(indices) - 1 + posterior_width + 0.25)
-        ax.set_ylim(label_y - 0.6 * y_pad, y_max + y_pad)
+        ax.set_ylim(y_min - y_pad, y_max + y_pad)
         ax.set_xticks(range(len(indices)))
         ax.set_xticklabels(
             [_wrap_label(tick_labels[i]) for i in indices],
@@ -244,7 +251,6 @@ def plot_marginals(
             ncol=3,
             frameon=False,
         )
-
     if fn_out is not None:
         plt.savefig(fn_out, bbox_inches="tight")
         plt.close(fig)
@@ -532,6 +538,7 @@ def plot_corner(
         figsize=(figsize * n_dim, figsize * n_dim),
         gridspec_kw={"wspace": 0.05, "hspace": 0.05},
     )
+    axes = np.asarray(axes, dtype=object).reshape(n_dim, n_dim)
 
     limits = [(samples[:, i].min(), samples[:, i].max()) for i in range(n_dim)]
 

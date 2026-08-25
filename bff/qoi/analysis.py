@@ -1,165 +1,191 @@
-import gc
+"""Analyze reference and sampled systems with the same execution path."""
+
+from __future__ import annotations
+
 import multiprocessing as mp
+import os
 import warnings
+from concurrent.futures import ProcessPoolExecutor
+from contextlib import contextmanager, nullcontext
 from functools import partial
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterator, Mapping, Sequence
 
 import MDAnalysis as mda
 
-from ..domain.sample import TrajectorySet
 from ..io.logs import Logger
 from ..io.progress import iter_progress
 from ..tools import _normalized_dimensions
 from ..topology import prepare_universe
 from .data import QoI
-from .routines import RuntimeRoutine, run_analysis_routines
+from .routines import AnalysisRoutineConfig, run_analysis_routine
 
-PathLike = str | Path
-
-
-warnings.filterwarnings(
-    "ignore", category=DeprecationWarning, module="MDAnalysis.coordinates.DCD"
-)
-warnings.filterwarnings(
-    "ignore", category=UserWarning, module="MDAnalysis.coordinates.XDR"
-)
+AnalysisTask = tuple[str, dict[str, dict[str, Any]]]
+AnalysisResults = dict[str, dict[str, dict[str, QoI]]]
 
 
-def _cleanup_universe(universe: mda.Universe | None) -> None:
-    """Release trajectory resources after one analysis task."""
-    if universe is not None:
-        trajectory = getattr(universe, "trajectory", None)
-        if trajectory is not None:
-            close = getattr(trajectory, "close", None)
-            if callable(close):
-                close()
-        raw_trajectory = getattr(universe, "_trajectory", None)
-        if raw_trajectory is not None and raw_trajectory is not trajectory:
-            close = getattr(raw_trajectory, "close", None)
-            if callable(close):
-                close()
-
-
-def _prepare_universe(
-    fn_topol: PathLike,
-    fn_coord: PathLike,
-    fn_trj: PathLike,
+@contextmanager
+def _trajectory_context(
+    inputs: Mapping[str, Any],
     *,
+    system_id: str,
+    sample_id: str,
     start: int,
     stop: int | None,
     step: int,
     in_memory: bool,
-) -> mda.Universe:
-    """Prepare one MDAnalysis universe for trajectory analysis."""
-    universe = prepare_universe(str(fn_topol), str(fn_coord), dt=1)
-    default_dimensions = _normalized_dimensions(universe.dimensions)
-    universe.load_new(str(fn_trj))
-    universe._bff_default_dimensions = default_dimensions
-    if in_memory:
-        universe.transfer_to_memory(start=start, stop=stop, step=step)
-        if default_dimensions is not None:
-            for ts in universe.trajectory:
-                if ts.dimensions is None:
-                    ts.dimensions = default_dimensions
-    return universe
+) -> Iterator[tuple[mda.Universe, tuple[int, int | None, int]]]:
+    """Load, prepare, and close one system trajectory."""
+    paths: dict[str, Path] = {}
+    for role in ("topology", "coordinates", "trajectory"):
+        value = inputs.get(role)
+        if not isinstance(value, Path):
+            raise ValueError(
+                f"System {system_id!r}, sample {sample_id!r}, input role "
+                f"{role!r}: expected one path, got {value!r}."
+            )
+        paths[role] = value
+
+    universe = prepare_universe(
+        str(paths["topology"]),
+        str(paths["coordinates"]),
+        dt=1,
+    )
+    try:
+        default_dimensions = _normalized_dimensions(universe.dimensions)
+        trajectory = paths["trajectory"]
+        universe.load_new(str(trajectory))
+        universe._bff_default_dimensions = default_dimensions
+
+        effective_stop = stop
+        if stop is None:
+            frame_count = len(universe.trajectory)
+            if start >= frame_count:
+                raise ValueError(
+                    f"System {system_id!r}, sample {sample_id!r}: frame start "
+                    f"{start} is outside trajectory {trajectory}, which reports "
+                    f"{frame_count} frames."
+                )
+            last_frame = start + ((frame_count - 1 - start) // step) * step
+            requested_last_frame = last_frame
+            while last_frame >= start:
+                try:
+                    universe.trajectory[last_frame]
+                    break
+                except (EOFError, OSError):
+                    last_frame -= step
+            if last_frame < start:
+                raise OSError(
+                    f"System {system_id!r}, sample {sample_id!r}: no readable "
+                    f"frames remain in trajectory {trajectory} from frame {start}."
+                )
+            effective_stop = last_frame + 1
+            if last_frame < requested_last_frame:
+                warnings.warn(
+                    f"System {system_id!r}, sample {sample_id!r}: ignoring an "
+                    f"unreadable trailing record in trajectory {trajectory}; "
+                    f"using all readable frames through frame {last_frame}.",
+                    RuntimeWarning,
+                    stacklevel=3,
+                )
+
+        frames = (start, effective_stop, step)
+        if in_memory:
+            universe.transfer_to_memory(start=start, stop=effective_stop, step=step)
+            if default_dimensions is not None:
+                for timestep in universe.trajectory:
+                    if timestep.dimensions is None:
+                        timestep.dimensions = default_dimensions
+            frames = (0, None, 1)
+        yield universe, frames
+    finally:
+        close = getattr(universe.trajectory, "close", None)
+        if callable(close):
+            close()
 
 
-def analyze_trajectory_set(
-    trajectory_set: TrajectorySet,
+def analyze_sample(
+    task: AnalysisTask,
     *,
-    routines_by_system: Sequence[tuple[RuntimeRoutine, ...]],
-    start: int = 0,
-    stop: int | None = None,
-    step: int = 1,
-    in_memory: bool = False,
-) -> list[dict[str, QoI]]:
-    """Analyze all trajectories that belong to one sample or reference set."""
-    if len(routines_by_system) != len(trajectory_set.fn_trj):
-        raise ValueError(
-            "Analysis routine count must match the number of trajectories in the set."
-        )
+    routines_by_system: Mapping[str, Sequence[AnalysisRoutineConfig]],
+    start: int,
+    stop: int | None,
+    step: int,
+    in_memory: bool,
+) -> tuple[str, dict[str, dict[str, QoI]]]:
+    """Analyze every configured system belonging to one sample or reference."""
+    sample_id, systems = task
+    sample_results: dict[str, dict[str, QoI]] = {}
 
-    results: list[dict[str, QoI]] = []
-    routine_start = 0 if in_memory else start
-    routine_stop = None if in_memory else stop
-    routine_step = 1 if in_memory else step
-    for fn_topol, fn_coord, fn_trj, routines in zip(
-        trajectory_set.fn_topol,
-        trajectory_set.fn_coord,
-        trajectory_set.fn_trj,
-        routines_by_system,
-    ):
-        universe = None
-        try:
-            universe = _prepare_universe(
-                fn_topol,
-                fn_coord,
-                fn_trj,
+    for system_id, inputs in systems.items():
+        routines = tuple(routines_by_system[system_id])
+        trajectory_context = (
+            _trajectory_context(
+                inputs,
+                system_id=system_id,
+                sample_id=sample_id,
                 start=start,
                 stop=stop,
                 step=step,
                 in_memory=in_memory,
             )
-            result = run_analysis_routines(
-                routines,
-                universe=universe,
-                start=routine_start,
-                stop=routine_stop,
-                step=routine_step,
-            )
-            if not result:
-                raise ValueError("Analysis routine returned no QoI outputs.")
-            results.append(result)
-        finally:
-            _cleanup_universe(universe)
-    return results
-
-
-def _iter_analyzed_sets(
-    trajectory_sets: Sequence[TrajectorySet],
-    *,
-    analyze_one: Any,
-    workers: int,
-    maxtasksperchild: int,
-) -> Iterable[list[dict[str, QoI]]]:
-    """Yield analyzed trajectory sets from the serial or multiprocessing path."""
-    if workers <= 1:
-        yield from (analyze_one(trajectory_set) for trajectory_set in trajectory_sets)
-        return
-
-    context = mp.get_context()
-    with context.Pool(workers, maxtasksperchild=maxtasksperchild) as pool:
-        yield from pool.imap(
-            analyze_one,
-            trajectory_sets,
-            chunksize=1,
+            if any(routine.uses_trajectory for routine in routines)
+            else nullcontext((None, (start, stop, step)))
         )
+        with trajectory_context as (universe, frames):
+            sample_results[system_id] = {
+                routine.name: run_analysis_routine(
+                    routine,
+                    universe=universe,
+                    inputs=inputs,
+                    system_id=system_id,
+                    sample_id=sample_id,
+                    start=frames[0],
+                    stop=frames[1],
+                    step=frames[2],
+                )
+                for routine in routines
+            }
+
+    return sample_id, sample_results
 
 
-def analyze_trajectory_sets(
-    trajectory_sets: Sequence[TrajectorySet],
+def analyze_samples(
+    tasks: Sequence[AnalysisTask],
     *,
-    routines_by_system: Sequence[tuple[RuntimeRoutine, ...]],
-    start: int = 0,
-    stop: int | None = None,
-    step: int = 1,
-    workers: int = 1,
-    progress_stride: int = 10,
-    progress_label: str = "Trajectory QoI",
-    logger: Logger | None = None,
-    in_memory: bool = False,
-    gc_collect: bool = False,
-    maxtasksperchild: int = 100,
-) -> list[list[dict[str, QoI]]]:
-    """Analyze multiple trajectory sets with one shared routine setup."""
-    logger = logger or Logger(progress_label)
-    n_sets = len(trajectory_sets)
-    if n_sets == 0:
-        return []
+    routines_by_system: Mapping[str, Sequence[AnalysisRoutineConfig]],
+    start: int,
+    stop: int | None,
+    step: int,
+    workers: int,
+    progress_stride: int,
+    progress_label: str,
+    logger: Logger,
+    in_memory: bool,
+) -> AnalysisResults:
+    """Analyze complete samples, optionally in parallel."""
+    if workers == 0 or workers < -1:
+        raise ValueError("workers must be a positive integer or -1.")
+    if not tasks:
+        return {}
 
+    if workers == -1:
+        worker_count = (
+            len(os.sched_getaffinity(0))
+            if hasattr(os, "sched_getaffinity")
+            else mp.cpu_count()
+        )
+    else:
+        worker_count = workers
+    worker_count = min(worker_count, len(tasks))
+    logger.status(
+        progress_label,
+        "in progress...",
+        detail=f"{len(tasks)} sample(s), {worker_count} worker(s)",
+        level=1,
+    )
     analyze_one = partial(
-        analyze_trajectory_set,
+        analyze_sample,
         routines_by_system=routines_by_system,
         start=start,
         stop=stop,
@@ -167,28 +193,27 @@ def analyze_trajectory_sets(
         in_memory=in_memory,
     )
 
-    workers = mp.cpu_count() if workers == -1 else workers
-    completed_sets = _iter_analyzed_sets(
-        trajectory_sets,
-        analyze_one=analyze_one,
-        workers=workers,
-        maxtasksperchild=maxtasksperchild,
+    pool_context = (
+        nullcontext(None)
+        if worker_count == 1
+        else ProcessPoolExecutor(
+            max_workers=worker_count,
+            mp_context=mp.get_context("spawn"),
+        )
     )
-    qoi = []
-    for completed, result in enumerate(
-        iter_progress(
-            completed_sets,
-            total=n_sets,
-            stride=progress_stride,
-            logger=logger,
-            label=progress_label,
-        ),
-        start=1,
-    ):
-        qoi.append(result)
-        if gc_collect and (
-            completed % progress_stride == 0
-            or completed == n_sets
-        ):
-            gc.collect()
-    return qoi
+    with pool_context as executor:
+        analyzed = (
+            map(analyze_one, tasks)
+            if executor is None
+            else executor.map(analyze_one, tasks, chunksize=1)
+        )
+        return {
+            sample_id: sample_results
+            for sample_id, sample_results in iter_progress(
+                analyzed,
+                total=len(tasks),
+                stride=progress_stride,
+                logger=logger,
+                label=progress_label,
+            )
+        }

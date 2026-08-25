@@ -1,6 +1,65 @@
 # Changelog
 
-## Unreleased
+## `0.4.0` - 2026-08-24
+
+### Breaking Changes
+
+- Replaced positional system identities and inferred inputs with stable
+  `system_id` values, fixed stage-directory contracts, and explicit sample
+  metadata.
+- Unified snapshot extraction and CP2K evaluation as `label-snapshots`, using
+  explicit topology, trajectory, MD-input, single-point-input, and per-element
+  isolated-atom-input paths. BFF no longer generates CP2K inputs.
+- Replaced positional analysis pairing with ID-based pairing and moved QoI
+  routines to a selection-driven top-level analysis configuration.
+- Simplified QoI execution around complete sample tasks. Custom routines now
+  infer file-based execution from `inputs`; `loader`, `gc_collect`, and
+  `maxtasksperchild` configuration keys were removed.
+- Renamed the downstream stages to `sample-parameters`, `build-qoi-datasets`,
+  and `fit-lgp` without aliases.
+- Standardized learning on one output root with fixed `outputs/` and `plots/`
+  children, explicit `resume`/`overwrite`, and strict checkpoint validation.
+
+### Added
+
+- Added repository-level `AGENTS.md` guidance for AI-assisted development,
+  including pipeline contracts, external-tool boundaries, example hygiene, and
+  validation expectations.
+- Added stable, virtual-site-free reference topology and coordinate artifacts
+  to each built system for external reference-trajectory workflows.
+- Added `label-results.yaml` manifests with input hashes, selected trajectory
+  frames, train/test splits, artifact paths, and isolated-atom results.
+- Added validation directly from a learned posterior, including empirical,
+  normal, uniform, and KDE draws and an optional posterior-mean sample.
+
+### Changed
+
+- Parallelized QoI analysis by complete training sample, processing all systems
+  for one sample sequentially and using the same path for reference data.
+- Updated the examples to the numbered stage contract and made the two
+  self-contained notebooks select CUDA when available and otherwise use CPU.
+- Moved `pytest` from the default installation to the `dev` extra.
+- Copied the authoritative parameter specifications into learning `outputs/`
+  so posterior validation and resumed runs retain their exact contract.
+
+### Fixed
+
+- Corrected RDF normalization for changing and triclinic periodic boxes and
+  made hydrogen-bond atom groups explicit MDAnalysis selections.
+- Made raw QoI JSON lossless, progress output stream-aware, model cache reuse
+  fingerprinted, and learning plots mandatory.
+- Cached invariant hydrogen-bond topology and labels across trajectory frames,
+  and removed a recursive metadata structure that prevented RDF datasets from
+  being serialized.
+- Prevented duplicate labeled frames and canonicalized multi-letter element
+  symbols in generated and loaded metadata.
+- Rewrote staged Colvars MDP paths relative to the actual GROMACS working
+  directory so biased sampling and validation jobs find their copied inputs.
+- Grouped per-sample GROMACS logs, job configs, submission scripts, scheduler
+  output, and auxiliary runtime files under `outputs/<sample_id>/`.
+
+See the [pipeline migration guide](docs/migration.md) for required config and
+artifact changes.
 
 ## `0.3.0` - 2026-06-11
 

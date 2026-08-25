@@ -1,24 +1,12 @@
 # Generated stage outputs
 01-build/
-02-assets/
-03-reference/
+02-reference-snapshots/
+02-reference-md/
 03-sample/
-04-analyze/
-05-fit/
+04-qoi/
+05-lgp/
 06-learn/
 07-validate/
-
-# Legacy generated stage outputs
-01-build-colvars/
-01-build-plumed/
-02-evaluate-run-local/
-02-evaluate-run-slurm/
-02-evaluate-import/
-03-sample-local/
-03-sample-slurm/
-
-# Legacy generated outputs kept out of version control
-configs/*/
 
 # Notebook exports
 notebooks/*.png

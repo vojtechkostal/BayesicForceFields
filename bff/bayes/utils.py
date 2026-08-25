@@ -14,13 +14,23 @@ def smape(y_true: torch.Tensor, y_pred: torch.Tensor) -> float:
 
     y_true = check_tensor(y_true, device=device)
     y_pred = check_tensor(y_pred, device=device)
+    if y_true.ndim == 1:
+        y_true = y_true.unsqueeze(-1)
+    if y_pred.ndim == 1:
+        y_pred = y_pred.unsqueeze(-1)
+    if y_true.shape != y_pred.shape:
+        raise ValueError(
+            f"SMAPE inputs must have matching shapes, got "
+            f"{tuple(y_true.shape)} and {tuple(y_pred.shape)}."
+        )
 
     abs_diff = torch.sum(torch.abs(y_true - y_pred), dim=1)
     y_true_abs = torch.sum(torch.abs(y_true), dim=1)
     y_pred_abs = torch.sum(torch.abs(y_pred), dim=1)
     norm = y_true_abs + y_pred_abs
 
-    return float(torch.mean(abs_diff / norm).item())
+    ratios = torch.where(norm > 0, abs_diff / norm, torch.zeros_like(norm))
+    return float(torch.mean(ratios).item())
 
 
 def initialize_walkers(
@@ -126,6 +136,9 @@ def train_test_split(
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Split the dataset into training and testing sets."""
 
+    device = X.device if isinstance(X, torch.Tensor) else "cpu"
+    X = check_tensor(X, device=device)
+    y = check_tensor(y, device=device)
     n = len(X)
     if n != len(y):
         raise ValueError("X and y must have the same length.")
@@ -134,8 +147,8 @@ def train_test_split(
     if n < 2:
         raise ValueError("X and y must have at least 2 samples.")
 
-    indices = torch.randperm(n)
-    test_size = int(n * test_fraction)
+    indices = torch.randperm(n, device=X.device)
+    test_size = min(max(int(n * test_fraction), 1), n - 1)
     idx_train = indices[test_size:]
     idx_test = indices[:test_size]
     return X[idx_train], X[idx_test], y[idx_train], y[idx_test]

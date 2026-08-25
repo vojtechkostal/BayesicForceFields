@@ -6,6 +6,8 @@ import numpy as np
 import torch
 from torch.distributions import Distribution, Normal, Uniform
 
+from ..io.utils import atomic_torch_save
+
 ArrayLike = Union[np.ndarray, torch.Tensor]
 PathLike = Union[str, Path]
 
@@ -91,10 +93,17 @@ class Priors:
         ]
         return torch.stack(log_probs, dim=1).sum(dim=1)
 
-    def write(self, fn_out: PathLike) -> None:
+    def write(
+        self,
+        fn_out: PathLike,
+        *,
+        metadata: Optional[dict] = None,
+    ) -> None:
         fn_out = Path(fn_out)
         data = {"priors": [prior.to_dict() for prior in self.items]}
-        torch.save(data, fn_out)
+        if metadata is not None:
+            data["metadata"] = dict(metadata)
+        atomic_torch_save(data, fn_out)
 
     @classmethod
     def load(cls, fn_in: PathLike) -> "Priors":

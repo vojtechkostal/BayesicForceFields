@@ -73,32 +73,40 @@ BayesicForceFields/
 
 | Command | Main Input | Responsibility | Main Output |
 | --- | --- | --- | --- |
-| `bff build` | GROMACS topologies, coordinate templates, and MDP files | Build, equilibrate, and seed systems. | `build-manifest.yaml` and seeded trajectories |
-| `bff prepare-assets` | Build manifest | Package reusable FFMD inputs and stage CP2K snapshot jobs. | `ffmd/` and `reference/` asset trees |
-| `bff evaluate-snapshots` | Staged reference assets | Run CP2K snapshot calculations and collect reference structures. | `train.extxyz`, `valid.extxyz`, and optional isolated-atom energies |
-| `bff sample` | FFMD assets, parameter bounds, and charge constraints | Draw parameter vectors and run sampled GROMACS campaigns. | `specs.yaml`, `samples.yaml`, and sampled trajectories |
-| `bff analyze` | Sampled and reference trajectories | Compute matching quantities of interest. | One serialized `QoIDataset` per quantity of interest |
-| `bff fit` | QoI datasets | Train local Gaussian-process surrogate committees. | One `.lgp` model per quantity of interest |
-| `bff learn` | Surrogate models and `specs.yaml` | Assign effective observation counts and run posterior learning with the Torch-native MCMC stack. | Posterior chain, optional checkpoint and priors, parameter marginals, QoI-attributed marginals, and corner plot |
-| `bff validate` | Selected parameter samples, `specs.yaml`, and FFMD assets | Rerun chosen posterior samples as an independent campaign. | Validation trajectories and energies |
+| `bff build` | GROMACS topologies, coordinate templates, and MDP files | Build, equilibrate, seed, and remove virtual sites for reference use. | Self-contained `systems/<system_id>/` directories with a stable `reference/` pair |
+| `bff label-snapshots` | Trajectory, topology, and user CP2K inputs | Extract frames, run CP2K labels, and collect MLIP datasets. | `train.extxyz`, `test.extxyz`, and optional isolated-atom energies |
+| `bff sample-parameters` | FFMD assets, parameter bounds, and charge constraints | Draw parameter vectors and run sampled GROMACS campaigns. | `specs.yaml`, `samples.yaml`, and sampled trajectories |
+| `bff build-qoi-datasets` | Sampled and reference trajectories | Compute matching quantities of interest. | One serialized `QoIDataset` per quantity of interest |
+| `bff fit-lgp` | QoI datasets | Train fingerprinted local Gaussian-process surrogate committees. | `fit-lgp.log` and `models/<routine>.lgp` |
+| `bff learn` | Surrogate models and `specs.yaml` | Assign effective observations and run validated posterior learning. | Fixed `outputs/` artifacts and mandatory `plots/` |
+| `bff validate` | A learned posterior or explicit parameter samples, plus build systems | Draw or load parameters and rerun them as an independent campaign. | Campaign-local specs, realized samples, trajectories, and energies |
 
 ## Core Artifacts
 
 | Artifact | Meaning |
 | --- | --- |
-| `build-manifest.yaml` | Handoff from system building to asset preparation. |
+| Build system directory | Fixed-name GROMACS files, metadata-only `system.yaml`, and virtual-site-free `reference/` topology and coordinates. |
+| Label system directory | CP2K run directories, train/test EXTXYZ datasets, and optional isolated-atom energies. |
 | `specs.yaml` | Named parameter bounds and reconstructable hierarchical charge constraints. |
-| `samples.yaml` | Explicit sampled force-field parameter vectors. |
-| `qoi-<name>.pt` | Training-ready `QoIDataset` with simulation outputs and reference targets. |
+| `samples.yaml` | Explicit sampled force-field parameter vectors and trajectory records. |
+| `samples/<sample_id>/` | Per-sample job config, submission script, scheduler output, and one scientific-output directory per system. |
+| `outputs/<sample_id>/` | Live job logs and auxiliary runtime files; deleted after collection when cleanup is enabled. |
+| `qoi/<name>.pt` | Training-ready `QoIDataset` with ID-paired outputs and reference targets. |
 | `<name>.lgp` | Trained local Gaussian-process committee for one quantity of interest. |
-| `posterior.pt` | Learned posterior chain. |
-| `mcmc-checkpoint.pt` | Restartable MCMC state and convergence information. |
+| `outputs/specs.yaml` | Unchanged, portable copy of the learned parameter specification. |
+| `outputs/posterior.pt` | Learned posterior chain and compatibility metadata. |
+| `outputs/mcmc.ckpt` | Restartable MCMC state and compatibility fingerprints. |
 | `qoi-marginals.pdf` | Posterior parameter marginals colored by local QoI responsibility. |
 
 ## Design Choices
 
-- **Files are interfaces.** Workflow boundaries use inspectable artifacts so
+- **Stage directories are interfaces.** Fixed layouts and local metadata make
+  workflow handoffs visible without duplicating deterministic paths. Expensive
+  stages remain independently runnable and archivable.
+- **Files are inspectable.** Workflow boundaries use inspectable artifacts so
   expensive simulation stages can be resumed, archived, or replaced.
+- **IDs are identities.** System matching is keyed by explicit file-safe IDs;
+  display names and YAML order never determine pairing.
 - **Domain models are separate from orchestration.** Constraint reconstruction,
   trajectory records, and QoI datasets remain usable from notebooks and Python
   code without invoking the CLI.

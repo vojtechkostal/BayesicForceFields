@@ -22,8 +22,8 @@ def test_write_cp2k_snapshot_extxyz_converts_cp2k_units(tmp_path: Path) -> None:
     run_dir = tmp_path / "snapshot-0001"
     run_dir.mkdir()
 
-    _write_xyz(run_dir / "pos.xyz", "H", (0.0, 0.0, 0.0))
-    _write_xyz(run_dir / "md-pos-1.xyz", "H", (0.1, 0.2, 0.3))
+    _write_xyz(run_dir / "pos.xyz", "CA", (0.0, 0.0, 0.0))
+    _write_xyz(run_dir / "md-pos-1.xyz", "CA", (0.1, 0.2, 0.3))
     (run_dir / "sp.out").write_text(
         " ENERGY| Total FORCE_EVAL ( QS ) energy [a.u.]: -1.500000\n"
         " FORCES| 1 1.000000 2.000000 3.000000 0.000000\n"
@@ -33,7 +33,7 @@ def test_write_cp2k_snapshot_extxyz_converts_cp2k_units(tmp_path: Path) -> None:
     frame = read_extxyz_frame(fn_extxyz)
 
     assert frame["source"] == "sp"
-    assert frame["atoms"] == ["H"]
+    assert frame["atoms"] == ["Ca"]
     assert frame["positions"][0] == pytest.approx([0.1, 0.2, 0.3])
     assert frame["energy"] == pytest.approx(-1.5 * HARTREE_TO_EV)
     assert frame["forces"][0] == pytest.approx(

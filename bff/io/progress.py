@@ -39,7 +39,8 @@ def iter_progress(
     for i, item in enumerate(iterable, start=1):
         yield item
 
-        if (i % stride != 0) and (i != total):
+        # The completion summary is the sole final status on every stream.
+        if i == total or i % stride != 0:
             continue
 
         elapsed_time = time.time() - start_time

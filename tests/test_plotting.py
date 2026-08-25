@@ -4,7 +4,7 @@ from matplotlib.legend import Legend
 from bff.bayes.priors import Priors
 from bff.bayes.results import PosteriorResults
 from bff.domain.specs import Specs
-from bff.plotting import plot_corner, plot_qoi_marginals
+from bff.plotting import plot_corner, plot_marginals, plot_qoi_marginals
 
 
 def test_plot_corner_includes_reconstructed_implicit_charges(
@@ -125,4 +125,42 @@ def test_plot_qoi_marginals_stacks_qoi_profiles_without_annotations(
         ["prior", "posterior", "bounds"],
         ["rdf", "density"],
     ]
+    plotting.plt.close(figure)
+
+
+def test_plot_marginals_annotates_posterior_mean(monkeypatch) -> None:
+    specs = Specs(
+        {"bounds": {"sigma A": [0.0, 2.0]}, "charge_constraints": []}
+    )
+    values = np.concatenate([np.linspace(0.1, 0.3, 36), np.full(4, 1.8)])
+    results = PosteriorResults(
+        values.reshape(10, 4, 1),
+        priors=Priors.from_bounds([[0.0, 2.0]], names=["sigma A"]),
+        sample_labels=["sigma A"],
+        specs=specs,
+    )
+    results.prepare_samples(discard=0, thin=1, strip_outliers=False)
+
+    import bff.plotting as plotting
+
+    subplots = plotting.plt.subplots
+    plotted = []
+
+    def record_subplots(*args, **kwargs):
+        figure, axes = subplots(*args, **kwargs)
+        plotted.append((figure, axes))
+        return figure, axes
+
+    monkeypatch.setattr(plotting.plt, "subplots", record_subplots)
+    monkeypatch.setattr(plotting.plt, "show", lambda: None)
+    plot_marginals(results, specs)
+
+    figure, axes = plotted[0]
+    ax = np.atleast_1d(axes)[0]
+    assert [text.get_text() for text in ax.texts] == [f"{values.mean():.3f}"]
+    annotation = ax.texts[0]
+    assert annotation.get_position()[0] == 0
+    assert ax.get_ylim()[0] < annotation.get_position()[1] < 0.0
+    assert annotation.get_color() == "tab:red"
+    assert annotation.get_fontweight() == "bold"
     plotting.plt.close(figure)

@@ -1,5 +1,8 @@
+import hashlib
 import json
+import os
 import tarfile
+import tempfile
 from pathlib import Path
 from typing import Union
 
@@ -44,31 +47,19 @@ def load_yaml(fn: PathLike) -> dict:
 
 
 class NumpyArrayEncoder(json.JSONEncoder):
-    """JSON encoder for numpy arrays, scalars, and floats with 3 decimals."""
+    """Lossless JSON encoder for numpy arrays and scalar values."""
 
     def default(self, obj):
         if isinstance(obj, np.ndarray):
-            # Convert to nested lists, rounding elementwise
-            return self._round_nested(obj.tolist())
+            return obj.tolist()
         elif isinstance(obj, (np.generic, np.number)):
-            return round(obj.item(), 3)
-        elif isinstance(obj, float):
-            return round(obj, 3)
+            return obj.item()
         elif hasattr(obj, '__dict__'):
             return obj.__dict__
         return super().default(obj)
 
-    def _round_nested(self, obj):
-        """Recursively round floats in nested lists/structs."""
-        if isinstance(obj, list):
-            return [self._round_nested(x) for x in obj]
-        elif isinstance(obj, float):
-            return round(obj, 3)
-        return obj
-
-
 def save_json(data: dict, fn: PathLike) -> None:
-    """Save a dictionary as JSON with floats rounded to 3 decimals."""
+    """Save a dictionary as JSON without changing numeric precision."""
     fn = str(fn) if isinstance(fn, Path) else fn
     with open(fn, "w") as f:
         json.dump(data, f, cls=NumpyArrayEncoder)
@@ -80,6 +71,44 @@ def load_json(fn: PathLike) -> dict:
     with open(fn, "r") as f:
         file = json.load(f)
     return file
+
+
+def file_sha256(filename: PathLike) -> str:
+    """Return the SHA-256 hash of a file without loading it all at once."""
+    digest = hashlib.sha256()
+    with Path(filename).open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def mapping_fingerprint(data: object) -> str:
+    """Return a stable SHA-256 fingerprint for JSON-compatible metadata."""
+    encoded = json.dumps(
+        _to_json_compatible(data),
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def atomic_torch_save(data: object, filename: PathLike) -> None:
+    """Atomically replace a Torch artifact in its destination directory."""
+    import torch
+
+    path = Path(filename).resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = tempfile.NamedTemporaryFile(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, delete=False
+    )
+    temporary = Path(handle.name)
+    handle.close()
+    try:
+        torch.save(data, temporary)
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _to_json_compatible(data: object) -> object:
@@ -139,65 +168,3 @@ def compress_results(source_dir: PathLike) -> None:
             if file_path.suffix in extensions:
                 arcname = file_path.relative_to(source_path.parent)
                 tar.add(file_path, arcname=str(arcname))
-
-
-def extract_tarball(fn: PathLike) -> None:
-    """Extract a tarball file into a directory."""
-    fn = Path(fn)
-    with tarfile.open(fn, "r:gz") as tar:
-        tar.extractall(path=fn.parent)
-
-
-def prepare_path(fn: PathLike) -> Path:
-    """Prepare a directory from a tarball or validate its existence."""
-    if fn.suffix == ".gz":
-        train_dir = fn.parent / fn.name.replace(".tar.gz", "")
-        if not train_dir.exists():
-            extract_tarball(fn)
-        return train_dir
-    elif fn.is_dir():
-        return fn
-    else:
-        raise ValueError(f"Unknown file type: {fn}")
-
-
-def extract_train_dir(
-    train_dir: PathLike
-) -> tuple[dict | None, list[dict], dict | None]:
-
-    """Extract training directory contents.
-
-    Parameters
-    ----------
-    train_dir : Path
-        Path to the training directory.
-
-    Returns
-    -------
-    tuple
-        A tuple containing:
-        - specs (dict | None): Specifications loaded from specs.yaml.
-        - systems (list[dict]): Staged system records from samples.yaml.
-        - samples (dict | None): Sample records loaded from samples.yaml.
-    """
-    if not train_dir.is_dir():
-        raise ValueError(f"Provided train_dir '{train_dir}' is not a valid directory.")
-
-    fn_specs = train_dir / "specs.yaml"
-    specs = load_yaml(fn_specs) if fn_specs.exists() else None
-
-    fn_samples = train_dir / "samples.yaml"
-    campaign = load_yaml(fn_samples) if fn_samples.exists() else None
-    systems = None if campaign is None else campaign.get("systems")
-    samples = None if campaign is None else campaign.get("samples")
-
-    if not systems:
-        raise ValueError(f"No staged simulation systems found in {train_dir}.")
-
-    fn_topol = [train_dir / system["topology"] for system in systems]
-    fn_coord = [train_dir / system["coordinates"] for system in systems]
-
-    if not all(path.exists() for path in fn_topol + fn_coord):
-        raise ValueError(f"Missing staged topology or coordinate files in {train_dir}.")
-
-    return specs, list(systems), samples

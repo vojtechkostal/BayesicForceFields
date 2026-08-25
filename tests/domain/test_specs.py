@@ -135,6 +135,15 @@ def test_charge_constraint_accepts_numpy_and_torch_inputs() -> None:
         constraint(np.zeros((1, 3)))
 
 
+def test_charge_constraint_describes_bound_violations() -> None:
+    constraint = ChargeConstraint(_spec_data())
+
+    message = constraint.describe_violations([[0.8, 1.0]])
+
+    assert "charge B=-0.8" in message
+    assert "below" in message
+
+
 def test_random_params_generator_respects_bounds_and_constraint() -> None:
     def constraint(x: np.ndarray) -> np.ndarray:
         return x[:, 0] > 0.0

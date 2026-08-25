@@ -7,6 +7,7 @@ import numpy as np
 import torch
 
 from ..io.logs import Logger, print_progress_mcmc
+from ..io.utils import mapping_fingerprint
 from ..mcmc.proposal import AdaptiveGaussianProposal
 from ..mcmc.sampler import Sampler
 from ..qoi.data import QoIDataset
@@ -192,14 +193,15 @@ class LearningProblem:
         progress_stride: int = 100,
         n_walkers: Optional[int] = None,
         fn_posterior: PathLike = "./posterior.pt",
-        fn_checkpoint: Optional[PathLike] = "./mcmc-checkpoint.pt",
-        fn_priors: Optional[PathLike] = "./priors.pt",
-        restart: bool = True,
+        fn_checkpoint: Optional[PathLike] = "./mcmc.ckpt",
+        fn_priors: Optional[PathLike] = "./prior.pt",
+        resume: bool = False,
         device: str = "cuda",
         logger: Optional[Logger] = None,
         rhat_tol: float = 1.01,
         ess_min: int = 100,
         include_implicit_charge: bool = False,
+        compatibility: Optional[dict] = None,
     ) -> PosteriorResults:
         """Run posterior sampling for this learning problem."""
         owns_logger = logger is None
@@ -246,8 +248,39 @@ class LearningProblem:
         if fn_checkpoint is None:
             fn_checkpoint = _default_checkpoint_path(fn_posterior)
 
+        specs = getattr(self.constraint, "specs", None)
+        specifications_fingerprint = (
+            None
+            if specs is None
+            else mapping_fingerprint(specs.to_dict())
+        )
+        checkpoint_compatibility = dict(compatibility or {})
+        checkpoint_compatibility.update(
+            {
+                "specifications_fingerprint": specifications_fingerprint,
+                "n_params": self.n_params,
+                "n_dimensions": len(priors),
+                "n_walkers": n_walkers,
+                "warmup": warmup,
+                "thin": thin,
+                "proposal": {
+                    "type": "adaptive_gaussian",
+                    "adapt": proposal.do_adapt,
+                    "adapt_start": proposal.adapt_start,
+                    "adapt_interval": proposal.adapt_interval,
+                    "target_acceptance": proposal.target_acceptance,
+                },
+                "priors_disttype": priors_disttype,
+            }
+        )
+
         if fn_priors is not None:
-            priors.write(fn_priors)
+            priors.write(
+                fn_priors,
+                metadata={
+                    "specifications_fingerprint": specifications_fingerprint,
+                },
+            )
 
         print_progress_mcmc(
             sampler,
@@ -257,14 +290,43 @@ class LearningProblem:
             thin=thin,
             progress_stride=progress_stride,
             logger=logger,
-            restart=restart,
+            restart=resume,
             fn_checkpoint=fn_checkpoint,
             rhat_tol=rhat_tol,
             ess_min=ess_min,
+            checkpoint_compatibility=checkpoint_compatibility,
         )
 
-        sampler.write_posterior(fn_posterior)
-        specs = getattr(self.constraint, "specs", None)
+        sampler.write_posterior(
+            fn_posterior,
+            metadata={
+                "n_params": self.n_params,
+                "qoi_names": self.qoi_names,
+                "parameter_labels": list(self.parameter_names or []),
+                "nuisance_labels": list(self.nuisance_names),
+                "sample_labels": list(priors.names),
+                "specifications_fingerprint": specifications_fingerprint,
+                "model_fingerprints": checkpoint_compatibility.get(
+                    "model_fingerprints", {}
+                ),
+                "effective_observations": {
+                    qoi: float(model.n_eff) for qoi, model in self.models.items()
+                },
+                "mcmc": {
+                    "priors_disttype": priors_disttype,
+                    "total_steps": total_steps,
+                    "warmup": warmup,
+                    "thin": thin,
+                    "n_walkers": n_walkers,
+                    "rhat_tol": rhat_tol,
+                    "ess_min": ess_min,
+                    "converged": sampler.converged,
+                },
+            },
+            priors=priors,
+            sample_labels=list(priors.names),
+            specs=specs,
+        )
         return PosteriorResults.load(
             posterior=fn_posterior,
             priors=priors,
@@ -278,15 +340,26 @@ def _resolve_mean(
     mean: MeanFunction | str,
 ) -> MeanFunction:
     """Resolve a configured surrogate mean specification."""
-    if dataset.name == "rdf" and isinstance(mean, str) and mean == "sigmoid":
-        n_bins = dataset.settings.get("n_bins")
-        r_range = dataset.settings.get("r_range")
-        if n_bins is None or r_range is None:
-            raise ValueError(
-                "RDF sigmoid mean requires shared RDF settings in the dataset. "
-                "Analyze with one consistent RDF routine definition per QoI."
-            )
-        return rdf_sigmoid_mean(n_bins, r_range, dataset.outputs_ref)
+    if isinstance(mean, str):
+        if mean == "sigmoid":
+            bins = dataset.settings.get("bins")
+            distance_range = dataset.settings.get("range")
+            if bins is None or distance_range is None:
+                raise ValueError(
+                    "RDF sigmoid mean requires shared RDF settings in the dataset. "
+                    "Build the dataset with one consistent RDF routine definition "
+                    "per QoI."
+                )
+            if bins != dataset.curve_length:
+                raise ValueError(
+                    "RDF dataset settings declare "
+                    f"bins={bins!r}, but each RDF curve contains "
+                    f"{dataset.curve_length} values."
+                )
+            return rdf_sigmoid_mean(bins, distance_range, dataset.outputs_ref)
+        else:
+            raise NotImplementedError(
+                "Other than 'sigmoid' or single-value mean is not implemented")
     return mean
 
 
@@ -311,10 +384,11 @@ def fit_lgp_committee(
     logger: Optional[Logger] = None,
     opt_kwargs: Optional[dict[str, Union[int, float, str]]] = None,
     hyperpriors: Optional[Priors | Sequence] = None,
+    dataset_fingerprint: str | None = None,
 ) -> LGPCommittee:
     """Fit a committee of local Gaussian-process surrogates."""
     check_device(device)
-    logger = logger or Logger("fit")
+    logger = logger or Logger("fit-lgp")
     opt_kwargs = dict(opt_kwargs or {})
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_fraction)
@@ -389,13 +463,15 @@ def fit_lgp_committee(
                 device,
             )
         )
-        logger.status("Committee", f"{i}/{committee}", level=2, overwrite=True)
+        if i < committee:
+            logger.status("Committee", f"{i}/{committee}", level=2, overwrite=True)
 
     lgp_committee = LGPCommittee(
         lgps=lgps,
         reference_values=reference_values,
         n_curves=n_curves,
         nuisance=nuisance,
+        dataset_fingerprint=dataset_fingerprint,
     )
     lgp_committee.validate(X_test, y_test)
     logger.done(
@@ -426,7 +502,7 @@ def fit_surrogates(
 ) -> dict[str, LGPCommittee]:
     """Fit or load QoI surrogate models."""
     owns_logger = logger is None
-    logger = logger or Logger("fit")
+    logger = logger or Logger("fit-lgp")
     y_means = dict(y_means or {})
     hyperpriors = dict(hyperpriors or {})
     model_paths = dict(model_paths or {})
@@ -452,6 +528,13 @@ def fit_surrogates(
 
         if reuse_models and fn_model is not None and fn_model.exists():
             models[qoi] = LGPCommittee.load(fn_model)
+            fingerprint = dataset.fingerprint()
+            if models[qoi].dataset_fingerprint != fingerprint:
+                raise ValueError(
+                    f"Cached surrogate for {qoi!r} at {fn_model} was fitted "
+                    "from different QoI data. Set fit.reuse_models: false "
+                    "or remove the stale model."
+                )
             models[qoi].reference_values = np.asarray(
                 dataset.outputs_ref,
                 dtype=float,
@@ -486,6 +569,7 @@ def fit_surrogates(
             logger=logger,
             opt_kwargs=opt_kwargs,
             hyperpriors=hyperpriors.get(qoi),
+            dataset_fingerprint=dataset.fingerprint(),
         )
         logger.blank()
 

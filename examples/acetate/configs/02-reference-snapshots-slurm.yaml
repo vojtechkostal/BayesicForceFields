@@ -1,0 +1,60 @@
+output_dir: ./
+job_scheduler: slurm
+cp2k_cmd: cp2k.psmp
+single_atoms: true
+train_fraction: 0.8
+seed: 2026
+cleanup_snapshots: true
+collection_wait_seconds: 60
+
+systems:
+  - system_id: acetate
+    topology: ../01-build/systems/acetate/production.gro
+    trajectory: ../01-build/systems/acetate/production.xtc
+    md_input: ../inputs/reference-inputs/xtb/md-0.inp
+    sp_input: ../inputs/reference-inputs/revpbe0-d3/sp-0.inp
+    single_atom_inputs:
+      H: ../inputs/reference-inputs/revpbe0-d3/single-atom-h.inp
+      C: ../inputs/reference-inputs/revpbe0-d3/single-atom-c.inp
+      O: ../inputs/reference-inputs/revpbe0-d3/single-atom-o.inp
+    n_snapshots: 5
+    atom_selection: "not name IW"
+  - system_id: acetate-contact
+    topology: ../01-build/systems/acetate-contact/production.gro
+    trajectory: ../01-build/systems/acetate-contact/production.xtc
+    md_input: ../inputs/reference-inputs/xtb/md-1.inp
+    sp_input: ../inputs/reference-inputs/revpbe0-d3/sp-1.inp
+    single_atom_inputs:
+      H: ../inputs/reference-inputs/revpbe0-d3/single-atom-h.inp
+      C: ../inputs/reference-inputs/revpbe0-d3/single-atom-c.inp
+      O: ../inputs/reference-inputs/revpbe0-d3/single-atom-o.inp
+      Ca: ../inputs/reference-inputs/revpbe0-d3/single-atom-ca.inp
+    n_snapshots: 5
+    atom_selection: "not name IW"
+  - system_id: acetate-separated
+    topology: ../01-build/systems/acetate-separated/production.gro
+    trajectory: ../01-build/systems/acetate-separated/production.xtc
+    md_input: ../inputs/reference-inputs/xtb/md-2.inp
+    sp_input: ../inputs/reference-inputs/revpbe0-d3/sp-2.inp
+    single_atom_inputs:
+      H: ../inputs/reference-inputs/revpbe0-d3/single-atom-h.inp
+      C: ../inputs/reference-inputs/revpbe0-d3/single-atom-c.inp
+      O: ../inputs/reference-inputs/revpbe0-d3/single-atom-o.inp
+      Ca: ../inputs/reference-inputs/revpbe0-d3/single-atom-ca.inp
+    n_snapshots: 5
+    atom_selection: "not name IW"
+
+slurm:
+  max_parallel_jobs: 100
+  sbatch:
+    constraint: gen-a
+    time: "04:00:00"
+    mem: 20G
+    nodes: 1
+    ntasks-per-node: 8
+  setup:
+    - source /uochb/soft/a/spack/20221129-git/share/spack/setup-env.sh
+    - spack load cp2k+elpa+libint
+    - export OMP_NUM_THREADS=1
+    - export SLURM_MPI_TYPE=pmix_v3
+    - export LD_LIBRARY_PATH=/uochb/soft/core/pmix/pmix-3.2.3/lib:$LD_LIBRARY_PATH

@@ -1,0 +1,76 @@
+training_samples:
+  manifest: ../03-sample/samples.yaml
+  systems:
+    - system_id: acetate
+    - system_id: acetate-contact
+    - system_id: acetate-separated
+  frames:
+    start: 1
+    stop: null
+    step: 1
+  workers: -1
+  progress_stride: 10
+
+reference:
+  systems:
+    - system_id: acetate
+      inputs:
+        coordinates: ../01-build/systems/acetate/reference/coordinates.gro
+        topology: ../01-build/systems/acetate/reference/topology.top
+        trajectory: ../02-reference-md/trajectories/acetate/trajectory.xtc
+    - system_id: acetate-contact
+      inputs:
+        coordinates: ../01-build/systems/acetate-contact/reference/coordinates.gro
+        topology: ../01-build/systems/acetate-contact/reference/topology.top
+        trajectory: ../02-reference-md/trajectories/acetate-contact/trajectory.xtc
+    - system_id: acetate-separated
+      inputs:
+        coordinates: ../01-build/systems/acetate-separated/reference/coordinates.gro
+        topology: ../01-build/systems/acetate-separated/reference/topology.top
+        trajectory: ../02-reference-md/trajectories/acetate-separated/trajectory.xtc
+  frames:
+    start: 1
+    stop: null
+    step: 1
+
+routines:
+  - name: rdf
+    type: rdf
+    systems: [acetate, acetate-contact, acetate-separated]
+    selections:
+      group_a: "resname ACE and name O1 O2 H1 H2 H3"
+      group_b: "resname SOL and name O*"
+    options:
+      range: [1.0, 7.0]
+      bins: 200
+      pbc: true
+      smooth: false
+  - name: hb
+    type: hydrogen_bonds
+    systems: [acetate, acetate-contact, acetate-separated]
+    selections:
+      selection: "resname ACE and name O1 O2"
+      water_selection: "resname SOL"
+    options:
+      donor_acceptor_cutoff: 3.5
+      angle_cutoff: 150
+      pbc: true
+  - name: contact-distance
+    callable: ../inputs/restraint.py:distance_distribution
+    systems: [acetate-contact]
+    options:
+      atom_pair: [C2, CAL]
+      range: [2.0, 5.0]
+  - name: separated-distance
+    callable: ../inputs/restraint.py:distance_distribution
+    systems: [acetate-separated]
+    options:
+      atom_pair: [C2, CAL]
+      range: [4.0, 6.0]
+
+run:
+  in_memory: true
+
+output:
+  directory: ./qoi
+  write_raw: true

@@ -8,12 +8,13 @@ from typing import Any
 import numpy as np
 from gmxtopology import Topology
 
+from ...domain.campaign import write_sample_manifest
 from ...domain.specs import ChargeConstraint, RandomParamsGenerator, Specs
 from ...io.logs import Logger
 from ...io.utils import compress_results, load_yaml, save_yaml
 from ...topology import TopologyModifier
 from ..md.main import modify_topology
-from ..sample.config import SampleConfig
+from ..sample_parameters.config import SampleParametersConfig
 from .config import SimulationCampaignConfig, SimulationSystemConfig
 from .scheduler import (
     SCHEDULER_CLASSES,
@@ -39,21 +40,21 @@ def _system_record(
 ) -> dict[str, Any]:
     return {
         'system_id': system.system_id,
-        'topology': _relative_path(system.fn_topol, campaign_dir),
-        'coordinates': _relative_path(system.fn_coordinates, campaign_dir),
+        'topology': _relative_path(system.topology_path, campaign_dir),
+        'coordinates': _relative_path(system.coordinates_path, campaign_dir),
         'mdp': {
-            'em': _relative_path(system.fn_mdp_em, campaign_dir),
-            'prod': _relative_path(system.fn_mdp_prod, campaign_dir),
+            'em': _relative_path(system.mdp_em_path, campaign_dir),
+            'prod': _relative_path(system.mdp_production_path, campaign_dir),
         },
-        'index': _relative_path(system.fn_ndx, campaign_dir),
+        'index': _relative_path(system.index_path, campaign_dir),
         'bias': _relative_path(system.bias.input_file, campaign_dir),
         'n_steps': int(system.n_steps),
     }
 
 
-def build_specs(config: SampleConfig) -> Path:
+def build_specs(config: SampleParametersConfig) -> Path:
     config.campaign_dir.resolve().mkdir(parents=True, exist_ok=True)
-    modifiers = [TopologyModifier(system.fn_topol) for system in config.systems]
+    modifiers = [TopologyModifier(system.topology_path) for system in config.systems]
     charge_params = [name for name in config.bounds if name.startswith('charge ')]
     parameter_indices: list[dict[str, set[int]]] = []
     resolved_tokens = {name: set() for name in charge_params}
@@ -221,38 +222,40 @@ def stage_systems(
     campaign_dir: Path,
 ) -> list[SimulationSystemConfig]:
     staged_systems: list[SimulationSystemConfig] = []
-    for index, system in enumerate(systems):
-        fn_topol = campaign_dir / f'window-{index:03d}.top'
-        Topology(system.fn_topol).write(fn_topol, overwrite=True)
+    for system in systems:
+        system_dir = campaign_dir / 'systems' / system.system_id
+        system_dir.mkdir(parents=True, exist_ok=True)
+        fn_topol = system_dir / 'topology.top'
+        Topology(system.topology_path).write(fn_topol, overwrite=True)
 
-        fn_coordinates = campaign_dir / f'window-{index:03d}.gro'
-        shutil.copy2(system.fn_coordinates, fn_coordinates)
+        fn_coordinates = system_dir / 'coordinates.gro'
+        shutil.copy2(system.coordinates_path, fn_coordinates)
 
         fn_mdp_em = None
-        if system.fn_mdp_em is not None:
-            fn_mdp_em = campaign_dir / f'window-{index:03d}.em.mdp'
-            shutil.copy2(system.fn_mdp_em, fn_mdp_em)
+        if system.mdp_em_path is not None:
+            fn_mdp_em = system_dir / 'em.mdp'
+            shutil.copy2(system.mdp_em_path, fn_mdp_em)
 
-        fn_mdp_prod = campaign_dir / f'window-{index:03d}.mdp'
-        shutil.copy2(system.fn_mdp_prod, fn_mdp_prod)
+        fn_mdp_prod = system_dir / 'production.mdp'
+        shutil.copy2(system.mdp_production_path, fn_mdp_prod)
 
-        fn_ndx = campaign_dir / f'window-{index:03d}.ndx'
-        shutil.copy2(system.fn_ndx, fn_ndx)
+        fn_ndx = system_dir / 'index.ndx'
+        shutil.copy2(system.index_path, fn_ndx)
 
         bias = system.bias
         if bias.input_file is not None and bias.input_filename is not None:
-            fn_bias = campaign_dir / f'window-{index:03d}.{bias.input_filename}'
+            fn_bias = system_dir / bias.input_filename
             shutil.copy2(bias.input_file, fn_bias)
             bias = type(bias).load(fn_bias)
 
         staged_systems.append(
             SimulationSystemConfig(
                 system_id=system.system_id,
-                fn_topol=fn_topol,
-                fn_coordinates=fn_coordinates,
-                fn_mdp_em=fn_mdp_em,
-                fn_mdp_prod=fn_mdp_prod,
-                fn_ndx=fn_ndx,
+                topology_path=fn_topol,
+                coordinates_path=fn_coordinates,
+                mdp_em_path=fn_mdp_em,
+                mdp_production_path=fn_mdp_prod,
+                index_path=fn_ndx,
                 bias=bias,
                 n_steps=system.n_steps,
             )
@@ -270,11 +273,9 @@ def stage_campaign(
 
     systems = stage_systems(config.systems, campaign_dir)
     resolved_specs = None if fn_specs is None else fn_specs.resolve()
-    save_yaml(
-        {
-            'systems': [_system_record(system, campaign_dir) for system in systems],
-            'samples': {},
-        },
+    write_sample_manifest(
+        [_system_record(system, campaign_dir) for system in systems],
+        {},
         campaign_dir / 'samples.yaml',
     )
     return resolved_specs, systems
@@ -289,6 +290,7 @@ def write_sample_job_config(
     gmx_cmd: str,
     job_scheduler: str,
     store: tuple[str, ...],
+    cleanup: bool,
     systems: list[SimulationSystemConfig],
 ) -> Path:
     config_md = {
@@ -299,9 +301,12 @@ def write_sample_job_config(
         'gmx_cmd': gmx_cmd,
         'job_scheduler': job_scheduler,
         'store': list(store),
+        'cleanup': cleanup,
         'systems': [system.to_dict() for system in systems],
     }
-    fn_config_md = campaign_dir / f'config-{sample_id}.yaml'
+    output_dir = campaign_dir / 'outputs' / sample_id
+    output_dir.mkdir(parents=True, exist_ok=True)
+    fn_config_md = output_dir / 'config.yaml'
     save_yaml(config_md, fn_config_md)
     return fn_config_md
 
@@ -314,9 +319,11 @@ def stage_sample_topologies(
     fn_specs: Path,
     systems: list[SimulationSystemConfig],
 ) -> None:
-    for index, system in enumerate(systems):
-        fn_topol = campaign_dir / f'md-{sample_id}-{index:03d}.top'
-        modify_topology(system.fn_topol, fn_specs, sample, True, fn_topol)
+    for system in systems:
+        sample_system_dir = campaign_dir / 'samples' / sample_id / system.system_id
+        sample_system_dir.mkdir(parents=True, exist_ok=True)
+        fn_topol = sample_system_dir / 'topology.top'
+        modify_topology(system.topology_path, fn_specs, sample, True, fn_topol)
 
 
 def build_submission_script(
@@ -330,7 +337,9 @@ def build_submission_script(
 
     campaign_dir = config.campaign_dir.resolve()
     assert config.slurm is not None
-    fn_stdout = campaign_dir / f'run-{sample_id}.out'
+    output_dir = campaign_dir / 'outputs' / sample_id
+    output_dir.mkdir(parents=True, exist_ok=True)
+    fn_stdout = output_dir / 'run.out'
     submit_specs = dict(config.slurm.sbatch or {}) | {'output': fn_stdout}
     return build_slurm_cli_job(
         command=bff_cli_command('md', fn_config_md),
@@ -340,7 +349,7 @@ def build_submission_script(
 
 
 def _result_record(sample_id: str, campaign_dir: Path) -> dict[str, Any]:
-    fn_result = campaign_dir / f'result-{sample_id}.yaml'
+    fn_result = campaign_dir / 'outputs' / sample_id / 'result.yaml'
     if fn_result.exists():
         return load_yaml(fn_result)
     return {}
@@ -351,6 +360,7 @@ def collect_campaign_metadata(
     samples: dict[str, dict[str, Any]],
     systems: list[SimulationSystemConfig],
     campaign_dir: Path,
+    store: tuple[str, ...] = (),
     compress: bool = False,
     remove: bool = False,
 ) -> None:
@@ -364,37 +374,55 @@ def collect_campaign_metadata(
             'outputs': result.get('outputs', sample_data.get('outputs', [])),
         }
 
-    save_yaml(
-        {
-            'systems': [_system_record(system, campaign_dir) for system in systems],
-            'samples': sample_records,
-        },
+    write_sample_manifest(
+        [_system_record(system, campaign_dir) for system in systems],
+        sample_records,
         campaign_dir / 'samples.yaml',
     )
 
-    for fn_result in campaign_dir.glob('result-*.yaml'):
+    for fn_result in (campaign_dir / 'outputs').glob('*/result.yaml'):
         fn_result.unlink(missing_ok=True)
+
+    outputs_dir = campaign_dir / 'outputs'
+    for sample_id in samples:
+        output_dir = outputs_dir / sample_id
+        sample_dir = campaign_dir / 'samples' / sample_id
+        sample_dir.mkdir(parents=True, exist_ok=True)
+        for name in ('config.yaml', 'run.sh', 'run.out'):
+            source = output_dir / name
+            if source.is_file():
+                shutil.copy2(source, sample_dir / name)
+
+    if remove:
+        keep_suffixes = {'.' + extension.lstrip('.') for extension in store}
+        for sample_id in samples:
+            for system in systems:
+                system_dir = (
+                    campaign_dir / 'samples' / sample_id / system.system_id
+                )
+                if not system_dir.is_dir():
+                    continue
+                for path in system_dir.iterdir():
+                    if path.is_file() and path.suffix not in keep_suffixes:
+                        path.unlink()
+                    elif path.is_dir():
+                        shutil.rmtree(path)
+        if outputs_dir.exists():
+            shutil.rmtree(outputs_dir)
 
     if compress:
         compress_results(campaign_dir)
-        if remove:
-            shutil.rmtree(campaign_dir)
-        return
-
-    if remove:
-        for pattern in ('run-*.sh', 'run-*.out', 'config-*.yaml'):
-            for file in campaign_dir.glob(pattern):
-                file.unlink(missing_ok=True)
 
 
 def print_sample_summary(
-    config: SampleConfig,
+    config: SampleParametersConfig,
     fn_specs: PathLike,
     logger: Logger,
 ) -> None:
     specs = Specs(fn_specs)
     logger.section('Sampling Campaign')
     logger.kv('Campaign directory', config.campaign_dir.resolve())
+    logger.kv('Operational outputs', config.campaign_dir.resolve() / 'outputs')
     logger.kv('Systems', len(config.systems))
     logger.kv('Samples', config.n_samples)
     logger.kv('Scheduler', config.job_scheduler)
@@ -406,12 +434,14 @@ def print_sample_summary(
         logger.warn(
             'No simulation outputs are configured to be stored after completion.'
         )
-    logger.info('parameters:', level=1)
-    for name, bounds in specs.bounds.by_name.items():
-        label = f'{name}: {bounds}'
-        if name in specs.implicit_params:
-            label += ' (implicit)'
+    logger.info('parameters (full array order):', level=1)
+    for index, name in enumerate(specs.parameter_names()):
+        bounds = specs.bounds.get(name)
+        role = 'implicit' if name in specs.implicit_params else 'explicit'
+        label = f'{index}: {name}: {bounds} ({role})'
         logger.info(label, level=2)
+    explicit_order = ', '.join(specs.parameter_names(explicit_only=True)) or 'none'
+    logger.kv('Sampled parameter order', explicit_order, level=1)
     logger.kv('Charge constraints', len(specs.charge_constraints))
     logger.blank()
 
@@ -424,6 +454,7 @@ def print_validate_summary(
     logger.section('Validation Campaign')
     logger.kv('Log file', config.log.resolve())
     logger.kv('Campaign directory', config.campaign_dir.resolve())
+    logger.kv('Operational outputs', config.campaign_dir.resolve() / 'outputs')
     logger.kv('Systems', len(config.systems))
     logger.kv('Samples', n_samples)
     logger.kv('Scheduler', config.job_scheduler)
@@ -438,6 +469,22 @@ def print_validate_summary(
     parameter_source = getattr(config, 'parameters', None)
     if parameter_source is not None:
         logger.kv('Parameter source', Path(parameter_source).resolve())
+    if parameter_source is None:
+        posterior = getattr(config, 'posterior', None)
+        if posterior is not None:
+            logger.kv('Posterior source', posterior.file.resolve())
+            logger.kv('Random draws', posterior.n_samples)
+            logger.kv('Distribution', posterior.distribution)
+            logger.kv('Confidence', posterior.confidence)
+            logger.kv(
+                'Seed',
+                posterior.seed if posterior.seed is not None else 'fresh random seed',
+            )
+            if posterior.include_mean:
+                pad = len(str(max(n_samples, 1)))
+                logger.kv('Posterior mean sample', f'{0:0{pad}d}')
+            else:
+                logger.kv('Posterior mean sample', 'not included')
     logger.blank()
 
 
@@ -481,6 +528,7 @@ def run_campaign(
             ),
             level=1,
             overwrite=overwrite,
+            write_file=False,
         )
 
     try:
@@ -492,7 +540,10 @@ def run_campaign(
 
         for idx, sample in enumerate(parameter_samples):
             sample_id = f'{idx:0{pad}d}'
-            if (not config.dispatch) or job_scheduler == 'local':
+            if (
+                ((not config.dispatch) or job_scheduler == 'local')
+                and idx + 1 < n_total
+            ):
                 logger.status(
                     action,
                     (
@@ -501,6 +552,7 @@ def run_campaign(
                     ),
                     level=1,
                     overwrite=True,
+                    write_file=False,
                 )
 
             sample = np.asarray(sample, dtype=float).reshape(-1)
@@ -512,6 +564,7 @@ def run_campaign(
                 gmx_cmd=config.gmx_cmd,
                 job_scheduler=config.job_scheduler,
                 store=config.store,
+                cleanup=config.cleanup,
                 systems=systems,
             )
             samples[sample_id] = {
@@ -535,7 +588,9 @@ def run_campaign(
                     config=config,
                 )
                 if submit_script is not None:
-                    submit_script.save(campaign_dir / f'run-{sample_id}.sh')
+                    submit_script.save(
+                        campaign_dir / 'outputs' / sample_id / 'run.sh'
+                    )
                 continue
 
             if job_scheduler == 'local':
@@ -559,7 +614,9 @@ def run_campaign(
                 config=config,
             )
             assert submit_script is not None
-            job_id = submit_script.submit(campaign_dir / f'run-{sample_id}.sh')
+            job_id = submit_script.submit(
+                campaign_dir / 'outputs' / sample_id / 'run.sh'
+            )
             job_ids.append(job_id)
             samples[sample_id]['job_id'] = job_id
             log_job_monitor(get_job_state_counts(job_ids, job_scheduler))
@@ -578,6 +635,7 @@ def run_campaign(
             samples=samples,
             systems=systems,
             campaign_dir=campaign_dir,
+            store=config.store,
             compress=(
                 config.compress if config.dispatch and campaign_finished else False
             ),
@@ -585,7 +643,9 @@ def run_campaign(
         )
 
 
-def build_parameter_samples(config: SampleConfig) -> tuple[Path, np.ndarray]:
+def build_parameter_samples(
+    config: SampleParametersConfig,
+) -> tuple[Path, np.ndarray]:
     fn_specs = build_specs(config)
     constraint = ChargeConstraint(fn_specs)
     sampler = RandomParamsGenerator(constraint.explicit_bounds, constraint)

@@ -7,7 +7,7 @@ PathLike = str | Path
 
 @dataclass(frozen=True, slots=True)
 class BiasSpec:
-    """Bias specification for one simulation window.
+    """Bias specification for one simulation system.
 
     Parameters
     ----------
@@ -87,9 +87,15 @@ class BiasSpec:
             return cls.load(value)
         if not isinstance(value, Mapping):
             raise ValueError(f"Invalid bias specification: {value!r}")
+        unknown = set(value) - {"kind", "colvars_file", "plumed_file"}
+        if unknown:
+            raise ValueError(
+                "Bias specification contains unsupported key(s): "
+                + ", ".join(sorted(unknown))
+            )
 
-        colvars_raw = value.get("colvars_file", value.get("fn_colvars"))
-        plumed_raw = value.get("plumed_file", value.get("fn_plumed"))
+        colvars_raw = value.get("colvars_file")
+        plumed_raw = value.get("plumed_file")
         colvars_file = None
         plumed_file = None
         if colvars_raw is not None:

@@ -1,6 +1,6 @@
 include CHANGELOG.md
+include AGENTS.md
 include CITATION.cff
-include CODE_OF_CONDUCT.md
 include CONTRIBUTING.md
 include SECURITY.md
 include SUPPORT.md

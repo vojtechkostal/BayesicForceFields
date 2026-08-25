@@ -3,8 +3,8 @@
 ## Requirements
 
 - Python 3.10 or newer
-- GROMACS available as `gmx` for `build`, `sample`, and `validate`
-- CP2K only if you want to run staged snapshot evaluation inputs
+- GROMACS available as `gmx` for `build`, `sample-parameters`, and `validate`
+- CP2K only for `label-snapshots`
 - PLUMED only for PLUMED-biased systems
 
 ## Recommended User Install
@@ -24,7 +24,7 @@ https://pytorch.org/get-started/locally/
 Example for Linux with CUDA 12.6:
 
 ```bash
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+pip install torch --index-url https://download.pytorch.org/whl/cu126
 ```
 
 Then install BFF from PyPI:

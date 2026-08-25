@@ -61,10 +61,10 @@ def test_qoi_dataset_counts_labeled_curves() -> None:
         outputs=np.zeros((2, 8)),
         outputs_ref=np.zeros(8),
         labels=(
-            "window-000:OC",
-            "window-001:OC",
-            "window-000:CC",
-            "window-001:CC",
+            "acetate:OC",
+            "acetate-contact:OC",
+            "acetate:CC",
+            "acetate-contact:CC",
         ),
         values_per_label=2,
     )

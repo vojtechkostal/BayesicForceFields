@@ -198,7 +198,8 @@ class LGPCommittee:
         reference_values: np.ndarray,
         n_curves: int,
         nuisance: float | None = None,
-        stochastic: bool = False
+        stochastic: bool = False,
+        dataset_fingerprint: str | None = None,
     ) -> None:
         self.lgps = lgps
         self.error: float | None = None
@@ -207,6 +208,7 @@ class LGPCommittee:
         self.n_eff = float(self.reference_values.size)
         self.nuisance = nuisance
         self.stochastic = stochastic
+        self.dataset_fingerprint = dataset_fingerprint
 
         if self.reference_values.size != self.lgps[0].y_size:
             raise ValueError(
@@ -296,6 +298,7 @@ class LGPCommittee:
             n_curves=int(state["n_curves"]),
             nuisance=state["nuisance"],
             stochastic=state["stochastic"],
+            dataset_fingerprint=state.get("dataset_fingerprint"),
         )
         committee.error = state["error"]
         return committee
@@ -308,6 +311,7 @@ class LGPCommittee:
             "nuisance": self.nuisance,
             "stochastic": self.stochastic,
             "error": self.error,
+            "dataset_fingerprint": self.dataset_fingerprint,
             "lgps": [lgp.state_dict() for lgp in self.lgps],
         }
 

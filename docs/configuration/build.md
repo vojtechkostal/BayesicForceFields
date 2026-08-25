@@ -9,30 +9,29 @@ Source code:
 ## Purpose
 
 `bff build` prepares equilibrated systems and runs one seeded production
-trajectory for each system. `bff prepare-assets` packages that seed into FFMD
-and CP2K reference assets.
+trajectory for each system. It also writes a reference-compatible topology and
+coordinate pair with virtual sites removed.
 
-- equilibrated GROMACS systems under `equilibration/`
-- seeded production outputs under `equilibration/system-XXX-prod.*`
-- a `build-manifest.yaml` handoff file consumed by asset-preparation workflows
+- equilibrated GROMACS systems under `systems/<system_id>/`
+- seeded production outputs under each stable system-ID directory
+- `systems/<system_id>/reference/{topology.top,coordinates.gro}` for reference
+  trajectories and QoI construction
+- metadata-only `system.yaml` files colocated with each system
 
 ## Minimal Example
 
 ```yaml
 project:
   directory: ./
-  log: ./out.log
+  log: ./build.log
 
 gromacs:
   command: gmx
 
-defaults:
-  nsteps:
-    npt: 0
-    prod: 100000
-
 systems:
-  - topology: ../inputs/common/topol.top
+  - system_id: acetate
+    system_name: Aqueous acetate
+    topology: ../inputs/common/topol.top
     templates:
       ACE: ../inputs/common/ace.gro
     mdp:
@@ -41,6 +40,9 @@ systems:
       prod: ../inputs/common/mdp/nvt.mdp
     charge: -1
     multiplicity: 1
+    nsteps:
+      npt: 0
+      prod: 100000
     box: [15.7107, 15.7107, 15.7107, 90, 90, 90]
 ```
 
@@ -49,20 +51,20 @@ systems:
 - `project`
   Project output settings. A string is accepted as shorthand for `project.directory`.
 - `project.directory`
-  Output directory for `equilibration/` and `build-manifest.yaml`.
+  Output directory for `equilibration/` and `systems/`.
 - `project.log`
   Optional workflow log file.
 - `gromacs.command`
   GROMACS executable, usually `gmx`.
-- `defaults.nsteps.npt`
-  Default NpT equilibration length for systems that do not override it.
-- `defaults.nsteps.prod`
-  Default seeded production run length for systems that do not override it.
 - `systems`
   Non-empty list of systems to build.
 
 ## `systems[]` Keys
 
+- `system_id`
+  Required lowercase file-safe ID matching `[a-z0-9][a-z0-9._-]*`.
+- `system_name`
+  Optional display-only name; never used for matching or paths.
 - `topology`
   GROMACS topology describing residue counts.
 - `templates`
@@ -78,10 +80,10 @@ systems:
 - `bias`
   Optional opaque bias specification. Use either `plumed_file` or `colvars_file`.
 - `nsteps.npt`
-  Optional per-system NpT override.
+  Required per-system NpT equilibration length. Use `0` to skip NpT.
 - `nsteps.prod`
-  Optional per-system seeded production run length. The seed trajectory is used
-  later by `bff prepare-assets`.
+  Required per-system seeded production run length. The seed trajectory is
+  used later by `bff label-snapshots`.
 - `mdp.em`
   Energy minimization MDP file.
 - `mdp.npt`
@@ -91,10 +93,19 @@ systems:
 
 ## Outputs
 
-The main downstream output is `PROJECT/build-manifest.yaml`. It records the
-prepared topology, index, MDP files, copied bias input, seeded production
-coordinate file, seeded production trajectory, CP2K charge/multiplicity, and
-box for each system.
+The stage writes `build.log`, `gromacs.log`, and `systems/<system_id>/`.
+Each directory uses fixed filenames for the topology, index, MDPs, optional
+bias, and seeded production outputs. Its `system.yaml` contains only display
+and physical metadata such as charge, multiplicity, box, and production length;
+it contains no file paths or version field.
 
-After a successful build, run `bff prepare-assets` to write the `ffmd/` and
-`reference/` asset trees.
+The `reference/` pair is always generated from the final `production.gro`.
+Atoms declared by `[ virtual_sites* ]` sections are removed exactly from both
+files; systems without virtual sites still receive the same stable paths. Use
+this topology and coordinate pair when producing an external MLIP trajectory,
+so its atom order matches the inputs later supplied to `build-qoi-datasets`.
+
+`bff sample-parameters` and `bff validate` consume this directory directly.
+`bff label-snapshots` accepts its production GRO and trajectory files as
+explicit inputs. `bff build-qoi-datasets` accepts the files under `reference/`
+and the externally generated reference trajectory as separate explicit inputs.

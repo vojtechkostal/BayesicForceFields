@@ -5,21 +5,12 @@ from math import isfinite
 from pathlib import Path
 from typing import Mapping
 
+from ...domain.systems import validate_system_id
 from ...io.utils import load_yaml
-from .._shared.config import (
-    PathLike,
-    _resolve_optional_path,
-    _resolve_path,
-)
+from .._shared.config import PathLike, _resolve_path, _strict_bool
 
 
-def _boolean(value: object, *, key: str) -> bool:
-    if not isinstance(value, bool):
-        raise ValueError(f"{key!r} must be a boolean.")
-    return value
-
-
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class LearnModelConfig:
     model_path: Path
     independent_observations: bool = False
@@ -27,184 +18,228 @@ class LearnModelConfig:
     tolerance: float | None = None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class LearnMCMCConfig:
-    priors_disttype: str = 'normal'
+    priors_disttype: str = "normal"
     total_steps: int = 1500
     warmup: int = 500
     thin: int = 1
     progress_stride: int = 100
     n_walkers: int | None = None
-    checkpoint: Path | None = None
-    posterior: Path = Path('./posterior.pt')
-    priors: Path | None = Path('./priors.pt')
-    restart: bool = True
-    device: str = 'cuda'
+    resume: bool = False
+    device: str = "cuda"
     rhat_tol: float = 1.01
     ess_min: int = 100
     include_implicit_charge: bool = False
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
+class LearnOutputConfig:
+    directory: Path
+    overwrite: bool
+    log: Path
+    plots_dir: Path
+    outputs_dir: Path
+    prior: Path
+    posterior: Path
+    checkpoint: Path
+    specs: Path
+    marginals: Path
+    qoi_marginals: Path
+    corner: Path
+
+    @property
+    def stage_owned_files(self) -> tuple[Path, ...]:
+        return (
+            self.log,
+            self.prior,
+            self.posterior,
+            self.checkpoint,
+            self.specs,
+            self.marginals,
+            self.qoi_marginals,
+            self.corner,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class LearnConfig:
     fn_config: Path
     specs: Path
     models: dict[str, LearnModelConfig]
     mcmc: LearnMCMCConfig
-    log: Path
+    output: LearnOutputConfig
 
     @classmethod
-    def load(cls, fn_config: PathLike) -> 'LearnConfig':
+    def load(cls, fn_config: PathLike) -> "LearnConfig":
         fn_config = Path(fn_config).resolve()
         base_dir = fn_config.parent
         config = load_yaml(fn_config)
+        if not isinstance(config, Mapping):
+            raise ValueError("Learn configuration must contain a mapping.")
+        unknown_top = set(config) - {"specs", "models", "mcmc", "output"}
+        if unknown_top:
+            raise ValueError(
+                "Learn configuration contains unsupported key(s): "
+                + ", ".join(sorted(unknown_top))
+            )
+        missing = [key for key in ("specs", "models", "mcmc") if key not in config]
+        if missing:
+            raise ValueError(
+                "Missing required learn section(s): "
+                + ", ".join(repr(key) for key in missing)
+            )
 
-        for key in ('specs', 'models', 'mcmc'):
-            if key not in config:
-                raise ValueError(f'Missing required configuration section: {key!r}.')
-
-        models_raw = config['models']
-        if not isinstance(models_raw, Mapping) or not models_raw:
-            raise ValueError("'models' must be a non-empty mapping.")
-
-        mcmc = config['mcmc']
-        if not isinstance(mcmc, Mapping):
-            raise ValueError("'mcmc' must be a mapping.")
-
-        total_steps = int(mcmc.get('total_steps', 1500))
-        warmup = int(mcmc.get('warmup', 500))
-        thin = int(mcmc.get('thin', 1))
-        progress_stride = int(mcmc.get('progress_stride', 100))
+        mcmc_raw = config["mcmc"]
+        if not isinstance(mcmc_raw, Mapping):
+            raise ValueError("mcmc must be a mapping.")
+        allowed_mcmc = {
+            "priors_disttype",
+            "total_steps",
+            "warmup",
+            "thin",
+            "progress_stride",
+            "n_walkers",
+            "resume",
+            "device",
+            "rhat_tol",
+            "ess_min",
+            "include_implicit_charge",
+        }
+        unknown_mcmc = set(mcmc_raw) - allowed_mcmc
+        if unknown_mcmc:
+            raise ValueError(
+                "mcmc contains unsupported key(s): "
+                + ", ".join(sorted(unknown_mcmc))
+            )
+        total_steps = int(mcmc_raw.get("total_steps", 1500))
+        warmup = int(mcmc_raw.get("warmup", 500))
+        thin = int(mcmc_raw.get("thin", 1))
+        progress_stride = int(mcmc_raw.get("progress_stride", 100))
         if total_steps < 1:
-            raise ValueError("'mcmc.total_steps' must be positive.")
+            raise ValueError("mcmc.total_steps must be positive.")
         if warmup < 0 or warmup >= total_steps:
-            raise ValueError("'mcmc.warmup' must satisfy 0 <= warmup < total_steps.")
-        if thin < 1:
-            raise ValueError("'mcmc.thin' must be positive.")
-        if progress_stride < 1:
-            raise ValueError("'mcmc.progress_stride' must be positive.")
-
-        mcmc_config = LearnMCMCConfig(
-            priors_disttype=str(mcmc.get('priors_disttype', 'normal')),
+            raise ValueError("mcmc.warmup must satisfy 0 <= warmup < total_steps.")
+        if thin < 1 or progress_stride < 1:
+            raise ValueError("mcmc.thin and progress_stride must be positive.")
+        n_walkers = mcmc_raw.get("n_walkers")
+        if n_walkers is not None and int(n_walkers) < 2:
+            raise ValueError("mcmc.n_walkers must be at least 2.")
+        mcmc = LearnMCMCConfig(
+            priors_disttype=str(mcmc_raw.get("priors_disttype", "normal")),
             total_steps=total_steps,
             warmup=warmup,
             thin=thin,
             progress_stride=progress_stride,
-            n_walkers=None if mcmc.get('n_walkers') is None else int(mcmc['n_walkers']),
-            checkpoint=_resolve_optional_path(
-                base_dir,
-                mcmc.get('checkpoint', './mcmc-checkpoint.pt'),
-                must_exist=False,
-                kind='MCMC checkpoint file',
-            ),
-            posterior=_resolve_path(
-                base_dir,
-                mcmc.get('posterior', './posterior.pt'),
-                must_exist=False,
-                kind='posterior output file',
-            ),
-            priors=_resolve_optional_path(
-                base_dir,
-                mcmc.get('priors', './priors.pt'),
-                must_exist=False,
-                kind='priors output file',
-            ),
-            restart=_boolean(mcmc.get('restart', True), key='mcmc.restart'),
-            device=str(mcmc.get('device', 'cuda')),
-            rhat_tol=float(mcmc.get('rhat_tol', 1.01)),
-            ess_min=int(mcmc.get('ess_min', 100)),
-            include_implicit_charge=_boolean(
-                mcmc.get('include_implicit_charge', False),
-                key='mcmc.include_implicit_charge',
+            n_walkers=None if n_walkers is None else int(n_walkers),
+            resume=_strict_bool(mcmc_raw.get("resume", False), field="mcmc.resume"),
+            device=str(mcmc_raw.get("device", "cuda")),
+            rhat_tol=float(mcmc_raw.get("rhat_tol", 1.01)),
+            ess_min=int(mcmc_raw.get("ess_min", 100)),
+            include_implicit_charge=_strict_bool(
+                mcmc_raw.get("include_implicit_charge", False),
+                field="mcmc.include_implicit_charge",
             ),
         )
 
+        models_raw = config["models"]
+        if not isinstance(models_raw, Mapping) or not models_raw:
+            raise ValueError("models must be a non-empty mapping.")
         models: dict[str, LearnModelConfig] = {}
-        for name, model in models_raw.items():
-            if not isinstance(name, str) or not name.strip():
+        for raw_name, model in models_raw.items():
+            if not isinstance(raw_name, str) or not raw_name:
                 raise ValueError("Model names must be non-empty strings.")
-            if not isinstance(model, Mapping):
-                raise ValueError(
-                    f"Model {name!r} must be a mapping with a 'model_path' key."
-                )
-            if 'model_path' not in model:
-                raise ValueError(
-                    f"Model {name!r} is missing required key 'model_path'."
-                )
-
-            supported_keys = {
-                'model_path',
-                'independent_observations',
-                'n_eff',
-                'tolerance',
+            name = validate_system_id(raw_name, field="models key")
+            if not isinstance(model, Mapping) or "model_path" not in model:
+                raise ValueError(f"models.{name} must define model_path.")
+            unknown = set(model) - {
+                "model_path",
+                "independent_observations",
+                "n_eff",
+                "tolerance",
             }
-            unsupported_keys = set(model) - supported_keys
-            if unsupported_keys:
-                keys = ', '.join(sorted(unsupported_keys))
+            if unknown:
                 raise ValueError(
-                    f"Model {name!r} has unsupported keys: {keys}."
+                    f"models.{name} contains unsupported key(s): "
+                    + ", ".join(sorted(unknown))
                 )
-
-            independent_observations = _boolean(
-                model.get('independent_observations', False),
-                key=f"models.{name}.independent_observations",
+            independent = _strict_bool(
+                model.get("independent_observations", False),
+                field=f"models.{name}.independent_observations",
             )
-            n_eff = (
-                None if model.get('n_eff') is None else float(model['n_eff'])
-            )
+            n_eff = None if model.get("n_eff") is None else float(model["n_eff"])
             tolerance = (
-                None
-                if model.get('tolerance') is None
-                else float(model['tolerance'])
+                None if model.get("tolerance") is None else float(model["tolerance"])
             )
-
             if n_eff is not None:
-                if not isfinite(n_eff) or n_eff <= 0.0:
+                if not isfinite(n_eff) or n_eff <= 0:
                     raise ValueError(
-                        f"Model {name!r} n_eff must be positive and finite."
+                        f"models.{name}.n_eff must be positive and finite."
                     )
-                if 'independent_observations' in model or 'tolerance' in model:
+                if independent or tolerance is not None:
                     raise ValueError(
-                        f"Model {name!r} cannot combine 'n_eff' with "
-                        "'independent_observations' or 'tolerance'."
+                        f"models.{name}.n_eff cannot be combined with "
+                        "independent_observations or tolerance."
                     )
-            elif independent_observations:
+            elif independent:
                 if tolerance is not None:
                     raise ValueError(
-                        f"Independent model {name!r} does not use 'tolerance'."
+                        f"models.{name}.tolerance is invalid for independent "
+                        "observations."
                     )
-            else:
-                if tolerance is None:
-                    raise ValueError(
-                        f"Curve model {name!r} must define 'tolerance'."
-                    )
-                if not isfinite(tolerance) or tolerance <= 0.0:
-                    raise ValueError(
-                        f"Model {name!r} tolerance must be positive and finite."
-                    )
-
+            elif tolerance is None or not isfinite(tolerance) or tolerance <= 0:
+                raise ValueError(
+                    f"Curve model {name!r} requires a positive finite tolerance."
+                )
             models[name] = LearnModelConfig(
                 model_path=_resolve_path(
-                    base_dir,
-                    model['model_path'],
-                    kind=f'model {name!r} file',
+                    base_dir, model["model_path"], kind=f"model {name!r} file"
                 ),
-                independent_observations=independent_observations,
+                independent_observations=independent,
                 n_eff=n_eff,
                 tolerance=tolerance,
             )
 
-        log = _resolve_path(
+        output_raw = config.get("output", {})
+        if not isinstance(output_raw, Mapping):
+            raise ValueError("output must be a mapping.")
+        unknown_output = set(output_raw) - {"directory", "overwrite"}
+        if unknown_output:
+            raise ValueError(
+                "output contains unsupported key(s): "
+                + ", ".join(sorted(unknown_output))
+            )
+        output_dir = _resolve_path(
             base_dir,
-            config.get('log', './out.log'),
+            output_raw.get("directory", "./"),
             must_exist=False,
-            kind='log file',
+            kind="learn output directory",
         )
-
+        overwrite = _strict_bool(
+            output_raw.get("overwrite", False), field="output.overwrite"
+        )
+        if mcmc.resume and overwrite:
+            raise ValueError("mcmc.resume and output.overwrite cannot both be true.")
+        plots_dir = output_dir / "plots"
+        outputs_dir = output_dir / "outputs"
+        output = LearnOutputConfig(
+            directory=output_dir,
+            overwrite=overwrite,
+            log=output_dir / "learn.log",
+            plots_dir=plots_dir,
+            outputs_dir=outputs_dir,
+            prior=outputs_dir / "prior.pt",
+            posterior=outputs_dir / "posterior.pt",
+            checkpoint=outputs_dir / "mcmc.ckpt",
+            specs=outputs_dir / "specs.yaml",
+            marginals=plots_dir / "marginals.pdf",
+            qoi_marginals=plots_dir / "qoi-marginals.pdf",
+            corner=plots_dir / "corner.pdf",
+        )
         return cls(
             fn_config=fn_config,
-            specs=_resolve_path(base_dir, config['specs'], kind='specs file'),
+            specs=_resolve_path(base_dir, config["specs"], kind="specs file"),
             models=models,
-            mcmc=mcmc_config,
-            log=log,
+            mcmc=mcmc,
+            output=output,
         )

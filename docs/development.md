@@ -11,7 +11,7 @@ mamba activate bfflearn
 
 The environment installs BFF in editable mode with the developer, docs, and
 notebook extras. Install the PyTorch build that matches your machine before
-running `bff fit`, `bff learn`, or posterior notebooks.
+running `bff fit-lgp`, `bff learn`, or posterior notebooks.
 
 ## Start A Feature Branch
 
@@ -88,9 +88,13 @@ else's pushed work by accident.
 - `examples/acetate/`: worked example
 - `tests/`: tests
 - `.github/workflows/`: CI and publishing workflows
+- `AGENTS.md`: repository guidance for AI coding agents
 
 The [architecture guide](architecture.md) describes the package modules,
 workflow stages, and persisted artifacts in more detail.
+
+AI-assisted contributions should also follow the repository-specific guidance
+in [`AGENTS.md`](https://github.com/vojtechkostal/BayesicForceFields/blob/main/AGENTS.md).
 
 ## Publishing Research Software
 
@@ -98,19 +102,22 @@ For a citable BFF release:
 
 1. Update the changelog, version, examples, and documentation together.
 2. Reserve a version-specific Zenodo DOI if the release needs an archival DOI.
-3. Run the test suite, lint checks, package build, and strict documentation
-   build in CI.
-4. Merge the release branch into `main` and create an annotated `vX.Y.Z` tag.
-5. Publish the GitHub release from that tag. The release workflow builds,
+3. Run the test suite, lint checks, both self-contained notebooks, package
+   build and Twine check, and the strict documentation build.
+4. Confirm every new workflow package, configuration page, example input, and
+   test is tracked by the release commit.
+5. Merge the release branch into `main` and create an annotated `vX.Y.Z` tag.
+6. Publish the GitHub release from that tag. The release workflow builds,
    verifies, and publishes the distributions through PyPI trusted publishing.
-6. Archive the tagged release in Zenodo and record its version-specific DOI
+7. Install the tagged wheel and run `bff examples` to verify the example archive
+   can be fetched from the version tag.
+8. Archive the tagged release in Zenodo and record its version-specific DOI
    and release date in `CITATION.cff`.
 
 The repository already includes package metadata, an OSI-approved license,
 `CITATION.cff`, a changelog, documentation, examples, tests, and GitHub Actions
-workflows. Contribution, support, conduct, and security policies live in the
-repository root. Expand API reference documentation as the public Python API
-matures.
+workflows. Contribution, support, and security policies live in the repository
+root. Expand API reference documentation as the public Python API matures.
 
 Useful references:
 

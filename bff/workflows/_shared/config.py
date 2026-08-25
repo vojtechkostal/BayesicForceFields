@@ -7,10 +7,22 @@ from pathlib import Path
 from typing import Any, Literal, Optional, Union
 
 from ...domain.bias import BiasSpec
+from ...domain.systems import (
+    resolve_explicit_inputs,
+    validate_system_id,
+    validate_unique_system_ids,
+)
 from ...io.utils import load_yaml
+from .preparation import load_build_system
 
 PathLike = Union[str, Path]
 SchedulerName = Literal["local", "slurm"]
+
+
+def _strict_bool(value: Any, *, field: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"{field} must be true or false, got {value!r}.")
+    return value
 
 
 def _resolve_path(
@@ -65,6 +77,16 @@ def _load_slurm_config(slurm_raw: Any) -> SlurmConfig:
         raise ValueError("Missing 'slurm' configuration for slurm scheduler.")
     if "sbatch" not in slurm_raw:
         raise ValueError("Scheduler 'slurm' must define 'sbatch'.")
+    unknown = set(slurm_raw) - {
+        "max_parallel_jobs",
+        "sbatch",
+        "setup",
+        "teardown",
+    }
+    if unknown:
+        raise ValueError(
+            "slurm contains unsupported key(s): " + ", ".join(sorted(unknown))
+        )
     if not isinstance(slurm_raw["sbatch"], dict):
         raise ValueError("slurm.sbatch must be a mapping.")
 
@@ -114,11 +136,11 @@ def _validate_bounds(bounds: Any) -> dict[str, tuple[float, float]]:
 @dataclass(frozen=True)
 class SimulationSystemConfig:
     system_id: str
-    fn_topol: Path
-    fn_coordinates: Path
-    fn_mdp_em: Path | None
-    fn_mdp_prod: Path
-    fn_ndx: Path
+    topology_path: Path
+    coordinates_path: Path
+    mdp_em_path: Path | None
+    mdp_production_path: Path
+    index_path: Path
     bias: BiasSpec
     n_steps: int
 
@@ -126,14 +148,16 @@ class SimulationSystemConfig:
         bias_file = self.bias.input_file
         return {
             "system_id": self.system_id,
-            "topology": str(self.fn_topol),
-            "coordinates": str(self.fn_coordinates),
-            "mdp": {
-                "em": None if self.fn_mdp_em is None else str(self.fn_mdp_em),
-                "prod": str(self.fn_mdp_prod),
+            "inputs": {
+                "topology": str(self.topology_path),
+                "coordinates": str(self.coordinates_path),
+                "mdp_em": (
+                    None if self.mdp_em_path is None else str(self.mdp_em_path)
+                ),
+                "mdp_production": str(self.mdp_production_path),
+                "index": str(self.index_path),
+                "bias": None if bias_file is None else str(bias_file),
             },
-            "index": str(self.fn_ndx),
-            "bias": None if bias_file is None else str(bias_file),
             "n_steps": int(self.n_steps),
         }
 
@@ -143,6 +167,7 @@ def _load_simulation_systems(
     systems_raw: Any,
     *,
     key: str,
+    source: Path | None = None,
 ) -> list[SimulationSystemConfig]:
     if not isinstance(systems_raw, list) or not systems_raw:
         raise ValueError(f"'{key}' must be a non-empty list.")
@@ -151,126 +176,99 @@ def _load_simulation_systems(
     for i, system in enumerate(systems_raw):
         if not isinstance(system, dict):
             raise ValueError(f"{key}[{i}] must be a mapping.")
-        if "assets" in system:
-            if "n_steps" not in system:
-                raise ValueError(f"{key}[{i}] must define 'n_steps'.")
-            training_assets = _resolve_path(
-                base_dir,
-                system["assets"],
-                kind=f"{key}[{i}] assets directory",
-            )
-            systems.append(
-                _load_prepared_simulation_system(
-                    training_assets,
-                    int(system["n_steps"]),
-                    system_id=f"{i:03d}",
-                )
-            )
-            continue
-
-        for required_key in ("topology", "coordinates", "mdp", "index", "n_steps"):
+        for required_key in ("system_id", "n_steps"):
             if required_key not in system:
                 raise ValueError(
                     f"{key}[{i}] is missing required key {required_key!r}."
                 )
-
-        mdp = system["mdp"]
-        if not isinstance(mdp, dict):
-            raise ValueError(f"{key}[{i}].mdp must be a mapping.")
-        if "prod" not in mdp:
-            raise ValueError(f"{key}[{i}].mdp is missing required key 'prod'.")
-
+        system_id = validate_system_id(
+            system["system_id"], field=f"{key}[{i}].system_id"
+        )
         n_steps = int(system["n_steps"])
         if n_steps <= 0:
             raise ValueError(f"{key}[{i}].n_steps must be a positive integer.")
 
+        if source is not None:
+            if "inputs" in system or "assets" in system:
+                raise ValueError(
+                    f"{key}[{i}] mixes source selection with direct inputs; "
+                    "remove 'inputs'/'assets'."
+                )
+            unknown = set(system) - {"system_id", "n_steps"}
+            if unknown:
+                raise ValueError(
+                    f"{key}[{i}] contains unsupported key(s): "
+                    + ", ".join(sorted(unknown))
+                )
+            built = load_build_system(source, system_id)
+            systems.append(
+                SimulationSystemConfig(
+                    system_id=system_id,
+                    topology_path=built.topology_path,
+                    coordinates_path=built.production_coordinates_path,
+                    mdp_em_path=built.mdp_em_path,
+                    mdp_production_path=built.mdp_production_path,
+                    index_path=built.index_path,
+                    bias=built.bias,
+                    n_steps=n_steps,
+                )
+            )
+            continue
+        else:
+            if "assets" in system:
+                raise ValueError(
+                    f"{key}[{i}].assets directory discovery is unsupported; "
+                    "use top-level source or explicit inputs."
+                )
+            if "inputs" not in system or not isinstance(system["inputs"], dict):
+                raise ValueError(
+                    f"{key}[{i}].inputs must be a mapping of named file roles."
+                )
+            unknown = set(system) - {"system_id", "n_steps", "inputs"}
+            if unknown:
+                raise ValueError(
+                    f"{key}[{i}] contains unsupported key(s): "
+                    + ", ".join(sorted(unknown))
+                )
+            inputs = resolve_explicit_inputs(
+                system["inputs"],
+                base_dir=base_dir,
+                system_id=system_id,
+                field=f"{key}[{i}].inputs",
+            )
+
+        allowed_roles = {
+            "topology",
+            "coordinates",
+            "index",
+            "mdp_em",
+            "mdp_npt",
+            "mdp_production",
+            "bias",
+        }
+        unsupported = set(inputs.inputs) - allowed_roles
+        if unsupported:
+            raise ValueError(
+                f"{key}[{i}].inputs contains unsupported role(s): "
+                + ", ".join(sorted(unsupported))
+            )
+
         systems.append(
             SimulationSystemConfig(
-                system_id=f"{i:03d}",
-                fn_topol=_resolve_path(
-                    base_dir,
-                    system["topology"],
-                    kind=f"{key}[{i}] topology file",
-                ),
-                fn_coordinates=_resolve_path(
-                    base_dir,
-                    system["coordinates"],
-                    kind=f"{key}[{i}] coordinate file",
-                ),
-                fn_mdp_em=_resolve_optional_path(
-                    base_dir,
-                    mdp.get("em"),
-                    kind=f"{key}[{i}] EM MDP file",
-                ),
-                fn_mdp_prod=_resolve_path(
-                    base_dir,
-                    mdp["prod"],
-                    kind=f"{key}[{i}] production MDP file",
-                ),
-                fn_ndx=_resolve_path(
-                    base_dir,
-                    system["index"],
-                    kind=f"{key}[{i}] index file",
-                ),
-                bias=BiasSpec.from_any(system.get("bias"), base_dir=base_dir),
+                system_id=system_id,
+                topology_path=inputs.require_path("topology"),
+                coordinates_path=inputs.require_path("coordinates"),
+                mdp_em_path=inputs.optional_path("mdp_em"),
+                mdp_production_path=inputs.require_path("mdp_production"),
+                index_path=inputs.require_path("index"),
+                bias=BiasSpec.from_any(inputs.optional_path("bias")),
                 n_steps=n_steps,
             )
         )
-    return systems
-
-
-def _load_prepared_simulation_system(
-    training_assets: Path,
-    n_steps: int,
-    *,
-    system_id: str,
-) -> SimulationSystemConfig:
-    if n_steps <= 0:
-        raise ValueError(
-            f"Prepared system assets {training_assets} have invalid n_steps={n_steps}."
-        )
-
-    topologies = sorted(training_assets.glob("*.top"))
-    if len(topologies) != 1:
-        raise ValueError(
-            f"{training_assets} must contain exactly one prepared system, "
-            f"but found {len(topologies)} topology files."
-        )
-
-    fn_topol = topologies[0]
-    system_label = fn_topol.stem
-    fn_coordinates = training_assets / f"{system_label}.gro"
-    fn_mdp_em = training_assets / f"{system_label}.em.mdp"
-    fn_mdp_prod = training_assets / f"{system_label}.mdp"
-    fn_ndx = training_assets / f"{system_label}.ndx"
-    fn_bias = None
-    for suffix in ("bias.colvars.dat", "bias.plumed.dat"):
-        candidate = training_assets / f"{system_label}.{suffix}"
-        if candidate.exists():
-            fn_bias = candidate
-            break
-
-    for path, kind in [
-        (fn_coordinates, "coordinate"),
-        (fn_mdp_em, "EM MDP"),
-        (fn_mdp_prod, "production MDP"),
-        (fn_ndx, "index"),
-    ]:
-        if not path.exists():
-            raise FileNotFoundError(
-                f"Prepared {kind} file not found for {system_label}: {path}"
-            )
-
-    return SimulationSystemConfig(
-        system_id=system_id,
-        fn_topol=fn_topol,
-        fn_coordinates=fn_coordinates,
-        fn_mdp_em=fn_mdp_em,
-        fn_mdp_prod=fn_mdp_prod,
-        fn_ndx=fn_ndx,
-        bias=BiasSpec.from_any(fn_bias, base_dir=training_assets),
-        n_steps=n_steps,
+    validate_unique_system_ids(
+        [system.system_id for system in systems], field=key
     )
+    return systems
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -287,20 +285,16 @@ class SimulationCampaignConfig:
     store: tuple[str, ...] = ()
     slurm: Optional[SlurmConfig] = None
 
-    @classmethod
-    def _load_common(
-        cls,
-        fn_config: PathLike,
-    ) -> tuple[Path, Path, dict[str, Any], dict[str, Any]]:
-        return _load_campaign_common(fn_config)
-
-
 def _load_campaign_common(
     fn_config: PathLike,
+    *,
+    log_name: str = "sample-parameters.log",
 ) -> tuple[Path, Path, dict[str, Any], dict[str, Any]]:
     fn_config = Path(fn_config).resolve()
     base_dir = fn_config.parent
     config = load_yaml(fn_config)
+    if not isinstance(config, dict):
+        raise ValueError("Simulation campaign configuration must contain a mapping.")
 
     required = ["campaign_dir", "systems", "job_scheduler", "gmx_cmd"]
     missing = [key for key in required if key not in config]
@@ -317,7 +311,18 @@ def _load_campaign_common(
             "'local' and 'slurm'."
         )
 
-    systems = _load_simulation_systems(base_dir, config["systems"], key="systems")
+    source_raw = config.get("source")
+    source = (
+        None
+        if source_raw is None
+        else _resolve_path(base_dir, source_raw, kind="build stage root")
+    )
+    systems = _load_simulation_systems(
+        base_dir,
+        config["systems"],
+        key="systems",
+        source=source,
+    )
 
     slurm = None
     if scheduler == "slurm":
@@ -333,16 +338,16 @@ def _load_campaign_common(
         ),
         log=_resolve_path(
             base_dir,
-            config.get("log", "./out.log"),
+            config.get("log", Path(config["campaign_dir"]) / log_name),
             must_exist=False,
             kind="log file",
         ),
         gmx_cmd=str(config["gmx_cmd"]),
         job_scheduler=scheduler,
         systems=systems,
-        dispatch=bool(config.get("dispatch", True)),
-        compress=bool(config.get("compress", False)),
-        cleanup=bool(config.get("cleanup", False)),
+        dispatch=_strict_bool(config.get("dispatch", True), field="dispatch"),
+        compress=_strict_bool(config.get("compress", False), field="compress"),
+        cleanup=_strict_bool(config.get("cleanup", False), field="cleanup"),
         store=tuple(_normalize_store(config.get("store"))),
         slurm=slurm,
     )

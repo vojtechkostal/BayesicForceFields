@@ -17,19 +17,18 @@ See the [changelog](changelog.md) for post-publication highlights.
 
 ## What BFF Does
 
-BFF runs a linear workflow:
+BFF uses labeling as an MLIP handoff alongside its parameter-learning workflow:
 
 ```text
-build -> prepare-assets -> evaluate-snapshots
-                       -> sample -> analyze -> fit -> learn -> validate
+build -> label-snapshots -> external MLIP workflow
+      -> sample-parameters -> build-qoi-datasets -> fit-lgp -> learn -> validate
 ```
 
 - `build`: equilibrate systems and run seeded production trajectories
-- `prepare-assets`: package FFMD starts and stage CP2K snapshot assets
-- `evaluate-snapshots`: run CP2K snapshot jobs
-- `sample`: run sampled force-field MD campaigns
-- `analyze`: compute quantities of interest from sample and reference data
-- `fit`: train surrogate models
+- `label-snapshots`: extract trajectory frames and label them with CP2K
+- `sample-parameters`: run sampled force-field MD campaigns
+- `build-qoi-datasets`: compute quantities of interest from sample and reference data
+- `fit-lgp`: train fingerprinted surrogate models
 - `learn`: infer posterior force-field parameters
 - `validate`: rerun selected posterior samples
 
@@ -40,7 +39,7 @@ and function-9 dihedral force constants. A single bound can tie multiple atom
 names or atom types to one learned value. Charge parameters also support
 hierarchical residue- or system-level constraints.
 
-See the [sample configuration reference](configuration/sample.md#parameter-labels)
+See the [sample configuration reference](configuration/sample-parameters.md#parameter-labels)
 for the accepted labels, matching rules, and examples.
 
 ## Quick Start
@@ -67,15 +66,15 @@ directory, edit them there, and run BFF from that directory:
 
 ```bash
 mkdir -p 01-build
-cp configs/build-colvars.yaml 01-build/config.yaml
+cp configs/01-build-colvars.yaml 01-build/config.yaml
 cd 01-build
 bff build config.yaml
 cd ..
 
-mkdir -p 02-assets
-cp configs/prepare-assets.yaml 02-assets/config.yaml
-cd 02-assets
-bff prepare-assets config.yaml
+mkdir -p 02-reference-snapshots
+cp configs/02-reference-snapshots-local.yaml 02-reference-snapshots/config.yaml
+cd 02-reference-snapshots
+bff label-snapshots config.yaml
 ```
 
 Continue with the stages in the [acetate example](examples/acetate.md).

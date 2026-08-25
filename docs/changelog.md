@@ -2,8 +2,42 @@
 
 The public reproduction snapshot for the published study is archived as
 [`v0.0.1`](https://github.com/vojtechkostal/BayesicForceFields/tree/v0.0.1).
-Use that tag for exact reproduction of the paper results. The current
-`0.3.0` release is the current workflow release.
+Use that tag for exact reproduction of the paper results. The current workflow
+release is `0.4.0`.
+
+## `0.4.0` - 2026-08-24
+
+The pipeline now uses semantic system IDs and explicit role-based manifests.
+Snapshot extraction and CP2K labeling are unified under `bff label-snapshots`;
+all molecular and isolated-atom CP2K inputs are supplied explicitly by users;
+the remaining stages are named `sample-parameters`, `build-qoi-datasets`, and
+`fit-lgp`. This is a breaking config change; follow the
+[pipeline migration guide](migration.md).
+
+Build systems now include stable virtual-site-free reference assets,
+`label-snapshots` writes a detailed results manifest, and validation can draw
+samples directly from `outputs/posterior.pt`. Learning copies the authoritative
+parameter specification into its fixed `outputs/` directory.
+
+QoI analysis now parallelizes complete training samples, processes all systems
+of a sample sequentially, and treats the reference through the same execution
+path. Custom routines infer file-based execution from declared `inputs` rather
+than a separate `loader` setting.
+
+Static hydrogen-bond selections now reuse their donor topology and possible
+labels across frames, substantially reducing reference-analysis time. QoI
+dataset metadata is also guaranteed to remain acyclic during serialization.
+
+Colvars-enabled sampling and validation jobs now rewrite
+`colvars-configfile` relative to the GROMACS working directory, fixing missing
+bias files in staged local and Slurm campaigns.
+
+The numbered examples follow the new stage contract. The self-contained
+notebooks use CUDA when available and otherwise fall back to CPU. `pytest` is
+now installed through the `dev` extra instead of as a runtime dependency.
+
+See the [repository changelog](https://github.com/vojtechkostal/BayesicForceFields/blob/main/CHANGELOG.md)
+for the complete list of breaking changes and fixes.
 
 ## `0.3.0` - 2026-06-11
 
