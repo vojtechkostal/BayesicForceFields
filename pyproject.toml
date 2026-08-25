@@ -1,6 +1,6 @@
 [project]
 name = "bfflearn"
-version = "0.4.0"
+version = "0.4.1"
 description = "Bayesian workflows for fixed-charge molecular force fields"
 authors = [
   { name="Vojtech Kostal", email="vojtakostal8@gmail.com" }

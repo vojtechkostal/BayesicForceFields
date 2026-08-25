@@ -17,10 +17,10 @@ def test_release_metadata_is_synchronized() -> None:
     citation = yaml.safe_load((ROOT / "CITATION.cff").read_text())
     release_date = citation["date-released"]
 
-    assert version == "0.4.0"
+    assert version == "0.4.1"
     assert bff.__version__ == version
     assert citation["version"] == version
-    assert release_date == "2026-08-24"
+    assert release_date == "2026-08-25"
     assert (
         f"## `{version}` - {release_date}"
         in (ROOT / "CHANGELOG.md").read_text()
