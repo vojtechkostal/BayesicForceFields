@@ -1,9 +1,12 @@
 from . import (
     effective_observations,
+    fpca_surrogate,
     gaussian_process,
+    jensen_correction,
     kernels,
     learning,
     likelihoods,
+    plausibility_v2,
     priors,
     results,
     utils,
@@ -11,10 +14,13 @@ from . import (
 
 __all__ = [
     'effective_observations',
+    'fpca_surrogate',
     'gaussian_process',
+    'jensen_correction',
     'kernels',
     'learning',
     'likelihoods',
+    'plausibility_v2',
     'priors',
     'results',
     'utils',
