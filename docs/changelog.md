@@ -3,7 +3,27 @@
 The public reproduction snapshot for the published study is archived as
 [`v0.0.1`](https://github.com/vojtechkostal/BayesicForceFields/tree/v0.0.1).
 Use that tag for exact reproduction of the paper results. The current workflow
-release is `0.4.0`.
+release is `0.4.2`.
+
+## `0.4.2` - 2026-10-02
+
+Local Gaussian-process fitting now derives its default hyperparameter-prior
+centers from the input and residual target scales. This makes the defaults more
+robust for scalar QoIs and mixed parameter scales.
+
+Posterior plotting now limits expensive KDE and QoI-attribution work to
+deterministic subsets by default, evaluates QoI likelihood contributions in
+adaptive batches, and exposes these limits through the `plots` section of the
+learn configuration. Marginal plots report KDE modes, use more legible panel
+layouts and legends, and support per-parameter labels for arbitrary `define`
+parameters. Local validation campaigns now display progress immediately and
+advance the count after each completed MD job, including single-sample runs.
+
+## `0.4.1` - 2026-08-25
+
+RDF selection handling and atom-type expansion moved into the QoI adapter,
+leaving the numerical kernel to operate directly on MDAnalysis AtomGroups.
+Dynamic selections and numerical behavior are preserved.
 
 ## `0.4.0` - 2026-08-24
 

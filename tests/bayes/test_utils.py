@@ -17,3 +17,13 @@ def test_find_map_returns_best_observed_iterate(monkeypatch) -> None:
     )
 
     assert torch.allclose(result, torch.tensor([0.0]))
+
+
+def test_find_map_accepts_start_outside_default_stability_bounds() -> None:
+    result = find_map(
+        lambda x: -torch.sum((x + 12.0) ** 2),
+        torch.tensor([-12.0]),
+        lr=0.01,
+    )
+
+    assert torch.allclose(result, torch.tensor([-12.0]), atol=1e-2)

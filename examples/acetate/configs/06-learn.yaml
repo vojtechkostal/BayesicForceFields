@@ -20,6 +20,18 @@ mcmc:
   resume: false
   device: cuda
   rhat_tol: 1.05
+plots:
+  max_corner_samples: 2000
+  max_marginal_samples: 10000
+  max_qoi_samples: 10000
+  qoi_batch_size: 256
+  plot_metadata:
+    define VSA:
+      xlabel: O-VS
+      ylabel: angle [degree]
+    define VSD:
+      xlabel: C-O-VS
+      ylabel: distance [nm]
 output:
   directory: ./
   overwrite: false

@@ -119,6 +119,8 @@ Operational files use the same layout as sampling. The job `config.yaml`,
 `run.sh`, and Slurm `run.out` are copied to `samples/<sample_id>/`. The live
 `outputs/` working tree is retained only when cleanup is disabled; requested
 validation data remain in per-system directories below `samples/`.
+Locally dispatched campaigns show console-only progress from `0/N` while the
+first MD job is running and advance after each completed parameter sample.
 
 For the alternative explicit workflow, load `outputs/posterior.pt` with
 `PosteriorResults` and call

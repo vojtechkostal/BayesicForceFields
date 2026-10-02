@@ -14,7 +14,10 @@ from bff.io.cp2k import (
 )
 from bff.workflows.label_snapshots.config import LabelSnapshotsConfig
 from bff.workflows.learn.config import LearnConfig
-from bff.workflows.learn.main import _write_default_plots
+from bff.workflows.learn.main import (
+    _qoi_log_likelihood_in_batches,
+    _write_default_plots,
+)
 from bff.workflows.md.main import check_success
 
 
@@ -134,6 +137,10 @@ def test_write_default_plots_writes_expected_pngs(
 
     def fake_plot_marginals(results, specs, *, fn_out=None, **kwargs):
         assert results.prepared is True
+        assert kwargs["max_samples"] == 11
+        assert kwargs["plot_metadata"] == {
+            "define VSA": {"xlabel": "O-VS", "ylabel": "angle [degree]"}
+        }
         calls["marginals"] = Path(fn_out)
         Path(fn_out).write_text("marginals\n")
 
@@ -147,11 +154,17 @@ def test_write_default_plots_writes_expected_pngs(
     ):
         assert results.prepared is True
         assert set(contributions) == {"qoi"}
+        assert len(contributions["qoi"]) == 7
+        assert kwargs["sample_indices"].tolist() == [0, 3, 6, 9, 12, 15, 19]
+        assert kwargs["plot_metadata"] == {
+            "define VSA": {"xlabel": "O-VS", "ylabel": "angle [degree]"}
+        }
         calls["qoi_marginals"] = Path(fn_out)
         Path(fn_out).write_text("qoi marginals\n")
 
     def fake_plot_corner(results, *, fn_out=None, **kwargs):
         assert results.prepared is True
+        assert kwargs["max_samples"] == 5
         calls["corner"] = Path(fn_out)
         Path(fn_out).write_text("corner\n")
 
@@ -161,9 +174,15 @@ def test_write_default_plots_writes_expected_pngs(
         fake_plot_qoi_marginals,
     )
     monkeypatch.setattr("bff.plotting.plot_corner", fake_plot_corner)
+    likelihood_batch_sizes = []
+
+    def fake_log_likelihood(theta, problem):
+        likelihood_batch_sizes.append(len(theta))
+        return {"qoi": torch.zeros(len(theta), device=theta.device)}
+
     monkeypatch.setattr(
         "bff.bayes.likelihoods.gaussian_log_likelihood_by_qoi",
-        lambda theta, problem: {"qoi": torch.zeros(len(theta))},
+        fake_log_likelihood,
     )
 
     specs = tmp_path / "specs.yaml"
@@ -186,6 +205,18 @@ def test_write_default_plots_writes_expected_pngs(
                         }
                     },
                     "mcmc": {},
+                    "plots": {
+                        "max_corner_samples": 5,
+                        "max_marginal_samples": 11,
+                        "max_qoi_samples": 7,
+                        "qoi_batch_size": 3,
+                        "plot_metadata": {
+                            "define VSA": {
+                                "xlabel": "O-VS",
+                                "ylabel": "angle [degree]",
+                            }
+                        },
+                    },
                     "output": {"directory": str(tmp_path / "learn")},
                 }
         )
@@ -211,3 +242,40 @@ def test_write_default_plots_writes_expected_pngs(
     assert calls["marginals"].name == "marginals.pdf"
     assert calls["qoi_marginals"].name == "qoi-marginals.pdf"
     assert calls["corner"].name == "corner.pdf"
+    assert likelihood_batch_sizes == [3, 3, 1]
+
+
+def test_qoi_likelihood_batches_shrink_after_cuda_oom(monkeypatch) -> None:
+    real_as_tensor = torch.as_tensor
+    attempted_batch_sizes = []
+    cache_clears = []
+
+    def cpu_as_tensor(values, **kwargs):
+        kwargs.pop("device", None)
+        return real_as_tensor(values, **kwargs)
+
+    def fake_log_likelihood(theta, problem):
+        attempted_batch_sizes.append(len(theta))
+        if len(theta) > 2:
+            raise torch.OutOfMemoryError("synthetic CUDA OOM")
+        return {"qoi": theta[:, 0]}
+
+    monkeypatch.setattr(torch, "as_tensor", cpu_as_tensor)
+    monkeypatch.setattr(torch.cuda, "empty_cache", lambda: cache_clears.append(True))
+    monkeypatch.setattr(
+        "bff.bayes.likelihoods.gaussian_log_likelihood_by_qoi",
+        fake_log_likelihood,
+    )
+
+    problem = SimpleNamespace(to_torch=lambda device: problem)
+    samples = np.arange(10, dtype=float).reshape(5, 2)
+    contributions = _qoi_log_likelihood_in_batches(
+        samples,
+        problem,
+        torch.device("cuda"),
+        batch_size=5,
+    )
+
+    assert attempted_batch_sizes == [5, 2, 2, 1]
+    assert cache_clears == [True]
+    assert contributions["qoi"].tolist() == [0.0, 2.0, 4.0, 6.0, 8.0]

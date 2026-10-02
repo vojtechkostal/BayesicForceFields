@@ -215,6 +215,11 @@ def find_max_stable_lr(
     else:
         learning_rates = list(learning_rates)
     lower, upper = param_bounds
+    # Log-scale hyperparameters can legitimately start outside the generic
+    # stability window when the underlying data are very small or very large.
+    # Preserve the explosion guard while always admitting the supplied start.
+    lower = min(lower, float(p0.min()) - 1.0)
+    upper = max(upper, float(p0.max()) + 1.0)
     for lr in learning_rates:
         x = p0.clone().detach().requires_grad_(True)
         opt = torch.optim.SGD([x], lr=lr)

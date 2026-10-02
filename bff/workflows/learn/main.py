@@ -5,11 +5,61 @@ from __future__ import annotations
 import shutil
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ...domain.specs import ChargeConstraint
 from ...io.logs import Logger
 from ...io.utils import file_sha256
 from .config import LearnConfig
+
+if TYPE_CHECKING:
+    import numpy as np
+
+
+def _subsample_indices(n_samples: int, max_samples: int) -> "np.ndarray":
+    import numpy as np
+
+    if n_samples <= max_samples:
+        return np.arange(n_samples)
+    return np.linspace(0, n_samples - 1, max_samples, dtype=int)
+
+
+def _qoi_log_likelihood_in_batches(
+    raw_samples,
+    problem,
+    device,
+    batch_size: int,
+):
+    import numpy as np
+    import torch
+
+    from ...bayes.likelihoods import gaussian_log_likelihood_by_qoi
+
+    torch_problem = problem.to_torch(str(device))
+    chunks: dict[str, list[np.ndarray]] = {}
+    start = 0
+    current_batch_size = min(batch_size, len(raw_samples))
+    with torch.inference_mode():
+        while start < len(raw_samples):
+            stop = min(start + current_batch_size, len(raw_samples))
+            try:
+                theta = torch.as_tensor(
+                    raw_samples[start:stop],
+                    dtype=torch.float32,
+                    device=device,
+                )
+                batch = gaussian_log_likelihood_by_qoi(theta, torch_problem)
+                for qoi, values in batch.items():
+                    chunks.setdefault(qoi, []).append(values.cpu().numpy())
+                del theta, batch
+                start = stop
+            except torch.OutOfMemoryError:
+                if device.type != "cuda" or current_batch_size == 1:
+                    raise
+                current_batch_size = max(1, current_batch_size // 2)
+                torch.cuda.empty_cache()
+
+    return {qoi: np.concatenate(values) for qoi, values in chunks.items()}
 
 
 def _prepare_output(config: LearnConfig) -> None:
@@ -57,17 +107,30 @@ def _write_default_plots(results, config: LearnConfig, problem) -> None:
     import numpy as np
     import torch
 
-    from ...bayes.likelihoods import gaussian_log_likelihood_by_qoi
     from ...plotting import plot_corner, plot_marginals, plot_qoi_marginals
 
-    # The sampler checkpoint and posterior already exclude warmup states. Use
-    # every saved production state so mandatory plots also work for short CPU
-    # validation runs; users can apply diagnostic thinning when loading results.
+    # The sampler checkpoint and posterior already exclude warmup states. Prepare
+    # every production state, then cap only the expensive visualization work.
     results.prepare_samples(discard=0, thin=1)
-    plot_marginals(results, config.specs, fn_out=config.output.marginals)
-    plot_corner(results, fn_out=config.output.corner)
+    plot_marginals(
+        results,
+        config.specs,
+        max_samples=config.plots.max_marginal_samples,
+        plot_metadata=config.plots.plot_metadata,
+        fn_out=config.output.marginals,
+    )
+    plot_corner(
+        results,
+        max_samples=config.plots.max_corner_samples,
+        fn_out=config.output.corner,
+    )
 
     prepared = results.prepared_samples
+    sample_indices = _subsample_indices(
+        len(prepared),
+        config.plots.max_qoi_samples,
+    )
+    prepared = prepared[sample_indices]
     if results.include_implicit_charge:
         specs = results.specs
         all_names = specs.bounds.names.tolist()
@@ -86,17 +149,20 @@ def _write_default_plots(results, config: LearnConfig, problem) -> None:
         raw_samples[:, problem.n_params :]
     )
     device = next(iter(problem.models.values())).lgps[0].X_train.device
-    theta = torch.as_tensor(raw_samples, dtype=torch.float32, device=device)
-    contributions = {
-        qoi: values.detach().cpu().numpy()
-        for qoi, values in gaussian_log_likelihood_by_qoi(
-            theta, problem.to_torch(str(device))
-        ).items()
-    }
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+    contributions = _qoi_log_likelihood_in_batches(
+        raw_samples,
+        problem,
+        device,
+        config.plots.qoi_batch_size,
+    )
     plot_qoi_marginals(
         results,
         config.specs,
         contributions,
+        plot_metadata=config.plots.plot_metadata,
+        sample_indices=sample_indices,
         fn_out=config.output.qoi_marginals,
     )
 

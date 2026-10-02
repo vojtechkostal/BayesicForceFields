@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import isfinite
 from pathlib import Path
 from typing import Mapping
@@ -31,6 +31,15 @@ class LearnMCMCConfig:
     rhat_tol: float = 1.01
     ess_min: int = 100
     include_implicit_charge: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class LearnPlotsConfig:
+    max_corner_samples: int = 2_000
+    max_marginal_samples: int | None = 10_000
+    max_qoi_samples: int = 10_000
+    qoi_batch_size: int = 256
+    plot_metadata: dict[str, dict[str, str]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +77,7 @@ class LearnConfig:
     specs: Path
     models: dict[str, LearnModelConfig]
     mcmc: LearnMCMCConfig
+    plots: LearnPlotsConfig
     output: LearnOutputConfig
 
     @classmethod
@@ -77,7 +87,7 @@ class LearnConfig:
         config = load_yaml(fn_config)
         if not isinstance(config, Mapping):
             raise ValueError("Learn configuration must contain a mapping.")
-        unknown_top = set(config) - {"specs", "models", "mcmc", "output"}
+        unknown_top = set(config) - {"specs", "models", "mcmc", "plots", "output"}
         if unknown_top:
             raise ValueError(
                 "Learn configuration contains unsupported key(s): "
@@ -140,6 +150,75 @@ class LearnConfig:
                 mcmc_raw.get("include_implicit_charge", False),
                 field="mcmc.include_implicit_charge",
             ),
+        )
+
+        plots_raw = config.get("plots", {})
+        if not isinstance(plots_raw, Mapping):
+            raise ValueError("plots must be a mapping.")
+        allowed_plots = {
+            "max_corner_samples",
+            "max_marginal_samples",
+            "max_qoi_samples",
+            "qoi_batch_size",
+            "plot_metadata",
+        }
+        unknown_plots = set(plots_raw) - allowed_plots
+        if unknown_plots:
+            raise ValueError(
+                "plots contains unsupported key(s): "
+                + ", ".join(sorted(unknown_plots))
+            )
+        plot_values = {
+            "max_corner_samples": int(plots_raw.get("max_corner_samples", 2_000)),
+            "max_qoi_samples": int(plots_raw.get("max_qoi_samples", 10_000)),
+            "qoi_batch_size": int(plots_raw.get("qoi_batch_size", 256)),
+        }
+        for name, value in plot_values.items():
+            if value < 1:
+                raise ValueError(f"plots.{name} must be positive.")
+        max_marginal_samples_raw = plots_raw.get("max_marginal_samples", 10_000)
+        if max_marginal_samples_raw is None:
+            max_marginal_samples = None
+        else:
+            max_marginal_samples = int(max_marginal_samples_raw)
+            if max_marginal_samples == -1:
+                max_marginal_samples = None
+            elif max_marginal_samples < 1:
+                raise ValueError(
+                    "plots.max_marginal_samples must be positive, -1, or null."
+                )
+        plot_metadata_raw = plots_raw.get("plot_metadata", {})
+        if not isinstance(plot_metadata_raw, Mapping):
+            raise ValueError("plots.plot_metadata must be a mapping.")
+        plot_metadata: dict[str, dict[str, str]] = {}
+        for parameter, metadata in plot_metadata_raw.items():
+            if not isinstance(parameter, str) or not parameter:
+                raise ValueError(
+                    "plots.plot_metadata keys must be non-empty parameter names."
+                )
+            if not isinstance(metadata, Mapping):
+                raise ValueError(
+                    f"plots.plot_metadata.{parameter} must be a mapping."
+                )
+            unknown_metadata = set(metadata) - {"xlabel", "ylabel"}
+            if unknown_metadata:
+                raise ValueError(
+                    f"plots.plot_metadata.{parameter} contains unsupported key(s): "
+                    + ", ".join(sorted(unknown_metadata))
+                )
+            values = {}
+            for key, value in metadata.items():
+                if not isinstance(value, str) or not value.strip():
+                    raise ValueError(
+                        f"plots.plot_metadata.{parameter}.{key} must be a "
+                        "non-empty string."
+                    )
+                values[key] = value.strip()
+            plot_metadata[parameter] = values
+        plots = LearnPlotsConfig(
+            **plot_values,
+            max_marginal_samples=max_marginal_samples,
+            plot_metadata=plot_metadata,
         )
 
         models_raw = config["models"]
@@ -241,5 +320,6 @@ class LearnConfig:
             specs=_resolve_path(base_dir, config["specs"], kind="specs file"),
             models=models,
             mcmc=mcmc,
+            plots=plots,
             output=output,
         )

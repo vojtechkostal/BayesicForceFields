@@ -429,6 +429,15 @@ def test_learn_config_loads_effective_observation_modes(tmp_path: Path) -> None:
                     },
                 },
                 "mcmc": {"device": "cpu"},
+                "plots": {
+                    "max_marginal_samples": -1,
+                    "plot_metadata": {
+                        "define VSA": {
+                            "xlabel": "O-VS",
+                            "ylabel": "angle [degree]",
+                        }
+                    }
+                },
                 "output": {"directory": "./learn-output"},
             }
         )
@@ -445,12 +454,43 @@ def test_learn_config_loads_effective_observation_modes(tmp_path: Path) -> None:
     assert config.models["density"].n_eff is None
     assert config.models["density"].tolerance is None
     assert config.models["pmf"].n_eff == 2.5
+    assert config.plots.max_marginal_samples is None
+    assert config.plots.plot_metadata == {
+        "define VSA": {"xlabel": "O-VS", "ylabel": "angle [degree]"}
+    }
     assert config.output.posterior == (
         tmp_path / "learn-output" / "outputs" / "posterior.pt"
     ).resolve()
     assert config.output.specs == (
         tmp_path / "learn-output" / "outputs" / "specs.yaml"
     ).resolve()
+
+
+@pytest.mark.parametrize("unlimited", [-1, None])
+def test_learn_config_accepts_unlimited_marginal_samples(
+    tmp_path: Path,
+    unlimited,
+) -> None:
+    specs = _write(tmp_path / "specs.yaml")
+    model = _write(tmp_path / "model.lgp")
+    fn_config = tmp_path / "learn.yaml"
+    fn_config.write_text(
+        yaml.safe_dump(
+            {
+                "specs": str(specs),
+                "models": {
+                    "rdf": {
+                        "model_path": str(model),
+                        "independent_observations": True,
+                    }
+                },
+                "mcmc": {},
+                "plots": {"max_marginal_samples": unlimited},
+            }
+        )
+    )
+
+    assert LearnConfig.load(fn_config).plots.max_marginal_samples is None
 
 
 def test_learn_config_rejects_obsolete_effective_observation_keys(

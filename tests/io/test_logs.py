@@ -63,7 +63,10 @@ def test_status_can_be_console_only(tmp_path: Path, capsys) -> None:
     assert log.read_text() == ""
 
 
-def test_campaign_progress_is_not_written_to_physical_log(tmp_path: Path) -> None:
+def test_campaign_progress_is_visible_but_not_written_to_physical_log(
+    tmp_path: Path,
+    capsys,
+) -> None:
     log = tmp_path / "campaign.log"
     specs = tmp_path / "specs.yaml"
     specs.write_text("bounds: {}\ncharge_constraints: []\n")
@@ -81,7 +84,7 @@ def test_campaign_progress_is_not_written_to_physical_log(tmp_path: Path) -> Non
         "sample-parameters",
         fn_log=log,
         mode="w",
-        verbose=False,
+        color=False,
     )
 
     run_campaign(
@@ -92,6 +95,54 @@ def test_campaign_progress_is_not_written_to_physical_log(tmp_path: Path) -> Non
         logger=logger,
     )
 
+    console = capsys.readouterr().out
+    assert "Staging jobs: 0/2" in console
+    assert "[  0%]" in console
+    assert "Staging jobs: 1/2" in console
+    assert "[ 50%]" in console
+    assert "Staging jobs: Done. | 2/2 [100%]" in console
+
     text = log.read_text()
+    assert "Staging jobs: 0/2" not in text
     assert "Staging jobs: 1/2" not in text
     assert "Staging jobs: Done. | 2/2 [100%]" in text
+
+
+def test_single_local_campaign_shows_progress_while_md_runs(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    specs = tmp_path / "specs.yaml"
+    specs.write_text("bounds: {}\ncharge_constraints: []\n")
+    config = SimpleNamespace(
+        campaign_dir=tmp_path / "campaign",
+        dispatch=True,
+        job_scheduler="local",
+        gmx_cmd="gmx",
+        store=(),
+        cleanup=False,
+        compress=False,
+        slurm=None,
+    )
+    logger = Logger("validate", color=False, width=50)
+    output_before_run = []
+
+    def fake_run(*args, **kwargs):
+        output_before_run.append(capsys.readouterr().out)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+
+    run_campaign(
+        config=config,
+        fn_specs=specs,
+        systems=[],
+        parameter_samples=np.array([[1.0]]),
+        logger=logger,
+    )
+
+    assert len(output_before_run) == 1
+    assert "Running MD: 0/1" in output_before_run[0]
+    assert "[  0%]" in output_before_run[0]
+    assert "Running MD: Done. | 1/1 [100%]" in capsys.readouterr().out

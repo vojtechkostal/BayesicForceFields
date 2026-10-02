@@ -369,6 +369,42 @@ def _default_checkpoint_path(fn_posterior: Path) -> Path:
     return fn_posterior.with_name(f"{stem}.ckpt{suffix}")
 
 
+def _default_lgp_hyperpriors(
+    X: torch.Tensor,
+    residuals: torch.Tensor,
+) -> Priors:
+    """Build scale-aware priors for log GP hyperparameters."""
+    input_scales = X.std(dim=0, unbiased=False)
+    input_scales = torch.where(
+        torch.isfinite(input_scales) & (input_scales > 0),
+        input_scales,
+        torch.ones_like(input_scales),
+    )
+
+    target_scale = residuals.std(unbiased=False)
+    if not torch.isfinite(target_scale) or target_scale <= 0:
+        target_scale = torch.sqrt(torch.mean(residuals.square()))
+    if not torch.isfinite(target_scale) or target_scale <= 0:
+        target_scale = torch.ones((), dtype=residuals.dtype)
+
+    # LocalGaussianProcess adds ``sigma`` directly to the covariance diagonal,
+    # so its natural scale is a fraction of the target variance.
+    noise_scale = 0.1 * target_scale.square()
+    tiny = torch.finfo(noise_scale.dtype).tiny
+    noise_scale = torch.clamp(noise_scale, min=tiny)
+
+    return Priors(
+        [
+            Prior("normal", float(torch.log(scale)), 2.0, name=f"length_{i}")
+            for i, scale in enumerate(input_scales)
+        ]
+        + [
+            Prior("normal", float(torch.log(target_scale)), 2.0, name="width"),
+            Prior("normal", float(torch.log(noise_scale)), 3.0, name="noise"),
+        ]
+    )
+
+
 def fit_lgp_committee(
     X: torch.Tensor,
     y: torch.Tensor,
@@ -400,16 +436,7 @@ def fit_lgp_committee(
 
     n_params = X.shape[1]
     if hyperpriors is None:
-        priors = Priors(
-            [
-                Prior("normal", -2.0, 2.0, name=f"length_{i}")
-                for i in range(n_params)
-            ]
-            + [
-                Prior("normal", -2.0, 2.0, name="width"),
-                Prior("normal", -2.0, 3.0, name="noise"),
-            ]
-        )
+        priors = _default_lgp_hyperpriors(X_hyper, y_hyper - y_hyper_mean)
     else:
         priors = Priors.from_any(hyperpriors)
     if len(priors) != n_params + 2:

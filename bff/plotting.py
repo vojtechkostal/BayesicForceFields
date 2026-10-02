@@ -87,13 +87,267 @@ def _axis_labels(kind: str) -> tuple[str, str]:
     return kind.capitalize(), kind.capitalize()
 
 
-def _format_range_value(value: float, lower: float, upper: float) -> str:
-    """Format a value using precision derived from its parameter range."""
+def _marginal_panel_sections(
+    param_names: Sequence[str],
+    max_parameters_per_row: int = 5,
+) -> list[tuple[str, list[list[list[int]]]]]:
+    """Build type sections, wrapping groups and gridding independent defines."""
+    if max_parameters_per_row < 1:
+        raise ValueError("max_parameters_per_row must be positive.")
+    param_groups: dict[str, list[int]] = {}
+    for idx, name in enumerate(param_names):
+        param_groups.setdefault(name.split()[0], []).append(idx)
+
+    sections: list[tuple[str, list[list[list[int]]]]] = []
+    for kind, indices in param_groups.items():
+        if kind == "define":
+            n_columns = (
+                1
+                if len(indices) <= 2
+                else min(max_parameters_per_row, int(np.ceil(np.sqrt(len(indices)))))
+            )
+            n_rows = int(np.ceil(len(indices) / n_columns))
+            rows = []
+            for row_indices in np.array_split(indices, n_rows):
+                rows.append([[int(idx)] for idx in row_indices])
+            sections.append((kind, rows))
+            continue
+
+        n_rows = int(np.ceil(len(indices) / max_parameters_per_row))
+        rows = [
+            [[int(idx) for idx in row_indices]]
+            for row_indices in np.array_split(indices, n_rows)
+        ]
+        sections.append((kind, rows))
+    return sections
+
+
+def _marginal_figure(
+    panel_sections: Sequence[
+        tuple[str, Sequence[Sequence[Sequence[int]]]]
+    ],
+) -> tuple[Any, list[tuple[Any, str, Sequence[int]]]]:
+    panel_gap = 0.9
+    section_gap = 0.4
+    section_widths = [
+        max(
+            sum(
+                3.4 if kind == "define" else max(3.6, 1.45 * len(indices))
+                for indices in row
+            )
+            + panel_gap * max(0, len(row) - 1)
+            for row in rows
+        )
+        for kind, rows in panel_sections
+    ]
+    max_section_rows = max(len(rows) for _, rows in panel_sections)
+    fig = plt.figure(
+        figsize=(
+            sum(section_widths) + section_gap * (len(panel_sections) - 1),
+            2 * max_section_rows,
+        )
+    )
+    outer = fig.add_gridspec(
+        1,
+        len(panel_sections),
+        width_ratios=section_widths,
+        wspace=0.1,
+    )
+    axes: list[tuple[Any, str, Sequence[int]]] = []
+    for section_idx, ((kind, rows), section_width) in enumerate(
+        zip(panel_sections, section_widths)
+    ):
+        section_grid = outer[0, section_idx].subgridspec(
+            len(rows), 1, hspace=0.4
+        )
+        for row_idx, row in enumerate(rows):
+            widths = [
+                3.4 if kind == "define" else max(3.6, 1.45 * len(indices))
+                for indices in row
+            ]
+            spare_width = max(0.0, section_width - sum(widths))
+            row_grid = section_grid[row_idx, 0].subgridspec(
+                1,
+                len(row) + 2,
+                width_ratios=[
+                    max(spare_width / 2, 1e-6),
+                    *widths,
+                    max(spare_width / 2, 1e-6),
+                ],
+                wspace=0.4,
+            )
+            for panel_idx, indices in enumerate(row):
+                axes.append(
+                    (fig.add_subplot(row_grid[0, panel_idx + 1]), kind, indices)
+                )
+    return fig, axes
+
+
+def _align_marginal_ylabels(
+    fig: Any,
+    panel_axes: Sequence[tuple[Any, str, Sequence[int]]],
+) -> None:
+    """Align y-label centers for panels occupying the same visual column."""
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    columns: dict[float, list[Any]] = {}
+    for ax, _, _ in panel_axes:
+        columns.setdefault(round(ax.get_position().x0, 3), []).append(ax)
+
+    inverse = fig.transFigure.inverted()
+    for axes in columns.values():
+        if len(axes) < 2:
+            continue
+        label_centers = [
+            inverse.transform(ax.yaxis.label.get_window_extent(renderer).get_points())[
+                :, 0
+            ].mean()
+            for ax in axes
+        ]
+        label_x = min(label_centers)
+        for ax in axes:
+            position = ax.get_position()
+            ax.yaxis.set_label_coords(
+                label_x,
+                0.5 * (position.y0 + position.y1),
+                transform=fig.transFigure,
+            )
+
+
+def _place_top_legends(
+    fig: Any,
+    legend_groups: Sequence[tuple[Sequence[Any], int]],
+    *,
+    fontsize: float = 15,
+) -> list[Any]:
+    """Stack figure legends above the panels and reserve their rendered space."""
+    width, original_height = fig.get_size_inches()
+    edge_padding = 0.08
+    legend_gap = 0.08
+    panel_gap = 0.12
+    legends = []
+    legend_heights = []
+
+    for handles, requested_columns in legend_groups:
+        columns = min(max(1, requested_columns), len(handles))
+        while True:
+            legend = fig.legend(
+                handles=handles,
+                loc="upper center",
+                bbox_to_anchor=(0.5, 1.0),
+                ncol=columns,
+                frameon=False,
+                fontsize=fontsize,
+            )
+            fig.canvas.draw()
+            bbox = legend.get_window_extent(fig.canvas.get_renderer())
+            if bbox.width <= 0.96 * fig.bbox.width or columns == 1:
+                break
+            legend.remove()
+            columns -= 1
+        legends.append(legend)
+        legend_heights.append(bbox.height / fig.dpi)
+
+    reserved_height = (
+        edge_padding
+        + sum(legend_heights)
+        + legend_gap * max(0, len(legends) - 1)
+        + panel_gap
+    )
+    new_height = original_height + reserved_height
+    original_bottom = fig.subplotpars.bottom * original_height
+    fig.set_size_inches(width, new_height, forward=True)
+
+    y = 1.0 - edge_padding / new_height
+    for legend, legend_height in zip(legends, legend_heights):
+        legend.set_bbox_to_anchor((0.5, y), transform=fig.transFigure)
+        y -= (legend_height + legend_gap) / new_height
+    fig.subplots_adjust(
+        bottom=original_bottom / new_height,
+        top=1.0 - reserved_height / new_height,
+    )
+    return legends
+
+
+def _plot_metadata(
+    plot_metadata: Optional[Mapping[str, Mapping[str, str]]],
+) -> dict[str, dict[str, str]]:
+    return {
+        name: dict(metadata)
+        for name, metadata in (plot_metadata or {}).items()
+    }
+
+
+def _marginal_tick_labels(
+    param_names: Sequence[str],
+    parameter_labels: Optional[Sequence[str] | Mapping[str, str]],
+    plot_metadata: Mapping[str, Mapping[str, str]],
+) -> list[str]:
+    unknown_metadata = set(plot_metadata) - set(param_names)
+    if unknown_metadata:
+        raise ValueError(
+            "plot_metadata contains unknown parameter(s): "
+            + ", ".join(sorted(unknown_metadata))
+        )
+    if parameter_labels is not None:
+        return _parameter_labels(param_names, parameter_labels)
+    return [
+        plot_metadata.get(name, {}).get(
+            "xlabel",
+            name if name.startswith("$") else name.split(maxsplit=1)[-1],
+        )
+        for name in param_names
+    ]
+
+
+def _marginal_axis_labels(
+    kind: str,
+    indices: Sequence[int],
+    param_names: Sequence[str],
+    plot_metadata: Mapping[str, Mapping[str, str]],
+) -> tuple[str, str]:
+    xlabel, ylabel = _axis_labels(kind)
+    if kind == "define" and len(indices) == 1:
+        name = param_names[indices[0]]
+        metadata = plot_metadata.get(name, {})
+        xlabel = metadata.get("xlabel", name.split(maxsplit=1)[-1])
+        ylabel = metadata.get("ylabel", "Value")
+    return xlabel, ylabel
+
+
+def _format_range_value(
+    value: float,
+    lower: float,
+    upper: float,
+    kind: str,
+) -> str:
+    """Format a marginal summary compactly for its parameter kind."""
+    if kind != "charge":
+        return f"{value:.3g}"
+
     span = abs(float(upper) - float(lower))
     if not np.isfinite(span) or span == 0:
-        return f"{value:.3g}"
-    decimals = max(0, min(8, 3 - int(np.floor(np.log10(span)))))
+        decimals = 3
+    else:
+        decimals = max(0, min(3, 3 - int(np.floor(np.log10(span)))))
+    if round(value, decimals) == 0:
+        value = 0.0
     return f"{value:.{decimals}f}"
+
+
+def _marginal_mode(
+    kde: gaussian_kde,
+    values: np.ndarray,
+    lower: float,
+    upper: float,
+) -> float:
+    """Estimate a bounded one-dimensional KDE mode on an adaptive grid."""
+    grid_lower = max(float(lower), float(np.min(values)))
+    grid_upper = min(float(upper), float(np.max(values)))
+    if grid_lower >= grid_upper:
+        return grid_lower
+    grid = np.linspace(grid_lower, grid_upper, 512)
+    return float(grid[np.argmax(kde(grid))])
 
 
 def plot_marginals(
@@ -101,6 +355,8 @@ def plot_marginals(
     specs: Specs | PathLike,
     *,
     parameter_labels: Optional[Sequence[str] | Mapping[str, str]] = None,
+    plot_metadata: Optional[Mapping[str, Mapping[str, str]]] = None,
+    max_samples: Optional[int] = None,
     color_prior: str = "gray",
     color_posterior: str = "tab:red",
     fn_out: Optional[PathLike] = None,
@@ -111,32 +367,25 @@ def plot_marginals(
         if results.include_implicit_charge
         else specs.with_implicit_charges(results.prepared_samples)
     )
+    if max_samples is not None and max_samples != -1:
+        if max_samples < 1:
+            raise ValueError("max_samples must be positive, -1, or None.")
+        if len(posterior) > max_samples:
+            indices = np.linspace(0, len(posterior) - 1, max_samples, dtype=int)
+            posterior = posterior[indices]
     param_names = specs.bounds.names.tolist()
-    tick_labels = _parameter_labels(param_names, parameter_labels)
-    if parameter_labels is None:
-        tick_labels = [
-            label if label.startswith("$") else label.split(maxsplit=1)[-1]
-            for label in tick_labels
-        ]
-
-    param_groups: dict[str, list[int]] = {}
-    for idx, name in enumerate(param_names):
-        kind = name.split()[0]
-        param_groups.setdefault(kind, []).append(idx)
-
-    fig, axes = plt.subplots(
-        1,
-        len(param_groups),
-        figsize=(4 * len(param_groups), 3.2),
-        gridspec_kw={"wspace": 0.3},
+    plot_metadata = _plot_metadata(plot_metadata)
+    tick_labels = _marginal_tick_labels(
+        param_names, parameter_labels, plot_metadata
     )
-    axes = np.atleast_1d(axes)
+    panel_sections = _marginal_panel_sections(param_names)
+    fig, panel_axes = _marginal_figure(panel_sections)
 
     explicit_names = specs.explicit_bounds.names.tolist()
     prior_index = {name: i for i, name in enumerate(explicit_names)}
     show_prior = results.priors is not None
     legend_used = {"prior": False, "posterior": False, "bounds": False}
-    for ax, (kind, indices) in zip(axes, param_groups.items()):
+    for ax, kind, indices in panel_axes:
         bounds_block = np.asarray(
             [specs.bounds.by_name[param_names[i]] for i in indices],
             dtype=float,
@@ -167,10 +416,17 @@ def plot_marginals(
                 )
                 prior_peaks.append(float(np.max(prior_density)))
 
-            posterior_density = gaussian_kde(posterior[:, idx])(y)
+            posterior_values = posterior[:, idx]
+            posterior_kde = gaussian_kde(posterior_values)
+            posterior_density = posterior_kde(y)
             posterior_peaks.append(float(np.max(posterior_density)))
-            posterior_mean = float(np.mean(posterior[:, idx]))
-            curves[idx] = (y, posterior_density, prior_density, posterior_mean)
+            posterior_mode = _marginal_mode(
+                posterior_kde,
+                posterior_values,
+                lower,
+                upper,
+            )
+            curves[idx] = (y, posterior_density, prior_density, posterior_mode)
 
         max_posterior_peak = max(posterior_peaks, default=1.0)
         max_prior_peak = max(prior_peaks, default=max_posterior_peak)
@@ -182,7 +438,7 @@ def plot_marginals(
         for xpos, idx in enumerate(indices):
             name = param_names[idx]
             lower, upper = specs.bounds.by_name[name]
-            y, posterior_density, prior_density, posterior_mean = curves[idx]
+            y, posterior_density, prior_density, posterior_mode = curves[idx]
 
             if prior_density is not None:
                 ax.fill_betweenx(
@@ -191,6 +447,7 @@ def plot_marginals(
                     xpos,
                     color=color_prior,
                     lw=0,
+                    zorder=1,
                     label="prior" if not legend_used["prior"] else None,
                 )
                 legend_used["prior"] = True
@@ -201,6 +458,7 @@ def plot_marginals(
                 xpos + posterior_scale * posterior_density,
                 color=color_posterior,
                 lw=0,
+                zorder=2,
                 label="posterior" if not legend_used["posterior"] else None,
             )
             legend_used["posterior"] = True
@@ -211,12 +469,13 @@ def plot_marginals(
                 [xpos],
                 [center],
                 yerr=yerr,
-                lw=2,
+                lw=2.5,
                 ls="",
                 capsize=4,
-                capthick=2,
-                markeredgewidth=2,
+                capthick=2.5,
+                markeredgewidth=2.5,
                 color="k",
+                zorder=3,
                 label="bounds" if not legend_used["bounds"] else None,
             )
             legend_used["bounds"] = True
@@ -224,33 +483,50 @@ def plot_marginals(
             ax.text(
                 xpos,
                 lower - 0.25 * y_pad,
-                _format_range_value(posterior_mean, lower, upper),
+                _format_range_value(posterior_mode, lower, upper, kind),
                 color="tab:red",
                 fontweight="bold",
+                fontsize=12,
                 ha="center",
                 va="top",
+                zorder=4,
             )
 
         ax.set_xlim(-prior_width - 0.25, len(indices) - 1 + posterior_width + 0.25)
         ax.set_ylim(y_min - y_pad, y_max + y_pad)
-        ax.set_xticks(range(len(indices)))
-        ax.set_xticklabels(
-            [_wrap_label(tick_labels[i]) for i in indices],
-            rotation=30,
-            ha="center",
+        if kind == "define" and len(indices) == 1:
+            ax.set_xticks([])
+        else:
+            ax.set_xticks(range(len(indices)))
+            ax.set_xticklabels(
+                [_wrap_label(tick_labels[i]) for i in indices],
+                rotation=30,
+                ha="center",
+                fontsize=15,
+            )
+        xlabel, ylabel = _marginal_axis_labels(
+            kind, indices, param_names, plot_metadata
         )
-        xlabel, ylabel = _axis_labels(kind)
-        ax.set_xlabel(xlabel)
-        ax.set_ylabel(ylabel)
-        ax.tick_params(direction="in")
+        ax.set_xlabel(xlabel, fontsize=15)
+        ax.set_ylabel(ylabel, fontsize=15)
+        ax.tick_params(direction="in", width=1.2, labelsize=15)
+        for spine in ax.spines.values():
+            spine.set_linewidth(1.2)
 
-    if len(axes):
-        axes[0].legend(
-            loc="upper center",
-            bbox_to_anchor=(0.5, 1.18),
-            ncol=3,
-            frameon=False,
-        )
+    if panel_axes:
+        handles_by_label = {}
+        for ax, _, _ in panel_axes:
+            handles, labels = ax.get_legend_handles_labels()
+            handles_by_label.update(zip(labels, handles))
+        labels = [
+            label
+            for label in ("prior", "posterior", "bounds")
+            if label in handles_by_label
+        ]
+        handles = [handles_by_label[label] for label in labels]
+        if handles:
+            _place_top_legends(fig, [(handles, len(labels))])
+    _align_marginal_ylabels(fig, panel_axes)
     if fn_out is not None:
         plt.savefig(fn_out, bbox_inches="tight")
         plt.close(fig)
@@ -282,9 +558,11 @@ def plot_qoi_marginals(
     log_likelihood_by_qoi: Mapping[str, ArrayLike],
     *,
     parameter_labels: Optional[Sequence[str] | Mapping[str, str]] = None,
+    plot_metadata: Optional[Mapping[str, Mapping[str, str]]] = None,
     temperature: float = 0.7,
     colors: Optional[Mapping[str, Any]] = None,
     color_prior: str = "gray",
+    sample_indices: Optional[ArrayLike] = None,
     fn_out: Optional[PathLike] = None,
 ) -> None:
     """Plot contrastive QoI attribution within posterior marginals."""
@@ -299,13 +577,18 @@ def plot_qoi_marginals(
         if results.include_implicit_charge
         else specs.with_implicit_charges(results.prepared_samples)
     )
+    if sample_indices is not None:
+        sample_indices = np.asarray(_coerce_samples(sample_indices), dtype=int)
+        if sample_indices.ndim != 1:
+            raise ValueError("sample_indices must be one-dimensional.")
+        if np.any(sample_indices < 0) or np.any(sample_indices >= len(posterior)):
+            raise ValueError("sample_indices contains an out-of-range index.")
+        posterior = posterior[sample_indices]
     param_names = specs.bounds.names.tolist()
-    tick_labels = _parameter_labels(param_names, parameter_labels)
-    if parameter_labels is None:
-        tick_labels = [
-            label if label.startswith("$") else label.split(maxsplit=1)[-1]
-            for label in tick_labels
-        ]
+    plot_metadata = _plot_metadata(plot_metadata)
+    tick_labels = _marginal_tick_labels(
+        param_names, parameter_labels, plot_metadata
+    )
 
     qoi_names = list(log_likelihood_by_qoi)
     log_likelihood = np.column_stack([
@@ -338,25 +621,17 @@ def plot_qoi_marginals(
         for i, qoi in enumerate(qoi_names)
     }
 
-    param_groups: dict[str, list[int]] = {}
-    for idx, name in enumerate(param_names):
-        param_groups.setdefault(name.split()[0], []).append(idx)
+    panel_sections = _marginal_panel_sections(param_names)
 
     explicit_names = specs.explicit_bounds.names.tolist()
     prior_index = {name: i for i, name in enumerate(explicit_names)}
     show_prior = results.priors is not None
 
-    fig, axes = plt.subplots(
-        1,
-        len(param_groups),
-        figsize=(4 * len(param_groups), 3.2),
-        gridspec_kw={"wspace": 0.3},
-    )
-    axes = np.atleast_1d(axes)
+    fig, panel_axes = _marginal_figure(panel_sections)
     profile_width = 1.2
     prior_width = 0.7
 
-    for ax, (kind, indices) in zip(axes, param_groups.items()):
+    for ax, kind, indices in panel_axes:
         bounds_block = np.asarray(
             [specs.bounds.by_name[param_names[i]] for i in indices],
             dtype=float,
@@ -388,6 +663,7 @@ def plot_qoi_marginals(
                     xpos + profile_width * next_cumulative * density,
                     color=qoi_colors[qoi],
                     lw=0,
+                    zorder=2,
                 )
                 cumulative = next_cumulative
 
@@ -407,25 +683,28 @@ def plot_qoi_marginals(
                     xpos,
                     color=color_prior,
                     lw=0,
+                    zorder=1,
                 )
 
             ax.plot(
                 xpos + profile_width * density,
                 grid,
                 color="k",
-                lw=1.5,
+                lw=2.0,
+                zorder=3,
             )
             center = 0.5 * (lower + upper)
             ax.errorbar(
                 xpos,
                 center,
                 yerr=[[center - lower], [upper - center]],
-                lw=2,
+                lw=2.5,
                 ls="",
                 capsize=4,
-                capthick=2,
-                markeredgewidth=2,
+                capthick=2.5,
+                markeredgewidth=2.5,
                 color="k",
+                zorder=4,
             )
 
         ax.set_xlim(
@@ -433,54 +712,54 @@ def plot_qoi_marginals(
             len(indices) - 1 + profile_width + 0.25,
         )
         ax.set_ylim(y_min - y_pad, y_max + y_pad)
-        ax.set_xticks(range(len(indices)))
-        ax.set_xticklabels(
-            [_wrap_label(tick_labels[i]) for i in indices],
-            rotation=30,
-            ha="center",
+        if kind == "define" and len(indices) == 1:
+            ax.set_xticks([])
+        else:
+            ax.set_xticks(range(len(indices)))
+            ax.set_xticklabels(
+                [_wrap_label(tick_labels[i]) for i in indices],
+                rotation=30,
+                ha="center",
+                fontsize=15,
+            )
+        xlabel, ylabel = _marginal_axis_labels(
+            kind, indices, param_names, plot_metadata
         )
-        xlabel, ylabel = _axis_labels(kind)
-        ax.set_xlabel(xlabel)
-        ax.set_ylabel(ylabel)
-        ax.tick_params(direction="in")
+        ax.set_xlabel(xlabel, fontsize=15)
+        ax.set_ylabel(ylabel, fontsize=15)
+        ax.tick_params(direction="in", width=1.2, labelsize=15)
+        for spine in ax.spines.values():
+            spine.set_linewidth(1.2)
 
     summary_handles = [
         Patch(facecolor=color_prior, label="prior"),
-        plt.Line2D([0], [0], color="k", lw=1.5, label="posterior"),
-        axes[0].errorbar(
+        plt.Line2D([0], [0], color="k", lw=2.0, label="posterior"),
+        panel_axes[0][0].errorbar(
             [np.nan],
             [np.nan],
             yerr=[[0.5], [0.5]],
             color="k",
-            lw=2,
+            lw=2.5,
             ls="",
             capsize=4,
-            capthick=2,
+            capthick=2.5,
             label="bounds",
         ),
     ]
     if not show_prior:
         summary_handles = summary_handles[1:]
-    fig.legend(
-        handles=summary_handles,
-        loc="upper center",
-        bbox_to_anchor=(0.5, 0.98),
-        ncol=len(summary_handles),
-        frameon=False,
-    )
-
     qoi_handles = [
         Patch(facecolor=qoi_colors[qoi], label=qoi)
         for qoi in qoi_names
     ]
-    fig.legend(
-        handles=qoi_handles,
-        loc="upper center",
-        bbox_to_anchor=(0.5, 0.88),
-        ncol=len(qoi_handles),
-        frameon=False,
+    _place_top_legends(
+        fig,
+        [
+            (summary_handles, len(summary_handles)),
+            (qoi_handles, len(qoi_handles)),
+        ],
     )
-    fig.subplots_adjust(top=0.76)
+    _align_marginal_ylabels(fig, panel_axes)
 
     if fn_out is not None:
         plt.savefig(fn_out, bbox_inches="tight")
@@ -494,10 +773,11 @@ def plot_corner(
     labels: Optional[Sequence[str]] = None,
     *,
     quantiles: Sequence[float] = (0.16, 0.5, 0.84),
-    figsize: float = 2.6,
+    figsize: float = 1.5,
     cmap: Any = "Reds",
     levels: int = 5,
     scatter_alpha: float = 0.15,
+    max_samples: Optional[int] = None,
     fn_out: Optional[PathLike] = None,
 ) -> None:
     sample_source = samples
@@ -515,6 +795,12 @@ def plot_corner(
 
     if samples.ndim != 2:
         raise ValueError("plot_corner expects samples with shape (n_samples, n_dim).")
+    if max_samples is not None:
+        if max_samples < 1:
+            raise ValueError("max_samples must be positive.")
+        if len(samples) > max_samples:
+            indices = np.linspace(0, len(samples) - 1, max_samples, dtype=int)
+            samples = samples[indices]
 
     n_dim = samples.shape[1]
     if labels is None:
@@ -569,16 +855,22 @@ def plot_corner(
                                 f"{median:.3f}\n"
                                 f"(+{upper:.3f} / -{lower:.3f})"
                             ),
-                            fontsize=12,
+                            fontsize=15,
                         )
                 ax.set_xlim(*limits[i])
                 ax.set_yticks([])
                 ax.tick_params(axis="y", left=False, labelleft=False)
             else:
-                x = samples[::10, j]
-                y = samples[::10, i]
+                x = samples[:, j]
+                y = samples[:, i]
                 ax.scatter(
-                    x, y, s=5, lw=0, alpha=scatter_alpha, color="k", rasterized=True
+                    x[::10],
+                    y[::10],
+                    s=5,
+                    lw=0,
+                    alpha=scatter_alpha,
+                    color="k",
+                    rasterized=True,
                 )
                 try:
                     kde = gaussian_kde(np.vstack([x, y]))
@@ -601,15 +893,15 @@ def plot_corner(
 
             ax.xaxis.set_major_locator(MaxNLocator(nbins=4))
             ax.yaxis.set_major_locator(MaxNLocator(nbins=4))
-            ax.tick_params(direction="in", top=True, right=True, labelsize=11)
+            ax.tick_params(direction="in", top=True, right=True, labelsize=15)
 
             if i == n_dim - 1:
-                ax.set_xlabel(labels[j], fontsize=12)
+                ax.set_xlabel(labels[j], fontsize=15)
             else:
                 ax.set_xticklabels([])
 
             if j == 0 and i > 0:
-                ax.set_ylabel(labels[i], fontsize=12)
+                ax.set_ylabel(labels[i], fontsize=15)
             elif i != j:
                 ax.set_yticklabels([])
 
