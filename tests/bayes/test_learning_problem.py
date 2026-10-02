@@ -7,6 +7,7 @@ import torch
 from bff.bayes.learning import (
     LearningProblem,
     _default_checkpoint_path,
+    _default_lgp_hyperpriors,
     _resolve_mean,
 )
 from bff.qoi.data import QoIDataset
@@ -100,6 +101,35 @@ def test_learning_helpers() -> None:
     from pathlib import Path
 
     assert _default_checkpoint_path(Path("posterior.pt")).name == "posterior.ckpt.pt"
+
+
+def test_default_lgp_hyperpriors_follow_data_scales() -> None:
+    X = torch.tensor(
+        [[0.0, 10.0], [2.0, 14.0], [4.0, 18.0]],
+        dtype=torch.float32,
+    )
+    residuals = torch.tensor([[-2.0], [0.0], [2.0]], dtype=torch.float32)
+
+    priors = _default_lgp_hyperpriors(X, residuals)
+
+    input_scales = X.std(dim=0, unbiased=False).numpy()
+    target_scale = residuals.std(unbiased=False).item()
+    expected_centers = np.log(
+        [*input_scales, target_scale, 0.1 * target_scale**2]
+    )
+    assert priors.names == ["length_0", "length_1", "width", "noise"]
+    assert priors.means == pytest.approx(expected_centers)
+    assert priors.scales == pytest.approx([2.0, 2.0, 2.0, 3.0])
+
+
+def test_default_lgp_hyperpriors_are_finite_for_constant_data() -> None:
+    priors = _default_lgp_hyperpriors(
+        torch.ones((4, 2)),
+        torch.zeros((4, 1)),
+    )
+
+    assert np.all(np.isfinite(priors.means))
+    assert np.exp(priors.means) == pytest.approx([1.0, 1.0, 1.0, 0.1])
 
 
 def test_resolve_mean_accepts_vector_rdf_mean() -> None:

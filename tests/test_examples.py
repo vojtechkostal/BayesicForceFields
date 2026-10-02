@@ -75,6 +75,18 @@ def test_acetate_configs_use_current_effective_observation_schema() -> None:
     assert learn["models"]["rdf"]["tolerance"] > 0
     assert learn["models"]["hb"]["independent_observations"] is True
     assert learn["models"]["contact-distance"]["tolerance"] > 0
+    assert learn["plots"]["max_corner_samples"] == 2000
+    assert learn["plots"]["max_marginal_samples"] == 10000
+    assert learn["plots"]["max_qoi_samples"] == 10000
+    assert learn["plots"]["qoi_batch_size"] == 256
+    assert learn["plots"]["plot_metadata"]["define VSA"] == {
+        "xlabel": "O-VS",
+        "ylabel": "angle [degree]",
+    }
+    assert learn["plots"]["plot_metadata"]["define VSD"] == {
+        "xlabel": "C-O-VS",
+        "ylabel": "distance [nm]",
+    }
     assert all(
         "model_path" in model
         for model in learn["models"].values()

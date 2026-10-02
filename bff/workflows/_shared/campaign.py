@@ -505,6 +505,7 @@ def run_campaign(
     action = 'Running MD' if config.dispatch else 'Staging jobs'
     campaign_finished = False
     count_width = len(str(max(n_total, 1)))
+    show_local_progress = (not config.dispatch) or job_scheduler == 'local'
 
     if config.dispatch and job_scheduler not in {'local', *SCHEDULER_CLASSES}:
         supported = ['local', *SCHEDULER_CLASSES]
@@ -531,6 +532,16 @@ def run_campaign(
             write_file=False,
         )
 
+    def log_local_progress(completed: int) -> None:
+        logger.progress_status(
+            f'{action}: {completed:>{pad}d}/{n_total:<{pad}d}',
+            completed,
+            n_total,
+            level=1,
+            overwrite=True,
+            write_file=False,
+        )
+
     try:
         max_parallel_jobs = None
         if config.dispatch and job_scheduler == 'slurm':
@@ -538,23 +549,11 @@ def run_campaign(
             max_parallel_jobs = config.slurm.max_parallel_jobs
             max_parallel_jobs = np.inf if max_parallel_jobs == -1 else max_parallel_jobs
 
+        if show_local_progress and n_total:
+            log_local_progress(0)
+
         for idx, sample in enumerate(parameter_samples):
             sample_id = f'{idx:0{pad}d}'
-            if (
-                ((not config.dispatch) or job_scheduler == 'local')
-                and idx + 1 < n_total
-            ):
-                logger.status(
-                    action,
-                    (
-                        f'{idx + 1:>{pad}d}/{n_total:<{pad}d} '
-                        f'[{((idx + 1) / n_total * 100):3.0f}%]'
-                    ),
-                    level=1,
-                    overwrite=True,
-                    write_file=False,
-                )
-
             sample = np.asarray(sample, dtype=float).reshape(-1)
             fn_config_md = write_sample_job_config(
                 sample_id=sample_id,
@@ -591,6 +590,8 @@ def run_campaign(
                     submit_script.save(
                         campaign_dir / 'outputs' / sample_id / 'run.sh'
                     )
+                if idx + 1 < n_total:
+                    log_local_progress(idx + 1)
                 continue
 
             if job_scheduler == 'local':
@@ -599,6 +600,8 @@ def run_campaign(
                     cwd=str(campaign_dir),
                     check=True,
                 )
+                if idx + 1 < n_total:
+                    log_local_progress(idx + 1)
                 continue
 
             assert max_parallel_jobs is not None

@@ -216,6 +216,7 @@ class Logger:
         level: int = 1,
         overwrite: bool = False,
         style: str | tuple[str, ...] | None = None,
+        write_file: bool = True,
     ) -> None:
         """Write a pytest-style line with a status block right aligned."""
         prefix = self._prefix(level)
@@ -223,7 +224,8 @@ class Logger:
         plain_len = len(prefix) + len(message) + len(status)
         spacing = " " * max(width - plain_len, 1)
         line = f"{prefix}{message}{spacing}{status}"
-        self._write_file(line)
+        if write_file:
+            self._write_file(line)
         self._write_console(line, overwrite=overwrite, style=style)
 
     def progress_status(
@@ -234,6 +236,7 @@ class Logger:
         *,
         level: int = 1,
         overwrite: bool = False,
+        write_file: bool = True,
     ) -> None:
         """Write a pytest-style progress line with ``[ 42%]`` on the right."""
         percent = 100 if total <= 0 else round(100 * current / total)
@@ -244,6 +247,7 @@ class Logger:
             level=level,
             overwrite=overwrite,
             style="magenta",
+            write_file=write_file,
         )
 
     def result_summary(
