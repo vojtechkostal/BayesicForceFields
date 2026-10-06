@@ -6,7 +6,7 @@ from typing import Any, Mapping
 
 from ...domain.systems import validate_system_id
 from ...io.utils import load_yaml
-from ..config import PathLike, resolve_path, strict_bool
+from ..config import PathLike, check_keys, resolve_path, strict_bool
 
 
 @dataclass(frozen=True)
@@ -40,31 +40,16 @@ class FitLGPConfig:
     def load(cls, fn_config: PathLike) -> "FitLGPConfig":
         fn_config = Path(fn_config).resolve()
         base_dir = fn_config.parent
-        config = load_yaml(fn_config)
-        if not isinstance(config, Mapping):
-            raise ValueError("Fit-LGP configuration must contain a mapping.")
-        unknown_top = set(config) - {"datasets", "fit", "log"}
-        if unknown_top:
-            raise ValueError(
-                "Fit-LGP configuration contains unsupported key(s): "
-                + ", ".join(sorted(unknown_top))
-            )
-        for key in ("datasets", "fit"):
-            if key not in config:
-                raise ValueError(f"Missing required configuration section: {key!r}.")
+        config = check_keys(
+            load_yaml(fn_config),
+            where="Fit-LGP configuration",
+            allowed={"datasets", "fit", "log"},
+            required=("datasets", "fit"),
+        )
 
         datasets_raw = config["datasets"]
         if not isinstance(datasets_raw, Mapping) or not datasets_raw:
             raise ValueError("'datasets' must be a non-empty mapping.")
-        options = config["fit"]
-        if not isinstance(options, Mapping):
-            raise ValueError("'fit' must be a mapping.")
-        model_dir = resolve_path(
-            base_dir,
-            options.get("model_dir", "./models"),
-            must_exist=False,
-            kind="model directory",
-        )
         fixed_options = {
             "model_dir",
             "reuse_models",
@@ -74,13 +59,15 @@ class FitLGPConfig:
             "device",
         }
         optimizer_options = {"lr", "max_iter", "tol_grad"}
-        known = fixed_options | optimizer_options
-        unknown_options = set(options) - known
-        if unknown_options:
-            raise ValueError(
-                "fit contains unsupported key(s): "
-                + ", ".join(sorted(unknown_options))
-            )
+        options = check_keys(
+            config["fit"], where="fit", allowed=fixed_options | optimizer_options
+        )
+        model_dir = resolve_path(
+            base_dir,
+            options.get("model_dir", "./models"),
+            must_exist=False,
+            kind="model directory",
+        )
         fit = FitLGPOptionsConfig(
             model_dir=model_dir,
             reuse_models=strict_bool(
@@ -107,16 +94,12 @@ class FitLGPConfig:
         datasets: list[FitLGPDatasetConfig] = []
         for raw_name, dataset in datasets_raw.items():
             name = validate_system_id(raw_name, field="datasets key")
-            if not isinstance(dataset, Mapping):
-                raise ValueError(f"Dataset {name!r} must be a mapping.")
-            unknown = set(dataset) - {"data", "mean", "nuisance", "model"}
-            if unknown:
-                raise ValueError(
-                    f"Dataset {name!r} contains unsupported key(s): "
-                    + ", ".join(sorted(unknown))
-                )
-            if "data" not in dataset:
-                raise ValueError(f"Dataset {name!r} is missing required key 'data'.")
+            dataset = check_keys(
+                dataset,
+                where=f"Dataset {name!r}",
+                allowed={"data", "mean", "nuisance", "model"},
+                required=("data",),
+            )
             nuisance = dataset.get("nuisance")
             if nuisance is not None:
                 nuisance = float(nuisance)

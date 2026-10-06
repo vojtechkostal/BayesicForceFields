@@ -144,7 +144,7 @@ def test_build_config_defaults_missing_templates_to_empty_mapping(
     ("invalid", "message"),
     [
         ({"defaults": {"nsteps": {"npt": 0, "prod": 1000}}}, "unsupported key"),
-        ({}, "missing required key 'nsteps'"),
+        ({}, "missing required key.*'nsteps'"),
     ],
 )
 def test_build_config_requires_steps_per_system(

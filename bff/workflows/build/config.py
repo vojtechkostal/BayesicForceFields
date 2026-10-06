@@ -7,7 +7,7 @@ from typing import Optional
 from ...domain.bias import BiasSpec
 from ...domain.systems import validate_system_id, validate_unique_system_ids
 from ...io.utils import load_yaml
-from ..config import PathLike, resolve_path
+from ..config import PathLike, check_keys, resolve_path
 
 
 @dataclass(frozen=True)
@@ -39,28 +39,12 @@ class BuildConfig:
     def load(cls, fn_config: PathLike) -> 'BuildConfig':
         fn_config = Path(fn_config).resolve()
         base_dir = fn_config.parent
-        config = load_yaml(fn_config)
-        if not isinstance(config, dict):
-            raise ValueError('Build configuration must contain a mapping.')
-        unknown_top = set(config) - {
-            'project',
-            'gromacs',
-            'systems',
-            'fn_log',
-        }
-        if unknown_top:
-            raise ValueError(
-                'Build configuration contains unsupported key(s): '
-                + ', '.join(sorted(unknown_top))
-            )
-
-        required = ['project', 'gromacs', 'systems']
-        missing = [key for key in required if key not in config]
-        if missing:
-            raise ValueError(
-                'Missing required build option(s): '
-                + ', '.join(repr(key) for key in missing)
-            )
+        config = check_keys(
+            load_yaml(fn_config),
+            where='Build configuration',
+            allowed=('project', 'gromacs', 'systems', 'fn_log'),
+            required=('project', 'gromacs', 'systems'),
+        )
 
         project = config['project']
         if isinstance(project, str):
@@ -72,14 +56,12 @@ class BuildConfig:
             )
             fn_log_raw = config.get('fn_log')
         elif isinstance(project, dict):
-            unknown_project = set(project) - {'directory', 'log'}
-            if unknown_project:
-                raise ValueError(
-                    'project contains unsupported key(s): '
-                    + ', '.join(sorted(unknown_project))
-                )
-            if 'directory' not in project:
-                raise ValueError('project.directory is required.')
+            check_keys(
+                project,
+                where='project',
+                allowed=('directory', 'log'),
+                required=('directory',),
+            )
             project_dir = resolve_path(
                 base_dir,
                 project['directory'],
@@ -90,51 +72,42 @@ class BuildConfig:
         else:
             raise ValueError("'project' must be a string or mapping.")
 
-        gromacs = config['gromacs']
-        if not isinstance(gromacs, dict):
-            raise ValueError("'gromacs' must be a mapping.")
-        unknown_gromacs = set(gromacs) - {'command'}
-        if unknown_gromacs:
-            raise ValueError(
-                'gromacs contains unsupported key(s): '
-                + ', '.join(sorted(unknown_gromacs))
-            )
-        if 'command' not in gromacs:
-            raise ValueError('gromacs.command is required.')
+        gromacs = check_keys(
+            config['gromacs'],
+            where='gromacs',
+            allowed=('command',),
+            required=('command',),
+        )
         systems_raw = config['systems']
         if not isinstance(systems_raw, list) or not systems_raw:
             raise ValueError("'systems' must be a non-empty list.")
 
         systems: list[BuildSystemConfig] = []
         for i, system in enumerate(systems_raw):
-            if not isinstance(system, dict):
-                raise ValueError(f'System {i} must be a mapping.')
-            unknown_system = set(system) - {
-                'system_id',
-                'system_name',
-                'topology',
-                'templates',
-                'charge',
-                'multiplicity',
-                'box',
-                'bias',
-                'nsteps',
-                'mdp',
-            }
-            if unknown_system:
-                raise ValueError(
-                    f'systems[{i}] contains unsupported key(s): '
-                    + ', '.join(sorted(unknown_system))
-                )
-            for key in (
-                'system_id',
-                'topology',
-                'charge',
-                'multiplicity',
-                'nsteps',
-            ):
-                if key not in system:
-                    raise ValueError(f'System {i} is missing required key {key!r}.')
+            check_keys(
+                system,
+                where=f'systems[{i}]',
+                allowed=(
+                    'system_id',
+                    'system_name',
+                    'topology',
+                    'templates',
+                    'charge',
+                    'multiplicity',
+                    'box',
+                    'bias',
+                    'nsteps',
+                    'mdp',
+                ),
+                required=(
+                    'system_id',
+                    'topology',
+                    'charge',
+                    'multiplicity',
+                    'nsteps',
+                    'mdp',
+                ),
+            )
             templates_raw = system.get('templates', {})
             if not isinstance(templates_raw, dict):
                 raise ValueError(f'System {i} templates must be a mapping.')
@@ -161,41 +134,23 @@ class BuildConfig:
                     box = [*box, 90.0, 90.0, 90.0]
                 box_values = [float(value) for value in box]
 
-            steps = system['nsteps']
-            if not isinstance(steps, dict):
-                raise ValueError(f'System {i} nsteps must be a mapping.')
-            unknown_steps = set(steps) - {'npt', 'prod'}
-            if unknown_steps:
-                raise ValueError(
-                    f'systems[{i}].nsteps contains unsupported key(s): '
-                    + ', '.join(sorted(unknown_steps))
-                )
-            missing_steps = [key for key in ('npt', 'prod') if key not in steps]
-            if missing_steps:
-                raise ValueError(
-                    f'systems[{i}].nsteps is missing required key(s): '
-                    + ', '.join(repr(key) for key in missing_steps)
-                )
+            steps = check_keys(
+                system['nsteps'],
+                where=f'systems[{i}].nsteps',
+                allowed=('npt', 'prod'),
+                required=('npt', 'prod'),
+            )
             nsteps_npt = int(steps['npt'])
             nsteps_prod = int(steps['prod'])
             if nsteps_npt < 0 or nsteps_prod < 0:
                 raise ValueError(f'System {i} nsteps values must be non-negative.')
 
-            mdp = system.get('mdp')
-            if not isinstance(mdp, dict):
-                raise ValueError(f'System {i} mdp must be a mapping.')
-            unknown_mdp = set(mdp) - {'em', 'npt', 'prod'}
-            if unknown_mdp:
-                raise ValueError(
-                    f'systems[{i}].mdp contains unsupported key(s): '
-                    + ', '.join(sorted(unknown_mdp))
-                )
-            missing_mdp = [key for key in ('em', 'npt', 'prod') if key not in mdp]
-            if missing_mdp:
-                raise ValueError(
-                    f'System {i} mdp is missing required key(s): '
-                    + ', '.join(repr(key) for key in missing_mdp)
-                )
+            mdp = check_keys(
+                system['mdp'],
+                where=f'systems[{i}].mdp',
+                allowed=('em', 'npt', 'prod'),
+                required=('em', 'npt', 'prod'),
+            )
 
             systems.append(
                 BuildSystemConfig(

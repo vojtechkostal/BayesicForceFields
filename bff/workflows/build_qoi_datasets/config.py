@@ -15,7 +15,7 @@ from ...qoi.routines import (
     AnalysisRoutineConfig,
     load_routine_configs,
 )
-from ..config import PathLike, resolve_path, strict_bool
+from ..config import PathLike, check_keys, resolve_path, strict_bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,14 +66,7 @@ class BuildQoIDatasetsConfig:
     def _frames(raw: Any, *, field: str, default_start: int = 1) -> FrameSliceConfig:
         if raw is None:
             raw = {}
-        if not isinstance(raw, Mapping):
-            raise ValueError(f"{field} must be a mapping.")
-        unknown = set(raw) - {"start", "stop", "step"}
-        if unknown:
-            raise ValueError(
-                f"{field} contains unsupported key(s): "
-                + ", ".join(sorted(unknown))
-            )
+        raw = check_keys(raw, where=field, allowed={"start", "stop", "step"})
         step = int(raw.get("step", 1))
         if step <= 0:
             raise ValueError(f"{field}.step must be a positive integer.")
@@ -94,48 +87,19 @@ class BuildQoIDatasetsConfig:
     def load(cls, fn_config: PathLike) -> "BuildQoIDatasetsConfig":
         fn_config = Path(fn_config).resolve()
         base_dir = fn_config.parent
-        config = load_yaml(fn_config)
-        if not isinstance(config, Mapping):
-            raise ValueError("Build-qoi-datasets configuration must contain a mapping.")
-        unknown_top = set(config) - {
-            "training_samples",
-            "reference",
-            "routines",
-            "run",
-            "output",
-        }
-        if unknown_top:
-            raise ValueError(
-                "Build-qoi-datasets configuration contains unsupported key(s): "
-                + ", ".join(sorted(unknown_top))
-            )
-        required = {"training_samples", "reference", "routines"}
-        missing = sorted(required - set(config))
-        if missing:
-            raise ValueError(
-                "Missing required build-qoi-datasets section(s): "
-                + ", ".join(repr(key) for key in missing)
-            )
+        config = check_keys(
+            load_yaml(fn_config),
+            where="Build-qoi-datasets configuration",
+            allowed={"training_samples", "reference", "routines", "run", "output"},
+            required=("reference", "routines", "training_samples"),
+        )
 
-        training = config["training_samples"]
-        if not isinstance(training, Mapping):
-            raise ValueError("training_samples must be a mapping.")
-        unknown_training = set(training) - {
-            "manifest",
-            "systems",
-            "frames",
-            "workers",
-            "progress_stride",
-        }
-        if unknown_training:
-            raise ValueError(
-                "training_samples contains unsupported key(s): "
-                + ", ".join(sorted(unknown_training))
-            )
-        if "manifest" not in training or "systems" not in training:
-            raise ValueError(
-                "training_samples requires 'manifest' and 'systems'."
-            )
+        training = check_keys(
+            config["training_samples"],
+            where="training_samples",
+            allowed={"manifest", "systems", "frames", "workers", "progress_stride"},
+            required=("manifest", "systems"),
+        )
         selected_raw = training["systems"]
         if not isinstance(selected_raw, list) or not selected_raw:
             raise ValueError("training_samples.systems must be a non-empty list.")
@@ -153,15 +117,9 @@ class BuildQoIDatasetsConfig:
             )
         validate_unique_system_ids(selected_ids, field="training_samples.systems")
 
-        reference = config["reference"]
-        if not isinstance(reference, Mapping):
-            raise ValueError("reference must be a mapping.")
-        unknown_reference = set(reference) - {"systems", "frames"}
-        if unknown_reference:
-            raise ValueError(
-                "reference contains unsupported key(s): "
-                + ", ".join(sorted(unknown_reference))
-            )
+        reference = check_keys(
+            config["reference"], where="reference", allowed={"systems", "frames"}
+        )
         reference_raw = reference.get("systems")
         if not isinstance(reference_raw, list) or not reference_raw:
             raise ValueError("reference.systems must be a non-empty list.")
@@ -255,24 +213,12 @@ class BuildQoIDatasetsConfig:
                     f"{sorted(supported_roles)}."
                 )
 
-        run_raw = config.get("run", {})
-        if not isinstance(run_raw, Mapping):
-            raise ValueError("run must be a mapping.")
-        unknown_run = set(run_raw) - {"in_memory"}
-        if unknown_run:
-            raise ValueError(
-                "run contains unsupported key(s): "
-                + ", ".join(sorted(unknown_run))
-            )
-        output_raw = config.get("output", {})
-        if not isinstance(output_raw, Mapping):
-            raise ValueError("output must be a mapping.")
-        unknown_output = set(output_raw) - {"directory", "log", "write_raw"}
-        if unknown_output:
-            raise ValueError(
-                "output contains unsupported key(s): "
-                + ", ".join(sorted(unknown_output))
-            )
+        run_raw = check_keys(config.get("run", {}), where="run", allowed={"in_memory"})
+        output_raw = check_keys(
+            config.get("output", {}),
+            where="output",
+            allowed={"directory", "log", "write_raw"},
+        )
         output_dir = resolve_path(
             base_dir,
             output_raw.get("directory", "./qoi"),

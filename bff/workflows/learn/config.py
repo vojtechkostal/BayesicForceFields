@@ -7,7 +7,7 @@ from typing import Mapping
 
 from ...domain.systems import validate_system_id
 from ...io.utils import load_yaml
-from ..config import PathLike, resolve_path, strict_bool
+from ..config import PathLike, check_keys, resolve_path, strict_bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,25 +84,13 @@ class LearnConfig:
     def load(cls, fn_config: PathLike) -> "LearnConfig":
         fn_config = Path(fn_config).resolve()
         base_dir = fn_config.parent
-        config = load_yaml(fn_config)
-        if not isinstance(config, Mapping):
-            raise ValueError("Learn configuration must contain a mapping.")
-        unknown_top = set(config) - {"specs", "models", "mcmc", "plots", "output"}
-        if unknown_top:
-            raise ValueError(
-                "Learn configuration contains unsupported key(s): "
-                + ", ".join(sorted(unknown_top))
-            )
-        missing = [key for key in ("specs", "models", "mcmc") if key not in config]
-        if missing:
-            raise ValueError(
-                "Missing required learn section(s): "
-                + ", ".join(repr(key) for key in missing)
-            )
+        config = check_keys(
+            load_yaml(fn_config),
+            where="Learn configuration",
+            allowed={"specs", "models", "mcmc", "plots", "output"},
+            required=("specs", "models", "mcmc"),
+        )
 
-        mcmc_raw = config["mcmc"]
-        if not isinstance(mcmc_raw, Mapping):
-            raise ValueError("mcmc must be a mapping.")
         allowed_mcmc = {
             "priors_disttype",
             "total_steps",
@@ -116,12 +104,7 @@ class LearnConfig:
             "ess_min",
             "include_implicit_charge",
         }
-        unknown_mcmc = set(mcmc_raw) - allowed_mcmc
-        if unknown_mcmc:
-            raise ValueError(
-                "mcmc contains unsupported key(s): "
-                + ", ".join(sorted(unknown_mcmc))
-            )
+        mcmc_raw = check_keys(config["mcmc"], where="mcmc", allowed=allowed_mcmc)
         total_steps = int(mcmc_raw.get("total_steps", 1500))
         warmup = int(mcmc_raw.get("warmup", 500))
         thin = int(mcmc_raw.get("thin", 1))
@@ -152,9 +135,6 @@ class LearnConfig:
             ),
         )
 
-        plots_raw = config.get("plots", {})
-        if not isinstance(plots_raw, Mapping):
-            raise ValueError("plots must be a mapping.")
         allowed_plots = {
             "max_corner_samples",
             "max_marginal_samples",
@@ -162,12 +142,9 @@ class LearnConfig:
             "qoi_batch_size",
             "plot_metadata",
         }
-        unknown_plots = set(plots_raw) - allowed_plots
-        if unknown_plots:
-            raise ValueError(
-                "plots contains unsupported key(s): "
-                + ", ".join(sorted(unknown_plots))
-            )
+        plots_raw = check_keys(
+            config.get("plots", {}), where="plots", allowed=allowed_plots
+        )
         plot_values = {
             "max_corner_samples": int(plots_raw.get("max_corner_samples", 2_000)),
             "max_qoi_samples": int(plots_raw.get("max_qoi_samples", 10_000)),
@@ -196,16 +173,11 @@ class LearnConfig:
                 raise ValueError(
                     "plots.plot_metadata keys must be non-empty parameter names."
                 )
-            if not isinstance(metadata, Mapping):
-                raise ValueError(
-                    f"plots.plot_metadata.{parameter} must be a mapping."
-                )
-            unknown_metadata = set(metadata) - {"xlabel", "ylabel"}
-            if unknown_metadata:
-                raise ValueError(
-                    f"plots.plot_metadata.{parameter} contains unsupported key(s): "
-                    + ", ".join(sorted(unknown_metadata))
-                )
+            metadata = check_keys(
+                metadata,
+                where=f"plots.plot_metadata.{parameter}",
+                allowed={"xlabel", "ylabel"},
+            )
             values = {}
             for key, value in metadata.items():
                 if not isinstance(value, str) or not value.strip():
@@ -229,19 +201,17 @@ class LearnConfig:
             if not isinstance(raw_name, str) or not raw_name:
                 raise ValueError("Model names must be non-empty strings.")
             name = validate_system_id(raw_name, field="models key")
-            if not isinstance(model, Mapping) or "model_path" not in model:
-                raise ValueError(f"models.{name} must define model_path.")
-            unknown = set(model) - {
-                "model_path",
-                "independent_observations",
-                "n_eff",
-                "tolerance",
-            }
-            if unknown:
-                raise ValueError(
-                    f"models.{name} contains unsupported key(s): "
-                    + ", ".join(sorted(unknown))
-                )
+            model = check_keys(
+                model,
+                where=f"models.{name}",
+                allowed={
+                    "model_path",
+                    "independent_observations",
+                    "n_eff",
+                    "tolerance",
+                },
+                required=("model_path",),
+            )
             independent = strict_bool(
                 model.get("independent_observations", False),
                 field=f"models.{name}.independent_observations",
@@ -279,15 +249,11 @@ class LearnConfig:
                 tolerance=tolerance,
             )
 
-        output_raw = config.get("output", {})
-        if not isinstance(output_raw, Mapping):
-            raise ValueError("output must be a mapping.")
-        unknown_output = set(output_raw) - {"directory", "overwrite"}
-        if unknown_output:
-            raise ValueError(
-                "output contains unsupported key(s): "
-                + ", ".join(sorted(unknown_output))
-            )
+        output_raw = check_keys(
+            config.get("output", {}),
+            where="output",
+            allowed={"directory", "overwrite"},
+        )
         output_dir = resolve_path(
             base_dir,
             output_raw.get("directory", "./"),
