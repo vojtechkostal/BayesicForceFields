@@ -64,6 +64,12 @@ job_scheduler: local
   File extensions to retain, without leading dots. Defaults to `['xtc']`.
   GROMACS runs inside `samples/<sample_id>/<system_id>/`, so files such as a
   Colvars `production.pmf` are written next to the trajectory.
+- `scratch_dir`
+  Optional directory, usually node-local, in which GROMACS runs; see
+  [Scratch directory](#scratch-directory).
+- `max_restarts`
+  Slurm only: how often samples stopped by the time limit are resubmitted;
+  see [Time limits and restarts](#time-limits-and-restarts). Defaults to 0.
 - `slurm`
   Slurm-only runtime settings; see [Slurm](#slurm).
 
@@ -79,7 +85,7 @@ job_scheduler: local
 
 When a system carries a Colvars bias, BFF copies the bias file into each
 `samples/<sample_id>/<system_id>/` run directory and writes a
-`production-colvars.mdp`. Its `colvars-configfile` value is generated relative
+`production-run.mdp`. Its `colvars-configfile` value is generated relative
 to the run directory, so users do not need to edit paths for local or Slurm
 campaigns.
 
@@ -102,8 +108,48 @@ slurm:
 Campaigns larger than `max_array_size` are submitted as consecutive arrays;
 the next array is submitted once the previous one has finished. Keep
 `max_array_size` below the cluster's `MaxArraySize` and per-user submit limit.
-`sbatch` must not set `array`. With `dispatch: false`, BFF stages the campaign
-and prints the `sbatch --array=...` command for manual submission.
+`sbatch` must not set `array`. Array task `i` runs the sample on line `i + 1`
+of `tasks.txt`. With `dispatch: false`, BFF stages the campaign and prints the
+`sbatch --array=...` command for manual submission.
+
+### Scratch directory
+
+Hundreds of simultaneous MD runs writing to a shared filesystem can overload
+it. With `scratch_dir`, each sample runs GROMACS in a fresh directory below
+`scratch_dir` and copies its files back to `samples/<sample_id>/<system_id>/`
+when a system finishes: only the `store` suffixes when `cleanup: true`,
+everything otherwise or when the run stopped early. The scratch copy is then
+removed.
+
+```yaml
+scratch_dir: $SLURM_TMPDIR    # or $TMPDIR, /scratch/$USER, ...
+```
+
+`$VARIABLES` and `~` are expanded on the compute node. If a variable is not
+defined there, the sample runs in its campaign directory and `run.out` says so.
+
+### Time limits and restarts
+
+When `slurm.sbatch.time` is set, every production run gets `mdrun -maxh` with
+90% of that limit minus the time the sample has already used, so GROMACS stops
+cleanly and writes a checkpoint before Slurm would cancel the task. Such a
+sample is reported as `incomplete`. With `max_restarts: N`, BFF resubmits the
+incomplete samples, as a new throttled job array, up to `N` times:
+
+```yaml
+max_restarts: 3
+slurm:
+  sbatch: {time: "04:00:00"}
+```
+
+A rerun sample skips systems whose trajectory is complete and continues an
+interrupted production run from `production.cpt`, appending to its output
+files (`run.out` and `gmx.log` are appended as well). The total step count is
+written into the `.tpr` (via the generated `production-run.mdp`), so a
+continued run stops exactly at `n_steps`. Colvars biases continue from the
+checkpoint; PLUMED biases must be restartable by PLUMED itself (keep `HILLS`
+next to the run). Samples still incomplete after the last restart are recorded
+with status `incomplete` and are not used for QoI datasets.
 
 ## `charge_constraints[]` Keys
 

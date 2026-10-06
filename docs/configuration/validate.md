@@ -88,6 +88,9 @@ only with `parameters` and is rejected with `posterior`.
 - `store`
   File extensions to retain, without leading dots. Defaults to `['xtc']`.
   Stored non-trajectory files are recorded as named manifest inputs.
+- `scratch_dir`, `max_restarts`
+  Node-local MD and resubmission of samples stopped by the time limit, as for
+  [sample-parameters](sample-parameters.md#scratch-directory).
 - `slurm`
   Slurm runtime configuration, as for
   [sample-parameters](sample-parameters.md#slurm).

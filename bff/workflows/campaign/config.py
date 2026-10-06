@@ -29,6 +29,8 @@ CAMPAIGN_KEYS = {
     "compress",
     "cleanup",
     "store",
+    "scratch_dir",
+    "max_restarts",
     "slurm",
 }
 INPUT_ROLES = {"topology", "coordinates", "index", "mdp_em", "mdp_production", "bias"}
@@ -75,6 +77,8 @@ class SimulationCampaignConfig:
     compress: bool = False
     cleanup: bool = False
     store: tuple[str, ...] = ()
+    scratch_dir: str | None = None
+    max_restarts: int = 0
     slurm: SlurmConfig | None = None
 
 
@@ -231,6 +235,16 @@ def load_campaign_config(
             f"Unsupported scheduler {scheduler!r}. Supported values are "
             "'local' and 'slurm'."
         )
+    scratch_dir = config.get("scratch_dir")
+    if scratch_dir is not None and not isinstance(scratch_dir, str):
+        raise ValueError("'scratch_dir' must be a path; it may use $VARIABLES.")
+    max_restarts = config.get("max_restarts", 0)
+    if (
+        not isinstance(max_restarts, int)
+        or isinstance(max_restarts, bool)
+        or (max_restarts < 0)
+    ):
+        raise ValueError("'max_restarts' must be a non-negative integer.")
     source = config.get("source")
     if source is not None:
         source = resolve_path(base_dir, source, kind="build stage root")
@@ -255,6 +269,8 @@ def load_campaign_config(
         compress=strict_bool(config.get("compress", False), field="compress"),
         cleanup=strict_bool(config.get("cleanup", False), field="cleanup"),
         store=normalize_store(config.get("store")),
+        scratch_dir=scratch_dir,
+        max_restarts=max_restarts,
         slurm=load_slurm_config(config.get("slurm")) if scheduler == "slurm" else None,
     )
     return base_dir, dict(config), common

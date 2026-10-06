@@ -151,10 +151,10 @@ def test_validate_uses_build_directory_contract(tmp_path: Path) -> None:
     )
 
 
-def test_md_job_runs_gromacs_inside_the_sample_system_directory(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def _md_job(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, **overrides
+) -> tuple[Path, list[list[str]]]:
+    """Run the MD job with fake GROMACS; return the sample dir and commands."""
     campaign_dir = tmp_path / "campaign"
     inputs = tmp_path / "inputs"
     bias = _write(inputs / "restraint.colvars.dat", "colvar {}\n")
@@ -168,7 +168,7 @@ def test_md_job_runs_gromacs_inside_the_sample_system_directory(
         bias=BiasSpec(kind="colvars", colvars_file=bias),
         n_steps=10,
     )
-    config = job_module.MDJobConfig(
+    options = dict(
         sample_id="000",
         params=[0.0],
         campaign_dir=campaign_dir,
@@ -178,6 +178,7 @@ def test_md_job_runs_gromacs_inside_the_sample_system_directory(
         cleanup=False,
         systems=[system],
     )
+    config = job_module.MDJobConfig(**(options | overrides))
     monkeypatch.setattr(job_module.MDJobConfig, "load", lambda _: config)
     monkeypatch.setattr(job_module, "check_gmx_available", lambda _: None)
     monkeypatch.setattr(job_module, "Specs", lambda _: None)
@@ -186,27 +187,47 @@ def test_md_job_runs_gromacs_inside_the_sample_system_directory(
         "write_sample_topology",
         lambda fn_topol, specs, params, fn_out: Path(fn_out).write_text("top\n"),
     )
-    monkeypatch.setattr(job_module, "trajectory_is_complete", lambda *_: True)
+    # A trajectory is complete once a fake mdrun without -maxh has written it.
+    monkeypatch.setattr(
+        job_module,
+        "trajectory_is_complete",
+        lambda xtc, *_: xtc.is_file() and xtc.read_text() == "complete\n",
+    )
     commands = []
 
     def fake_run(command, **kwargs):
-        commands.append((command[1], Path(kwargs["cwd"])))
+        commands.append([str(part) for part in command] + [str(kwargs["cwd"])])
         if command[1] == "mdrun":
-            deffnm = Path(command[command.index("-deffnm") + 1])
+            deffnm = Path(kwargs["cwd"], command[command.index("-deffnm") + 1])
             deffnm.with_suffix(".gro").write_text("gro\n")
-            deffnm.with_suffix(".xtc").write_text("xtc\n")
+            if deffnm.name != "production":
+                return
+            stopped = "-maxh" in command
+            deffnm.with_suffix(".xtc").write_text(
+                "partial\n" if stopped else "complete\n"
+            )
+            deffnm.with_suffix(".cpt").write_text("checkpoint\n")
             Path(kwargs["cwd"], "production.pmf").write_text("profile\n")
 
     monkeypatch.setattr("bff.gromacs.subprocess.run", fake_run)
-
     job_module.main(tmp_path / "config.yaml")
+    return campaign_dir / "samples" / "000", commands
 
-    sample_dir = campaign_dir / "samples" / "000"
+
+def test_md_job_runs_gromacs_inside_the_sample_system_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sample_dir, commands = _md_job(tmp_path, monkeypatch)
+
     system_dir = sample_dir / "acetate"
-    assert {cwd for _, cwd in commands} == {system_dir}
-    assert [name for name, _ in commands] == ["grompp", "mdrun"] * 2
-    colvars_mdp = read_mdp(system_dir / "production-colvars.mdp")
-    assert colvars_mdp["colvars-configfile"] == "./restraint.colvars.dat"
+    assert {command[-1] for command in commands} == {str(system_dir)}
+    assert [command[1] for command in commands] == ["grompp", "mdrun"] * 2
+    run_mdp = read_mdp(system_dir / "production-run.mdp")
+    assert run_mdp["colvars-configfile"] == "./restraint.colvars.dat"
+    # The total step count is in the .tpr, so a restart cannot overshoot it.
+    assert run_mdp["nsteps"] == "10"
+    assert "-nsteps" not in commands[-1]
     assert (system_dir / "restraint.colvars.dat").is_file()
     assert (sample_dir / "gmx.log").is_file()
     result = yaml.safe_load((sample_dir / "result.yaml").read_text())
@@ -215,6 +236,64 @@ def test_md_job_runs_gromacs_inside_the_sample_system_directory(
     assert result["outputs"][0]["inputs"] == {
         "pmf": "samples/000/acetate/production.pmf"
     }
+
+
+def test_md_job_in_scratch_copies_back_only_stored_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    scratch = tmp_path / "scratch"
+    sample_dir, commands = _md_job(
+        tmp_path, monkeypatch, scratch_dir=str(scratch), cleanup=True
+    )
+
+    assert all(command[-1].startswith(str(scratch)) for command in commands)
+    assert list(scratch.iterdir()) == []
+    assert sorted(path.name for path in (sample_dir / "acetate").iterdir()) == [
+        "production.pmf",
+        "production.xtc",
+    ]
+    assert (sample_dir / "gmx.log").is_file()
+    result = yaml.safe_load((sample_dir / "result.yaml").read_text())
+    assert result["status"] == "completed"
+
+
+def test_md_job_with_undefined_scratch_variable_runs_in_place(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("BFF_UNDEFINED_SCRATCH", raising=False)
+    sample_dir, commands = _md_job(
+        tmp_path, monkeypatch, scratch_dir="$BFF_UNDEFINED_SCRATCH/bff"
+    )
+    assert {command[-1] for command in commands} == {str(sample_dir / "acetate")}
+    assert not (tmp_path / "$BFF_UNDEFINED_SCRATCH").exists()
+
+
+def test_md_job_stopped_by_time_limit_is_incomplete_and_restartable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    scratch = tmp_path / "scratch"
+    sample_dir, commands = _md_job(
+        tmp_path, monkeypatch, scratch_dir=str(scratch), cleanup=True, max_hours=1.0
+    )
+
+    production = commands[-1]
+    assert production[1] == "mdrun" and "-maxh" in production
+    system_dir = sample_dir / "acetate"
+    assert (system_dir / "production.cpt").is_file()
+    assert (system_dir / "production-run.mdp").is_file()
+    result = yaml.safe_load((sample_dir / "result.yaml").read_text())
+    assert result["status"] == "incomplete"
+
+    # The rerun continues from the checkpoint without grompp or minimization.
+    _, commands = _md_job(tmp_path, monkeypatch, scratch_dir=str(scratch))
+    assert [command[1] for command in commands] == ["mdrun"]
+    assert "-cpi" in commands[0]
+    result = yaml.safe_load((sample_dir / "result.yaml").read_text())
+    assert result["status"] == "completed"
+
+    # A complete system is skipped.
+    _, commands = _md_job(tmp_path, monkeypatch)
+    assert commands == []
 
 
 @pytest.mark.parametrize(("n_frames", "complete"), [(101, True), (100, False)])
@@ -384,13 +463,62 @@ def test_slurm_campaign_runs_samples_as_job_arrays(
     assert "#SBATCH --time=01:00:00" in script
     assert f"#SBATCH --output={config.campaign_dir}/slurm/%A_%a.out" in script
     assert "TASK_ID=$((SLURM_ARRAY_TASK_ID + ${BFF_TASK_OFFSET:-0}))" in script
-    assert '$(printf "%02d" "$TASK_ID")' in script
-    assert 'exec >"$SAMPLE_DIR/run.out" 2>&1' in script
+    assert 'SAMPLE_ID=$(sed -n "$((TASK_ID + 1))p"' in script
+    assert 'exec >>"$SAMPLE_DIR/run.out" 2>&1' in script
+    tasks = (config.campaign_dir / "tasks.txt").read_text().split()
+    assert tasks == [f"{index:02d}" for index in range(12)]
     assert ' -m bff.cli md "$SAMPLE_DIR/config.yaml"' in script
     assert (config.campaign_dir / "samples" / "11" / "config.yaml").is_file()
     manifest = yaml.safe_load((config.campaign_dir / "samples.yaml").read_text())
     assert manifest["samples"]["03"]["job_id"] == "101_3"
     assert manifest["samples"]["11"]["job_id"] == "103_1"
+
+
+def test_slurm_campaign_resubmits_samples_stopped_by_the_time_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = _campaign(
+        tmp_path,
+        job_scheduler="slurm",
+        max_restarts=2,
+        slurm=SlurmConfig(max_parallel_jobs=-1, sbatch={"time": "04:00:00"}),
+    )
+    rounds = []
+
+    def fake_run_tasks(script, n_tasks, *, config, logger):
+        tasks = (script.parent / "tasks.txt").read_text().split()
+        assert len(tasks) == n_tasks
+        rounds.append(tasks)
+        for sample_id in tasks:
+            status = (
+                "incomplete" if sample_id == "2" and len(rounds) < 3 else "completed"
+            )
+            _write(
+                script.parent / "samples" / sample_id / "result.yaml",
+                yaml.safe_dump({"status": status, "outputs": []}),
+            )
+        return [f"{len(rounds)}_{index}" for index in range(n_tasks)]
+
+    monkeypatch.setattr(run_module.slurm, "run_tasks", fake_run_tasks)
+    run_campaign(
+        config,
+        fn_specs=tmp_path / "specs.yaml",
+        parameter_samples=np.zeros((4, 0)),
+        logger=Logger("sample-parameters", verbose=False),
+    )
+
+    assert rounds == [["0", "1", "2", "3"], ["2"], ["2"]]
+    job = yaml.safe_load(
+        (config.campaign_dir / "samples" / "2" / "config.yaml").read_text()
+    )
+    assert job["max_hours"] == pytest.approx(3.6)
+    manifest = yaml.safe_load((config.campaign_dir / "samples.yaml").read_text())
+    assert manifest["samples"]["2"] | {"params": None} == {
+        "params": None,
+        "job_id": "3_0",
+        "status": "completed",
+        "outputs": [],
+    }
 
 
 def test_staged_campaign_writes_sample_topologies_without_running(

@@ -130,3 +130,26 @@ def test_bff_command_imports_this_checkout() -> None:
     command = slurm.bff_command("md", '"$CONFIG"')
     assert command.startswith("PYTHONPATH=")
     assert command.endswith(' -m bff.cli md "$CONFIG"')
+
+
+@pytest.mark.parametrize(
+    ("value", "hours"),
+    [
+        ("00:40:00", 2 / 3),
+        ("30", 0.5),
+        ("30:00", 0.5),
+        ("1-12", 36.0),
+        ("1-12:30", 36.5),
+        ("2-01:00:00", 49.0),
+        (None, None),
+        ("UNLIMITED", None),
+    ],
+)
+def test_time_limit_hours_reads_sbatch_formats(value, hours) -> None:
+    assert slurm.time_limit_hours(value) == pytest.approx(hours)
+
+
+@pytest.mark.parametrize("value", ["1:2:3:4", "four hours"])
+def test_time_limit_hours_rejects_unknown_formats(value) -> None:
+    with pytest.raises(ValueError, match="Slurm time limit"):
+        slurm.time_limit_hours(value)

@@ -9,6 +9,13 @@ release is `0.4.2`.
 
 ### Changed
 
+- Simulation campaigns can run GROMACS in a node-local `scratch_dir` and copy
+  results back, and on Slurm stop production runs cleanly before
+  `sbatch.time` (`mdrun -maxh`). With `max_restarts`, samples stopped by the
+  time limit are resubmitted and continue from their checkpoints.
+- The production step count is written into a generated
+  `production-run.mdp` (which replaces `production-colvars.mdp`) instead of
+  being passed as `mdrun -nsteps`.
 - Built-in `rdf` and `hydrogen_bonds` routines now use the same interface as
   custom routines and validate their own options when they run. Their outputs
   are unchanged; hydrogen-bond analysis is substantially faster.

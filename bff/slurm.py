@@ -73,6 +73,34 @@ def load_slurm_config(raw: Any) -> SlurmConfig:
     )
 
 
+def time_limit_hours(value: Any) -> float | None:
+    """Hours of an ``sbatch --time`` value, or ``None`` when unset or unlimited.
+
+    Accepts ``MM``, ``MM:SS``, ``HH:MM:SS``, ``D-HH``, ``D-HH:MM`` and
+    ``D-HH:MM:SS``.
+    """
+    if value is None or str(value).strip().lower() in {"", "infinite", "unlimited"}:
+        return None
+    text = str(value).strip()
+    days, _, clock = text.rpartition("-") if "-" in text else ("0", "", text)
+    try:
+        parts = [int(part) for part in clock.split(":")]
+        n_days = int(days)
+    except ValueError as exc:
+        raise ValueError(f"Cannot parse the Slurm time limit {value!r}.") from exc
+    if len(parts) > 3:
+        raise ValueError(f"Cannot parse the Slurm time limit {value!r}.")
+    if "-" in text:
+        hours, minutes, seconds = (parts + [0, 0])[:3]
+    elif len(parts) == 3:
+        hours, minutes, seconds = parts
+    elif len(parts) == 2:
+        hours, minutes, seconds = 0, *parts
+    else:
+        hours, minutes, seconds = 0, parts[0], 0
+    return 24 * n_days + hours + minutes / 60 + seconds / 3600
+
+
 def bff_command(command: str, *args: str) -> str:
     """Shell command running a BFF CLI command with this checkout importable.
 

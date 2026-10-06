@@ -5,6 +5,7 @@ Layout of a campaign directory::
     specs.yaml, samples.yaml, run.sh (Slurm)
     systems/<system_id>/             staged inputs shared by all samples
     samples/<sample_id>/             config.yaml, run.out, gmx.log
+    tasks.txt (Slurm)                sample IDs of the current job array
     samples/<sample_id>/<system_id>/ topology and MD outputs
 """
 
@@ -159,6 +160,11 @@ def collect_campaign(
         compress_results(campaign_dir)
 
 
+def _result_status(campaign_dir: Path, sample_id: str) -> str | None:
+    fn_result = campaign_dir / "samples" / sample_id / "result.yaml"
+    return load_yaml(fn_result).get("status") if fn_result.is_file() else None
+
+
 def run_campaign(
     config: SimulationCampaignConfig,
     *,
@@ -178,6 +184,11 @@ def run_campaign(
 
     n_total = len(parameter_samples)
     pad = len(str(max(n_total, 1)))
+    max_hours = None
+    if config.job_scheduler == "slurm":
+        # Leave 10% of the time limit for setup, minimization, and copying.
+        limit = slurm.time_limit_hours((config.slurm.sbatch or {}).get("time"))
+        max_hours = None if limit is None else 0.9 * limit
     samples: dict[str, dict[str, Any]] = {}
     for index, params in enumerate(np.asarray(parameter_samples, dtype=float)):
         sample_id = f"{index:0{pad}d}"
@@ -192,6 +203,8 @@ def run_campaign(
                 "gmx_cmd": config.gmx_cmd,
                 "store": list(config.store),
                 "cleanup": config.cleanup,
+                "scratch_dir": config.scratch_dir,
+                "max_hours": max_hours,
                 "systems": [system.to_dict() for system in systems],
             },
             sample_dir / "config.yaml",
@@ -202,6 +215,7 @@ def run_campaign(
         }
 
     fn_script = campaign_dir / "run.sh"
+    fn_tasks = campaign_dir / "tasks.txt"
     if config.job_scheduler == "slurm":
         samples_dir = shlex.quote(str(campaign_dir / "samples"))
         slurm.write_task_script(
@@ -209,11 +223,13 @@ def run_campaign(
             config=config.slurm,
             sbatch={"output": campaign_dir / "slurm" / "%A_%a.out"},
             commands=[
-                f'SAMPLE_DIR={samples_dir}/$(printf "%0{pad}d" "$TASK_ID")',
-                'exec >"$SAMPLE_DIR/run.out" 2>&1',
+                f'SAMPLE_ID=$(sed -n "$((TASK_ID + 1))p" {shlex.quote(str(fn_tasks))})',
+                f'SAMPLE_DIR={samples_dir}/"$SAMPLE_ID"',
+                'exec >>"$SAMPLE_DIR/run.out" 2>&1',
                 slurm.bff_command("md", '"$SAMPLE_DIR/config.yaml"'),
             ],
         )
+        fn_tasks.write_text("".join(f"{sample_id}\n" for sample_id in samples))
         (campaign_dir / "slurm").mkdir(exist_ok=True)
 
     action = "Running MD" if config.dispatch else "Staging samples"
@@ -264,11 +280,27 @@ def run_campaign(
                         f"{completed.returncode}; see {sample_dir / 'run.out'}."
                     )
         else:
-            task_ids = slurm.run_tasks(
-                fn_script, n_total, config=config.slurm, logger=logger
-            )
-            for sample, task_id in zip(samples.values(), task_ids):
-                sample["job_id"] = task_id
+            # Samples stopped by the time limit continue from their checkpoints.
+            pending = list(samples)
+            for restart in range(config.max_restarts + 1):
+                if restart:
+                    logger.info(
+                        f"Resubmitting {len(pending)} incomplete sample(s) "
+                        f"(restart {restart}/{config.max_restarts})."
+                    )
+                fn_tasks.write_text("".join(f"{sample_id}\n" for sample_id in pending))
+                task_ids = slurm.run_tasks(
+                    fn_script, len(pending), config=config.slurm, logger=logger
+                )
+                for sample_id, task_id in zip(pending, task_ids):
+                    samples[sample_id]["job_id"] = task_id
+                pending = [
+                    sample_id
+                    for sample_id in pending
+                    if _result_status(campaign_dir, sample_id) == "incomplete"
+                ]
+                if not pending:
+                    break
         finished = True
         logger.done(action, detail=f"{n_total}/{n_total}")
     finally:

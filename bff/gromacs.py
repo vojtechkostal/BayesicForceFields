@@ -10,6 +10,7 @@ from pathlib import Path
 from .domain.bias import BiasSpec
 from .io.colvars import write_mdp_with_colvars
 from .io.commands import build_command
+from .io.mdp import patch_mdp
 from .io.plumed import ensure_plumed_kernel
 
 
@@ -42,14 +43,19 @@ def run_md(
     n_steps: int = -2,
     maxwarn: int = 0,
     mdrun_args: tuple[str, ...] = (),
+    max_hours: float | None = None,
+    restart: bool = False,
     log: Path,
 ) -> None:
     """Run ``grompp`` and ``mdrun`` with all outputs named ``deffnm.*``.
 
     GROMACS runs in the directory of ``deffnm``, so auxiliary files such as
-    ``mdout.mdp`` or bias outputs stay next to the run. ``n_steps=-2`` keeps
-    the step count of the MDP file. A Colvars bias is copied into the run
-    directory and referenced from a generated ``<deffnm>-colvars.mdp``.
+    ``mdout.mdp`` or bias outputs stay next to the run. ``n_steps`` (total
+    steps; ``-2`` keeps the MDP value) and a Colvars bias, copied into the run
+    directory, go into a generated ``<deffnm>-run.mdp``.
+    ``max_hours`` makes ``mdrun`` stop cleanly, with a checkpoint, before that
+    wall time. ``restart`` skips ``grompp`` and continues from ``<deffnm>.cpt``,
+    appending to the existing outputs.
     """
     deffnm = Path(deffnm).resolve()
     run_dir = deffnm.parent
@@ -60,13 +66,19 @@ def run_md(
         local_bias = run_dir / bias.colvars_file.name
         if bias.colvars_file.resolve() != local_bias:
             shutil.copy2(bias.colvars_file, local_bias)
-        mdp_run = run_dir / f"{deffnm.name}-colvars.mdp"
+        mdp_run = run_dir / f"{deffnm.name}-run.mdp"
         write_mdp_with_colvars(mdp, local_bias, mdp_run, working_dir=run_dir)
         mdp = mdp_run
     elif bias is not None and bias.kind == "plumed":
         env = dict(os.environ)
         env.setdefault("PLUMED_KERNEL", str(ensure_plumed_kernel()))
         mdrun_args += ["-plumed", str(Path(bias.plumed_file).resolve())]
+    # The total step count belongs in the .tpr: a restart runs up to it, whereas
+    # ``mdrun -nsteps`` would count from the checkpoint.
+    if n_steps != -2:
+        mdp_run = run_dir / f"{deffnm.name}-run.mdp"
+        patch_mdp(mdp, {"nsteps": str(n_steps)}, mdp_run)
+        mdp = mdp_run
 
     grompp = build_command(
         gmx_cmd,
@@ -79,11 +91,17 @@ def run_md(
     )  # fmt: skip
     if index is not None:
         grompp += ["-n", str(Path(index).resolve())]
-    mdrun = build_command(
-        gmx_cmd, "mdrun", "-deffnm", deffnm, "-nsteps", str(n_steps), *mdrun_args
-    )
+    if max_hours is not None:
+        mdrun_args += ["-maxh", f"{max_hours:.4f}"]
+    if restart:
+        mdrun_args += ["-cpi", f"{deffnm.name}.cpt"]
+    # Relative names: the checkpoint records them, so a restart may run elsewhere.
+    mdrun = build_command(gmx_cmd, "mdrun", "-deffnm", deffnm.name, *mdrun_args)
     with open(log, "a", encoding="utf-8") as handle:
-        subprocess.run(grompp, stdout=handle, stderr=handle, check=True, cwd=run_dir)
+        if not restart:
+            subprocess.run(
+                grompp, stdout=handle, stderr=handle, check=True, cwd=run_dir
+            )
         subprocess.run(
             mdrun, stdout=handle, stderr=handle, check=True, cwd=run_dir, env=env
         )

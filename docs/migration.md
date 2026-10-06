@@ -22,6 +22,9 @@
 5. Remove `mdp_npt` from explicit campaign `inputs`; it was never used there.
 6. Import `fit_surrogates` from `bff.bayes.fit`; `LearningProblem` stays in
    `bff.bayes.learning`.
+7. Replace `cd "$WORKDIR"`-style `slurm.setup`/`teardown` lines with
+   `scratch_dir`; GROMACS runs in its sample (or scratch) directory regardless
+   of the shell's working directory.
 
 # Pipeline Directory-Contract Migration
 
