@@ -30,8 +30,18 @@ release is `0.4.2`.
 - `build` shares an equilibration only between systems with identical
   topology, templates, box, MDP files, and step counts.
 
+- MCMC log-probabilities stay on the compute device (no per-step
+  GPU-to-CPU copy), and local-GP predictions reuse a precomputed
+  `K^-1 (y - mean)` instead of multiplying by the inverse kernel each call.
+- A NaN parameter vector now gets `-inf` for its own walker only.
+
 ### Fixed
 
+- The learning-rate search no longer accepts runs that diverged to NaN.
+- Walkers can be initialized from uniform priors without charge constraints.
+- `ChargeConstraint` objects can be copied and pickled.
+- The adaptive proposal accumulates its covariance in float64, avoiding
+  non-positive-definite proposals in long float32 runs.
 - A transient `squeue` failure no longer counts submitted jobs as finished.
 - Trajectory completeness uses the configured `n_steps`, so production MDP
   files with `nsteps <= 0` or `nstxout-compressed = 0` no longer mark every

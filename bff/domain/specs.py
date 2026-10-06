@@ -372,6 +372,9 @@ class ChargeConstraint:
         )
 
     def __getattr__(self, name: str) -> Any:
+        # Guard "specs" itself so copy/pickle (which skip __init__) don't recurse.
+        if name == "specs":
+            raise AttributeError(name)
         return getattr(self.specs, name)
 
     @property

@@ -189,3 +189,14 @@ def test_random_params_generator_handles_fully_constrained_parameters() -> None:
 
     assert samples.shape == (3, 0)
     assert specs.with_implicit_charges(samples).tolist() == [[0.0], [0.0], [0.0]]
+
+
+def test_charge_constraint_can_be_copied_and_pickled() -> None:
+    import copy
+    import pickle
+
+    constraint = ChargeConstraint(
+        {"bounds": {"charge A": [0.0, 1.0]}, "charge_constraints": []}
+    )
+    assert copy.copy(constraint).n_params == 1
+    assert pickle.loads(pickle.dumps(constraint)).n_params == 1

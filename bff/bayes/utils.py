@@ -34,56 +34,35 @@ def smape(y_true: torch.Tensor, y_pred: torch.Tensor) -> float:
 
 
 def initialize_walkers(
-    priors,
+    priors: list[torch.distributions.Distribution],
     n_walkers: int,
-    constraint: Callable = None,
-    max_attempts: int | None = None,
+    constraint: Callable | None = None,
+    max_attempts: int = 1000,
 ) -> torch.Tensor:
+    """Draw ``n_walkers`` starting points from the priors.
 
+    With a ``constraint``, draws are made in batches and only points whose
+    first ``constraint.n_params`` entries satisfy it are kept.
     """
-    Initialize walkers for the MCMC sampler.
 
-    Parameters
-    ----------
-    priors : dict
-        Dict of prior distributions for each parameter.
-    n_walkers : int
-        Number of walkers to initialize.
-    specs : object, optional
-        Specifications object containing bounds and constraints.
-        If provided, walkers will be initialized within the bounds.
-
-    Returns
-    -------
-    torch.Tensor
-        A tensor of shape (n_walkers, n_params) containing the initial positions
-        of the walkers, sampled from the prior distributions.
-    """
+    def draw(n: int) -> torch.Tensor:
+        return torch.stack([prior.sample((n,)) for prior in priors], dim=1).float()
 
     if constraint is None:
-        means = torch.tensor([p.mean for p in priors], dtype=torch.float32)
-        stds = torch.tensor([p.scale for p in priors], dtype=torch.float32)
-        p0 = torch.normal(means.expand(n_walkers, -1), stds.expand(n_walkers, -1))
-    else:
-        n_params = constraint.n_params
-        n_dim = len(priors)
-        max_attempts = max_attempts or (1000 * n_walkers)
-
-        p0 = torch.empty((n_walkers, n_dim))
-        count = 0
-        attempts = 0
-        while count < n_walkers and attempts < max_attempts:
-            p0_trial = torch.tensor([p.sample().item() for p in priors])
-            if constraint(p0_trial[:n_params]):
-                p0[count] = p0_trial
-                count += 1
-            attempts += 1
-        if count < n_walkers:
-            raise RuntimeError(
-                "Failed to initialize constrained walkers from the priors. "
-                f"Accepted {count}/{n_walkers} samples after {attempts} attempts."
-            )
-    return p0
+        return draw(n_walkers)
+    accepted: list[torch.Tensor] = []
+    n_accepted = 0
+    for _ in range(max_attempts):
+        trial = draw(2 * (n_walkers - n_accepted))
+        valid = trial[constraint(trial[:, : constraint.n_params])]
+        accepted.append(valid)
+        n_accepted += len(valid)
+        if n_accepted >= n_walkers:
+            return torch.cat(accepted)[:n_walkers]
+    raise RuntimeError(
+        "Failed to initialize constrained walkers from the priors. "
+        f"Accepted {n_accepted}/{n_walkers} samples after {max_attempts} batches."
+    )
 
 
 def check_tensor(
@@ -225,7 +204,8 @@ def find_max_stable_lr(
         opt = torch.optim.SGD([x], lr=lr)
 
         for i in range(max_iter):
-            if torch.any(x < lower) or torch.any(x > upper):
+            diverged = not torch.isfinite(x).all()
+            if diverged or torch.any(x < lower) or torch.any(x > upper):
                 break
             opt.zero_grad()
             loss = -fn(x)

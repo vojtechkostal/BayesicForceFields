@@ -456,7 +456,6 @@ def fit_lgp_committee(
         priors=priors,
         log_likelihood_fn=log_likelihood,
         device="cpu",
-        numpy_output=False,
     )
 
     map_theta = find_map(log_probability, p0, logger=logger, **opt_kwargs)

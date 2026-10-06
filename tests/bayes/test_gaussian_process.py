@@ -159,3 +159,17 @@ def test_local_gaussian_process_round_trips_parameter_dependent_mean(
 
     assert callable(loaded.lgps[0].y_mean)
     assert torch.allclose(loaded.predict(X), y)
+
+
+def test_local_gaussian_process_prediction_matches_explicit_inverse() -> None:
+    torch.manual_seed(0)
+    x = torch.rand(12, 2)
+    y = torch.sin(x.sum(dim=1, keepdim=True)) + torch.rand(12, 3)
+    lgp = LocalGaussianProcess(x, y, 0.2, torch.tensor([0.5, 0.7]), 1.3, 1e-3, "cpu")
+    xi = torch.rand(5, 2)
+
+    kernel = gaussian_kernel(x, x, lgp.lengths, lgp.width) + 1e-3 * torch.eye(12)
+    expected = 0.2 + gaussian_kernel(xi, x, lgp.lengths, lgp.width) @ (
+        torch.linalg.inv(kernel.double()).float() @ (y - 0.2)
+    )
+    torch.testing.assert_close(lgp.predict(xi), expected, rtol=1e-3, atol=1e-3)

@@ -50,8 +50,9 @@ class LocalGaussianProcess:
 
     Attributes
     ----------
-    Kdd_inv : torch.Tensor
-        Inverse of the training covariance matrix.
+    alpha : torch.Tensor
+        ``K_dd^-1 (y_train - mean(X_train))``, so a prediction is
+        ``mean(Xi) + K(Xi, X_train) @ alpha``.
 
     Methods
     -------
@@ -93,8 +94,7 @@ class LocalGaussianProcess:
         Kdd = gaussian_kernel(self.X_train, self.X_train, self.lengths, width) + noise
         Kdd = nearest_positive_definite(Kdd)
         L = torch.linalg.cholesky(Kdd)
-        Kdd_inv = torch.cholesky_inverse(L)
-        self.Kdd_inv = check_tensor(Kdd_inv, device=device)
+        self.alpha = torch.cholesky_solve(self.y_train - self.y_train_mean, L)
 
     @property
     def n_params(self) -> int:
@@ -130,8 +130,7 @@ class LocalGaussianProcess:
         Xi = check_tensor(Xi, device=self.device)
         Kid = gaussian_kernel(Xi, self.X_train, self.lengths, self.width)
         mean = evaluate_mean(self.y_mean, Xi, self.device)
-        mean = mean + (Kid @ self.Kdd_inv) @ (self.y_train - self.y_train_mean)
-        return mean
+        return mean + Kid @ self.alpha
 
     def state_dict(self) -> dict:
         return {

@@ -68,18 +68,17 @@ def test_log_posterior_handles_shapes_nan_and_output_type() -> None:
         priors,
         likelihood,
         device="cpu",
-        numpy_output=False,
     )
 
     assert out.shape == (2,)
     assert torch.isfinite(out[0])
     assert torch.isneginf(out[1])
 
-    nan_out = log_posterior(
-        torch.tensor([[float("nan"), 0.0]]),
+    mixed = log_posterior(
+        torch.tensor([[float("nan"), 0.0], [0.0, 0.0]]),
         priors,
         likelihood,
         device="cpu",
     )
-    assert isinstance(nan_out, np.ndarray)
-    assert float(nan_out) == -1e10
+    assert torch.isneginf(mixed[0])
+    assert torch.isfinite(mixed[1])
