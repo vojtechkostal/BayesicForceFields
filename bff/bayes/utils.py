@@ -130,5 +130,3 @@ def with_manual_sqdist_flag(fn: Callable) -> Callable:
     def wrapper(*args, manual_sqdist=False, **kwargs):
         return fn(*args, manual_sqdist=manual_sqdist or _MANUAL_MODE, **kwargs)
     return wrapper
-
-

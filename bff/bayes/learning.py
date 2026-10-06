@@ -330,5 +330,3 @@ def _default_checkpoint_path(fn_posterior: Path) -> Path:
     suffix = "".join(fn_posterior.suffixes) or ".pt"
     stem = fn_posterior.name[: -len(suffix)] if suffix else fn_posterior.name
     return fn_posterior.with_name(f"{stem}.ckpt{suffix}")
-
-
