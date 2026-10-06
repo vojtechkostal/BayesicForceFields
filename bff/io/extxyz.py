@@ -87,14 +87,6 @@ def write_extxyz_frame(
             )
 
 
-def read_xyz_comment(path: PathLike) -> str:
-    """Return the comment line from the first XYZ frame."""
-    lines = Path(path).read_text(encoding='utf-8').splitlines()
-    if len(lines) < 2:
-        raise ValueError(f'{path} is not a valid XYZ file.')
-    return lines[1].strip()
-
-
 def last_xyz_frame(path: PathLike) -> tuple[list[str], list[list[float]]]:
     """Return symbols and coordinates from the last XYZ frame in a file."""
     lines = Path(path).read_text(encoding='utf-8').splitlines()

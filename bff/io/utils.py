@@ -65,14 +65,6 @@ def save_json(data: dict, fn: PathLike) -> None:
         json.dump(data, f, cls=NumpyArrayEncoder)
 
 
-def load_json(fn: PathLike) -> dict:
-    """Save a dictionary as JSON to a file."""
-    fn = str(fn)
-    with open(fn, "r") as f:
-        file = json.load(f)
-    return file
-
-
 def file_sha256(filename: PathLike) -> str:
     """Return the SHA-256 hash of a file without loading it all at once."""
     digest = hashlib.sha256()

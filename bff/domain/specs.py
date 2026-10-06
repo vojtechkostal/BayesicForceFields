@@ -75,12 +75,6 @@ class Bounds:
             raise ValueError(f"Parameter {name!r} not found in bounds.")
         return int(np.argwhere(mask).ravel()[0])
 
-    def without(self, name: str) -> "Bounds":
-        items = {
-            key: value for key, value in self.by_name.items() if key != name
-        }
-        return Bounds(items)
-
     def without_names(self, names: Sequence[str]) -> "Bounds":
         excluded = set(names)
         return Bounds({

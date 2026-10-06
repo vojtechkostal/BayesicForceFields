@@ -400,14 +400,6 @@ class SampleSet:
         return len(self.samples)
 
     @property
-    def topology_paths(self) -> list[Path]:
-        return [system.topology_path for system in self.systems]
-
-    @property
-    def coordinate_paths(self) -> list[Path]:
-        return [system.coordinates_path for system in self.systems]
-
-    @property
     def trajectory_paths(self) -> list[list[Path]]:
         if not self.samples:
             return []

@@ -35,24 +35,6 @@ def validate_unique_system_ids(
         )
 
 
-def load_system_ids(raw: Any, *, field: str = "systems") -> tuple[str, ...]:
-    """Load an explicit ordered list of system IDs."""
-    if not isinstance(raw, list) or not raw:
-        raise ValueError(f"{field} must be a non-empty list of system IDs.")
-    values: list[str] = []
-    for index, item in enumerate(raw):
-        if isinstance(item, Mapping):
-            if set(item) != {"system_id"}:
-                raise ValueError(
-                    f"{field}[{index}] must contain only 'system_id', got "
-                    f"{sorted(item)}."
-                )
-            item = item["system_id"]
-        values.append(validate_system_id(item, field=f"{field}[{index}].system_id"))
-    validate_unique_system_ids(values, field=field)
-    return tuple(values)
-
-
 def _resolve_value(value: Any, base_dir: Path, *, field: str) -> PathValue:
     if value is None:
         return None
