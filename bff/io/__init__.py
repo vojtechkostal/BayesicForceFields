@@ -10,7 +10,6 @@ __all__ = [
     "mdp",
     "plumed",
     "progress",
-    "schedulers",
     "utils",
 ]
 

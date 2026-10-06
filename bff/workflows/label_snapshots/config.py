@@ -3,18 +3,14 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Optional
+from typing import Any, Literal, Mapping, Optional
 
 from ...domain.systems import validate_system_id, validate_unique_system_ids
 from ...io.utils import load_yaml
-from .._shared.config import (
-    PathLike,
-    SchedulerName,
-    SlurmConfig,
-    _load_slurm_config,
-    _resolve_path,
-    _strict_bool,
-)
+from ...slurm import SlurmConfig, load_slurm_config
+from ..config import PathLike, check_keys, resolve_path, strict_bool
+
+SchedulerName = Literal["local", "slurm"]
 
 
 @dataclass(frozen=True)
@@ -100,34 +96,32 @@ def _load_systems(
                         f"systems[{index}].single_atom_inputs contains duplicate "
                         f"canonical element {element!r}."
                     )
-                single_atom_input_paths[element] = _resolve_path(
+                single_atom_input_paths[element] = resolve_path(
                     base_dir,
                     raw_path,
-                    kind=(
-                        f"systems[{index}] isolated-atom CP2K input for {element}"
-                    ),
+                    kind=(f"systems[{index}] isolated-atom CP2K input for {element}"),
                 )
         systems.append(
             SnapshotSystemConfig(
                 system_id=validate_system_id(
                     raw["system_id"], field=f"systems[{index}].system_id"
                 ),
-                topology_path=_resolve_path(
+                topology_path=resolve_path(
                     base_dir,
                     raw["topology"],
                     kind=f"systems[{index}] topology file",
                 ),
-                trajectory_path=_resolve_path(
+                trajectory_path=resolve_path(
                     base_dir,
                     raw["trajectory"],
                     kind=f"systems[{index}] trajectory file",
                 ),
-                md_input_path=_resolve_path(
+                md_input_path=resolve_path(
                     base_dir,
                     raw["md_input"],
                     kind=f"systems[{index}] CP2K MD input",
                 ),
-                sp_input_path=_resolve_path(
+                sp_input_path=resolve_path(
                     base_dir,
                     raw["sp_input"],
                     kind=f"systems[{index}] CP2K single-point input",
@@ -164,39 +158,24 @@ class LabelSnapshotsConfig:
     def load(cls, fn_config: PathLike) -> "LabelSnapshotsConfig":
         fn_config = Path(fn_config).resolve()
         base_dir = fn_config.parent
-        config = load_yaml(fn_config)
-        if not isinstance(config, Mapping):
-            raise ValueError("Label-snapshots configuration must contain a mapping.")
-
-        known = {
-            "output_dir",
-            "log",
-            "systems",
-            "cp2k_cmd",
-            "job_scheduler",
-            "train_fraction",
-            "seed",
-            "single_atoms",
-            "cleanup_snapshots",
-            "collection_wait_seconds",
-            "slurm",
-        }
-        unknown = set(config) - known
-        if unknown:
-            raise ValueError(
-                "Label-snapshots configuration contains unsupported key(s): "
-                + ", ".join(sorted(unknown))
-            )
-        missing = [
-            key
-            for key in ("systems", "cp2k_cmd", "job_scheduler")
-            if key not in config
-        ]
-        if missing:
-            raise ValueError(
-                "Missing required label-snapshots configuration key(s): "
-                + ", ".join(repr(key) for key in missing)
-            )
+        config = check_keys(
+            load_yaml(fn_config),
+            where="Label-snapshots configuration",
+            allowed=(
+                "output_dir",
+                "log",
+                "systems",
+                "cp2k_cmd",
+                "job_scheduler",
+                "train_fraction",
+                "seed",
+                "single_atoms",
+                "cleanup_snapshots",
+                "collection_wait_seconds",
+                "slurm",
+            ),
+            required=("systems", "cp2k_cmd", "job_scheduler"),
+        )
 
         scheduler = config["job_scheduler"]
         if scheduler not in {"local", "slurm"}:
@@ -210,19 +189,19 @@ class LabelSnapshotsConfig:
         if collection_wait_seconds < 0:
             raise ValueError("'collection_wait_seconds' must be non-negative.")
 
-        output_dir = _resolve_path(
+        output_dir = resolve_path(
             base_dir,
             config.get("output_dir", "./"),
             must_exist=False,
             kind="output directory",
         )
-        single_atoms = _strict_bool(
+        single_atoms = strict_bool(
             config.get("single_atoms", True), field="single_atoms"
         )
         return cls(
             fn_config=fn_config,
             output_dir=output_dir,
-            log=_resolve_path(
+            log=resolve_path(
                 base_dir,
                 config.get("log", output_dir / "label-snapshots.log"),
                 must_exist=False,
@@ -239,14 +218,12 @@ class LabelSnapshotsConfig:
             train_fraction=train_fraction,
             seed=int(config.get("seed", 2026)),
             single_atoms=single_atoms,
-            cleanup_snapshots=_strict_bool(
+            cleanup_snapshots=strict_bool(
                 config.get("cleanup_snapshots", False),
                 field="cleanup_snapshots",
             ),
             collection_wait_seconds=collection_wait_seconds,
             slurm=(
-                _load_slurm_config(config.get("slurm"))
-                if scheduler == "slurm"
-                else None
+                load_slurm_config(config.get("slurm")) if scheduler == "slurm" else None
             ),
         )

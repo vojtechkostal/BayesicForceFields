@@ -1,9 +1,11 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import MDAnalysis as mda
 from gmxtopology import Topology
 
-from bff.workflows._shared.preparation import write_reference_system
+from bff.workflows.build.box import load_residue_template
+from bff.workflows.build.main import write_reference_system
 
 
 def _write_two_waters(tmp_path: Path, *, virtual_site: bool) -> tuple[Path, Path]:
@@ -92,3 +94,31 @@ def test_write_reference_system_keeps_stable_paths_without_vsites(
         topology_format="ITP",
     )
     assert len(reference.atoms) == 6
+
+
+def test_load_residue_template_accepts_arbitrary_monoatomic_residue() -> None:
+    residue = SimpleNamespace(
+        name="SOD",
+        atoms=[SimpleNamespace(name="SOD", mass=22.98977)],
+    )
+
+    template = load_residue_template(residue, {})
+
+    assert template.positions.tolist() == [[0.0, 0.0, 0.0]]
+    assert template.real_mask.tolist() == [True]
+
+
+def test_load_residue_template_accepts_common_water_residue_alias() -> None:
+    residue = SimpleNamespace(
+        name="TIP3",
+        atoms=[
+            SimpleNamespace(name="OH2", mass=15.9994),
+            SimpleNamespace(name="H1", mass=1.008),
+            SimpleNamespace(name="H2", mass=1.008),
+        ],
+    )
+
+    template = load_residue_template(residue, {})
+
+    assert template.positions.shape == (3, 3)
+    assert template.real_mask.tolist() == [True, True, True]

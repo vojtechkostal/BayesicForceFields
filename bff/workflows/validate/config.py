@@ -5,13 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from .._shared.config import (
-    PathLike,
-    SimulationCampaignConfig,
-    _load_campaign_common,
-    _resolve_path,
-    _strict_bool,
-)
+from ..campaign.config import SimulationCampaignConfig, load_campaign_config
+from ..config import PathLike, check_keys, resolve_path, strict_bool
 
 PosteriorDistribution = Literal["empirical", "normal", "uniform", "kde"]
 
@@ -34,32 +29,11 @@ class ValidateConfig(SimulationCampaignConfig):
 
     @classmethod
     def load(cls, fn_config: PathLike) -> "ValidateConfig":
-        _, base_dir, config, common = _load_campaign_common(
-            fn_config, log_name="validate.log"
+        base_dir, config, common = load_campaign_config(
+            fn_config,
+            stage="validate",
+            stage_keys={"specs", "parameters", "posterior"},
         )
-
-        allowed = {
-            "campaign_dir",
-            "log",
-            "gmx_cmd",
-            "job_scheduler",
-            "source",
-            "systems",
-            "dispatch",
-            "compress",
-            "cleanup",
-            "store",
-            "slurm",
-            "specs",
-            "parameters",
-            "posterior",
-        }
-        unknown = set(config) - allowed
-        if unknown:
-            raise ValueError(
-                "Validate configuration contains unsupported key(s): "
-                + ", ".join(sorted(unknown))
-            )
 
         has_parameters = "parameters" in config
         has_posterior = "posterior" in config
@@ -73,8 +47,8 @@ class ValidateConfig(SimulationCampaignConfig):
                 raise ValueError("Explicit validation mode requires 'specs'.")
             return cls(
                 **common,
-                specs=_resolve_path(base_dir, config["specs"], kind="specs file"),
-                parameters=_resolve_path(
+                specs=resolve_path(base_dir, config["specs"], kind="specs file"),
+                parameters=resolve_path(
                     base_dir,
                     config["parameters"],
                     kind="parameter samples file",
@@ -86,24 +60,19 @@ class ValidateConfig(SimulationCampaignConfig):
             raise ValueError(
                 "Posterior validation uses embedded specifications; remove 'specs'."
             )
-        posterior = config["posterior"]
-        if not isinstance(posterior, dict):
-            raise ValueError("'posterior' must be a mapping.")
-        unknown_posterior = set(posterior) - {
-            "file",
-            "n_samples",
-            "include_mean",
-            "distribution",
-            "confidence",
-            "seed",
-        }
-        if unknown_posterior:
-            raise ValueError(
-                "posterior contains unsupported key(s): "
-                + ", ".join(sorted(unknown_posterior))
-            )
-        if "file" not in posterior:
-            raise ValueError("posterior requires 'file'.")
+        posterior = check_keys(
+            config["posterior"],
+            where="posterior",
+            allowed=(
+                "file",
+                "n_samples",
+                "include_mean",
+                "distribution",
+                "confidence",
+                "seed",
+            ),
+            required=("file",),
+        )
 
         n_samples = posterior.get("n_samples", 10)
         if isinstance(n_samples, bool) or not isinstance(n_samples, int):
@@ -111,7 +80,7 @@ class ValidateConfig(SimulationCampaignConfig):
         if n_samples < 0:
             raise ValueError("posterior.n_samples must be a non-negative integer.")
 
-        include_mean = _strict_bool(
+        include_mean = strict_bool(
             posterior.get("include_mean", False),
             field="posterior.include_mean",
         )
@@ -145,7 +114,7 @@ class ValidateConfig(SimulationCampaignConfig):
             specs=None,
             parameters=None,
             posterior=ValidatePosteriorConfig(
-                file=_resolve_path(
+                file=resolve_path(
                     base_dir,
                     posterior["file"],
                     kind="posterior file",

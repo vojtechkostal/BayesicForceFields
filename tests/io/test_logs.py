@@ -1,11 +1,13 @@
+import io
+import json
+import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 import numpy as np
 
 from bff.io.logs import Logger
 from bff.io.progress import iter_progress
-from bff.workflows._shared.campaign import run_campaign
+from bff.io.utils import save_json
 
 
 def test_logger_writes_colored_console_and_plain_file(
@@ -63,86 +65,17 @@ def test_status_can_be_console_only(tmp_path: Path, capsys) -> None:
     assert log.read_text() == ""
 
 
-def test_campaign_progress_is_visible_but_not_written_to_physical_log(
-    tmp_path: Path,
-    capsys,
+def test_raw_json_and_non_tty_progress_are_lossless(
+    tmp_path: Path, monkeypatch
 ) -> None:
-    log = tmp_path / "campaign.log"
-    specs = tmp_path / "specs.yaml"
-    specs.write_text("bounds: {}\ncharge_constraints: []\n")
-    config = SimpleNamespace(
-        campaign_dir=tmp_path / "campaign",
-        dispatch=False,
-        job_scheduler="local",
-        gmx_cmd="gmx",
-        store=(),
-        cleanup=False,
-        compress=False,
-        slurm=None,
-    )
-    logger = Logger(
-        "sample-parameters",
-        fn_log=log,
-        mode="w",
-        color=False,
-    )
+    value = 0.1234567890123456
+    output = tmp_path / "raw.json"
+    save_json({"value": np.float64(value)}, output)
+    assert json.loads(output.read_text())["value"] == value
 
-    run_campaign(
-        config=config,
-        fn_specs=specs,
-        systems=[],
-        parameter_samples=np.array([[1.0], [2.0]]),
-        logger=logger,
-    )
-
-    console = capsys.readouterr().out
-    assert "Staging jobs: 0/2" in console
-    assert "[  0%]" in console
-    assert "Staging jobs: 1/2" in console
-    assert "[ 50%]" in console
-    assert "Staging jobs: Done. | 2/2 [100%]" in console
-
-    text = log.read_text()
-    assert "Staging jobs: 0/2" not in text
-    assert "Staging jobs: 1/2" not in text
-    assert "Staging jobs: Done. | 2/2 [100%]" in text
-
-
-def test_single_local_campaign_shows_progress_while_md_runs(
-    tmp_path: Path,
-    capsys,
-    monkeypatch,
-) -> None:
-    specs = tmp_path / "specs.yaml"
-    specs.write_text("bounds: {}\ncharge_constraints: []\n")
-    config = SimpleNamespace(
-        campaign_dir=tmp_path / "campaign",
-        dispatch=True,
-        job_scheduler="local",
-        gmx_cmd="gmx",
-        store=(),
-        cleanup=False,
-        compress=False,
-        slurm=None,
-    )
-    logger = Logger("validate", color=False, width=50)
-    output_before_run = []
-
-    def fake_run(*args, **kwargs):
-        output_before_run.append(capsys.readouterr().out)
-        return SimpleNamespace(returncode=0)
-
-    monkeypatch.setattr("subprocess.run", fake_run)
-
-    run_campaign(
-        config=config,
-        fn_specs=specs,
-        systems=[],
-        parameter_samples=np.array([[1.0]]),
-        logger=logger,
-    )
-
-    assert len(output_before_run) == 1
-    assert "Running MD: 0/1" in output_before_run[0]
-    assert "[  0%]" in output_before_run[0]
-    assert "Running MD: Done. | 1/1 [100%]" in capsys.readouterr().out
+    stream = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", stream)
+    logger = Logger("sample")
+    logger.status("Work", "1/2", overwrite=True)
+    logger.done("Work")
+    assert "\r" not in stream.getvalue()

@@ -1,14 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
-from .._shared.config import (
-    PathLike,
-    SimulationCampaignConfig,
-    _load_campaign_common,
-    _validate_bounds,
-)
+from ..campaign.config import SimulationCampaignConfig, load_campaign_config
+from ..config import PathLike, check_keys
 
 
 @dataclass(frozen=True)
@@ -19,6 +15,27 @@ class ChargeConstraintConfig:
     implicit: str
 
 
+def _load_bounds(bounds: Any) -> dict[str, tuple[float, float]]:
+    if not isinstance(bounds, dict):
+        raise ValueError("'bounds' must be a mapping of parameter names to bounds.")
+    loaded: dict[str, tuple[float, float]] = {}
+    for name, value in bounds.items():
+        if not (
+            isinstance(value, (list, tuple))
+            and len(value) == 2
+            and all(isinstance(x, (int, float)) for x in value)
+        ):
+            raise ValueError(f"Invalid bounds for {name!r}: {value}")
+        lower, upper = float(value[0]), float(value[1])
+        if lower > upper:
+            raise ValueError(
+                f"Lower bound {lower} is greater than upper bound {upper} "
+                f"for parameter {name!r}."
+            )
+        loaded[name] = (lower, upper)
+    return loaded
+
+
 @dataclass(frozen=True, kw_only=True)
 class SampleParametersConfig(SimulationCampaignConfig):
     bounds: dict[str, tuple[float, float]]
@@ -26,111 +43,55 @@ class SampleParametersConfig(SimulationCampaignConfig):
     n_samples: int
 
     @classmethod
-    def load(cls, fn_config: PathLike) -> 'SampleParametersConfig':
-        _, _, config, common = _load_campaign_common(fn_config)
-
-        allowed = {
-            'campaign_dir',
-            'log',
-            'gmx_cmd',
-            'job_scheduler',
-            'source',
-            'systems',
-            'dispatch',
-            'compress',
-            'cleanup',
-            'store',
-            'slurm',
-            'bounds',
-            'charge_constraints',
-            'n_samples',
-        }
-        unknown = set(config) - allowed
-        if unknown:
-            raise ValueError(
-                'Sample-parameters configuration contains unsupported key(s): '
-                + ', '.join(sorted(unknown))
-            )
-
-        required = [
-            'bounds',
-            'charge_constraints',
-            'n_samples',
-        ]
-        missing = [key for key in required if key not in config]
-        if missing:
-            raise ValueError(
-                'Sample-parameters workflow requires configuration key(s): '
-                + ', '.join(repr(key) for key in missing)
-            )
-
-        bounds = _validate_bounds(config['bounds'])
-        raw_constraints = config['charge_constraints']
-        if not isinstance(raw_constraints, list):
+    def load(cls, fn_config: PathLike) -> SampleParametersConfig:
+        _, config, common = load_campaign_config(
+            fn_config,
+            stage="sample-parameters",
+            stage_keys={"bounds", "charge_constraints", "n_samples"},
+            stage_required=("bounds", "charge_constraints", "n_samples"),
+        )
+        bounds = _load_bounds(config["bounds"])
+        if not isinstance(config["charge_constraints"], list):
             raise ValueError("'charge_constraints' must be a list.")
-        charge_constraints: list[ChargeConstraintConfig] = []
-        for index, constraint in enumerate(raw_constraints):
-            if not isinstance(constraint, dict):
-                raise ValueError(f"charge_constraints[{index}] must be a mapping.")
-            unknown_constraint = set(constraint) - {
-                'selection',
-                'target',
-                'scope',
-                'implicit',
-            }
-            if unknown_constraint:
+        constraints: list[ChargeConstraintConfig] = []
+        for index, raw in enumerate(config["charge_constraints"]):
+            where = f"charge_constraints[{index}]"
+            keys = ("selection", "target", "scope", "implicit")
+            check_keys(raw, where=where, allowed=keys, required=keys)
+            scope = str(raw["scope"])
+            if scope not in {"system", "residue"}:
                 raise ValueError(
-                    f'charge_constraints[{index}] contains unsupported key(s): '
-                    + ', '.join(sorted(unknown_constraint))
+                    f"{where}.scope must be 'system' or 'residue', got {scope!r}."
                 )
-            missing = [
-                key
-                for key in ('selection', 'target', 'scope', 'implicit')
-                if key not in constraint
-            ]
-            if missing:
-                raise ValueError(
-                    f"charge_constraints[{index}] is missing required key(s): "
-                    + ', '.join(repr(key) for key in missing)
-                )
-            scope = str(constraint['scope'])
-            if scope not in {'system', 'residue'}:
-                raise ValueError(
-                    f"charge_constraints[{index}].scope must be 'system' or "
-                    f"'residue', got {scope!r}."
-                )
-            implicit = str(constraint['implicit'])
+            implicit = str(raw["implicit"])
             if implicit not in bounds:
                 raise ValueError(
-                    f"charge_constraints[{index}].implicit ({implicit!r}) must "
-                    "match a parameter defined in 'bounds'."
+                    f"{where}.implicit ({implicit!r}) must match a parameter "
+                    "defined in 'bounds'."
                 )
-            if not implicit.startswith('charge '):
+            if not implicit.startswith("charge "):
                 raise ValueError(
-                    f"charge_constraints[{index}].implicit must be a charge "
-                    f"parameter, got {implicit!r}."
+                    f"{where}.implicit must be a charge parameter, got {implicit!r}."
                 )
-            charge_constraints.append(
+            constraints.append(
                 ChargeConstraintConfig(
-                    selection=str(constraint['selection']),
-                    target=float(constraint['target']),
+                    selection=str(raw["selection"]),
+                    target=float(raw["target"]),
                     scope=scope,
                     implicit=implicit,
                 )
             )
-        implicit_params = [constraint.implicit for constraint in charge_constraints]
+        implicit_params = [constraint.implicit for constraint in constraints]
         if len(implicit_params) != len(set(implicit_params)):
             raise ValueError(
                 "Each charge constraint must define a distinct implicit parameter."
             )
-
-        n_samples = int(config['n_samples'])
+        n_samples = int(config["n_samples"])
         if n_samples <= 0:
             raise ValueError("'n_samples' must be a positive integer.")
-
         return cls(
             **common,
             bounds=bounds,
-            charge_constraints=tuple(charge_constraints),
+            charge_constraints=tuple(constraints),
             n_samples=n_samples,
         )

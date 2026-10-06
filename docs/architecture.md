@@ -37,14 +37,16 @@ listing:
 BayesicForceFields/
 |-- bff/
 |   |-- bayes/          # Gaussian processes, likelihoods, and learning
-|   |-- domain/         # Parameter, campaign, and constraint models
-|   |-- io/             # GROMACS, CP2K, PLUMED, YAML, and scheduler I/O
+|   |-- domain/         # Parameter specs, systems, samples, and biases
+|   |-- io/             # CP2K, EXTXYZ, MDP, PLUMED, Colvars, YAML, and logs
 |   |-- mcmc/           # Torch-native posterior sampling
-|   |-- qoi/            # Trajectory analysis and QoI datasets
-|   |-- workflows/      # User-facing build-to-validation stages
+|   |-- qoi/            # Routines, trajectory analysis, and QoI datasets
+|   |-- workflows/      # One package per stage, plus campaign/ for MD campaigns
 |   |-- cli.py          # Command-line interface
+|   |-- gromacs.py      # grompp/mdrun runner with Colvars or PLUMED bias
 |   |-- plotting.py     # Visualization helpers
-|   `-- topology.py     # Force-field topology modification
+|   |-- slurm.py        # Slurm job arrays and progress
+|   `-- topology.py     # Universe preparation and force-field parameter edits
 |-- docs/               # MkDocs documentation
 |-- examples/           # MD and external-data tutorials
 |-- tests/              # Unit and integration tests
@@ -59,15 +61,17 @@ BayesicForceFields/
 | `bff.__init__` | Public Python API: workflow functions, `Project`, `QoI`, `QoIDataset`, and `PosteriorResults`. |
 | `bff.cli` | Typer command-line entry points and shell-completion setup. |
 | `bff.workflows` | One package per user-facing stage. Each stage loads configuration, coordinates lower-level modules, and writes explicit artifacts. |
-| `bff.workflows._shared` | Shared simulation-campaign staging, configuration parsing, preparation helpers, and scheduler integration. |
-| `bff.domain` | Stable data models for parameter specifications, charge constraints, sampling campaigns, trajectories, and simulation biases. |
-| `bff.topology` | GROMACS topology handling, system construction, MDAnalysis selections, force-field parameter updates, and charge reconstruction support. |
-| `bff.io` | File-format and process boundaries: CP2K, EXTXYZ, MDP, PLUMED, Colvars, logging, schedulers, and YAML/PT helpers. |
-| `bff.qoi` | Trajectory analysis, built-in RDF and hydrogen-bond routines, custom routine loading, and serialized `QoIDataset` objects. |
+| `bff.workflows.campaign` | MD campaigns shared by `sample-parameters` and `validate`: configuration, staging, local or Slurm runs, collection, and the per-sample job (`bff md`). |
+| `bff.workflows.config` | Small parsing helpers shared by the stage configuration loaders. |
+| `bff.domain` | Stable data models for parameter specifications, charge constraints, system metadata, the `samples.yaml` manifest, and simulation biases. |
+| `bff.topology` | MDAnalysis universes from GROMACS topologies and force-field parameter updates. |
+| `bff.gromacs` | One `run_md` used by `build` and campaign jobs; GROMACS always runs in the output directory. |
+| `bff.slurm` | Slurm configuration, task scripts, chunked job-array submission, and queue polling. |
+| `bff.io` | File formats and helpers: CP2K, EXTXYZ, MDP, PLUMED, Colvars, logging, and YAML/PT. |
+| `bff.qoi` | Built-in and custom routines with one interface, trajectory opening, and serialized `QoI`/`QoIDataset` objects. |
 | `bff.bayes` | Local Gaussian-process surrogates, kernels, means, likelihoods, priors, posterior learning, and result handling. |
 | `bff.mcmc` | Torch-native Metropolis-Hastings sampling, adaptive proposals, checkpoints, restart support, and convergence diagnostics. |
 | `bff.plotting` | Posterior and surrogate visualization. |
-| `bff.tools` | Small shared numerical helpers. |
 
 ## Workflow Stages
 
@@ -89,8 +93,8 @@ BayesicForceFields/
 | Label system directory | CP2K run directories, train/test EXTXYZ datasets, and optional isolated-atom energies. |
 | `specs.yaml` | Named parameter bounds and reconstructable hierarchical charge constraints. |
 | `samples.yaml` | Explicit sampled force-field parameter vectors and trajectory records. |
-| `samples/<sample_id>/` | Per-sample job config, submission script, scheduler output, and one scientific-output directory per system. |
-| `outputs/<sample_id>/` | Live job logs and auxiliary runtime files; deleted after collection when cleanup is enabled. |
+| `samples/<sample_id>/` | Per-sample job `config.yaml`, `run.out`, `gmx.log`, and one MD-output directory per system. |
+| `run.sh`, `jobs.txt`, `slurm/` | Slurm task script, job list (label-snapshots), and Slurm's own task output. |
 | `qoi/<name>.pt` | Training-ready `QoIDataset` with ID-paired outputs and reference targets. |
 | `<name>.lgp` | Trained local Gaussian-process committee for one quantity of interest. |
 | `outputs/specs.yaml` | Unchanged, portable copy of the learned parameter specification. |

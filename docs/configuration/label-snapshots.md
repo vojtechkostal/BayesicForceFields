@@ -46,8 +46,15 @@ false` to disable these calculations and omit the mapping.
 frames are deterministically shuffled with `seed` and written to
 `systems/<system_id>/train.extxyz` and `test.extxyz`.
 
-Local and Slurm scheduling use `job_scheduler`, `cp2k_cmd`, `slurm`,
-`collection_wait_seconds`, and `cleanup_snapshots`. The output root also
+Every snapshot and isolated atom is one CP2K job. With `job_scheduler: local`
+the jobs run one after another and a failed job is reported and skipped. With
+`job_scheduler: slurm` the jobs run as Slurm job arrays of one `run.sh`; task
+`i` runs the job listed on line `i + 1` of `jobs.txt`, and Slurm output goes to
+`slurm/<job>_<task>.out`. The `slurm` section is described for
+[sample-parameters](sample-parameters.md#slurm). `cp2k_cmd` must be a single
+executable; inside Slurm jobs it is started with `srun`.
+`collection_wait_seconds` gives shared filesystems time to show finished
+outputs, and `cleanup_snapshots` removes collected run directories. The output root also
 contains `label-results.yaml` with source hashes, selected trajectory indices,
 split counts, artifact paths, and isolated-atom energies or failures, plus
 `label-snapshots.log`.

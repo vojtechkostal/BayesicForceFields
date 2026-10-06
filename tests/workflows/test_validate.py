@@ -76,14 +76,9 @@ def test_validate_stages_posterior_mean_draws_and_embedded_specs(
     )
     captured: dict[str, object] = {}
 
-    def fake_stage(config, *, fn_specs):
-        captured["staged_specs"] = fn_specs
-        return fn_specs, []
-
-    def fake_run_campaign(**kwargs):
+    def fake_run_campaign(config, **kwargs):
         captured.update(kwargs)
 
-    monkeypatch.setattr(validate_module, "stage_campaign", fake_stage)
     monkeypatch.setattr(validate_module, "run_campaign", fake_run_campaign)
 
     validate_module.main(str(_write_config(tmp_path, posterior_file)))
@@ -91,7 +86,7 @@ def test_validate_stages_posterior_mean_draws_and_embedded_specs(
     campaign_specs = tmp_path / "campaign" / "specs.yaml"
     assert campaign_specs.is_file()
     assert Specs.load(campaign_specs) == specs
-    assert captured["staged_specs"] == campaign_specs
+    assert captured["fn_specs"] == campaign_specs
     samples = captured["parameter_samples"]
     assert isinstance(samples, np.ndarray)
     assert samples.shape == (3, 1)

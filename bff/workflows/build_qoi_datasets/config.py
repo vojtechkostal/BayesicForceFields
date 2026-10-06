@@ -15,7 +15,7 @@ from ...qoi.routines import (
     AnalysisRoutineConfig,
     load_routine_configs,
 )
-from .._shared.config import PathLike, _resolve_path, _strict_bool
+from ..config import PathLike, resolve_path, strict_bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -273,7 +273,7 @@ class BuildQoIDatasetsConfig:
                 "output contains unsupported key(s): "
                 + ", ".join(sorted(unknown_output))
             )
-        output_dir = _resolve_path(
+        output_dir = resolve_path(
             base_dir,
             output_raw.get("directory", "./qoi"),
             must_exist=False,
@@ -292,7 +292,7 @@ class BuildQoIDatasetsConfig:
         return cls(
             fn_config=fn_config,
             training_samples=QoITrainingSamplesConfig(
-                manifest=_resolve_path(
+                manifest=resolve_path(
                     base_dir,
                     training["manifest"],
                     kind="sample campaign manifest",
@@ -309,12 +309,12 @@ class BuildQoIDatasetsConfig:
                 frames=cls._frames(reference.get("frames"), field="reference.frames"),
             ),
             routines=routines,
-            in_memory=_strict_bool(
+            in_memory=strict_bool(
                 run_raw.get("in_memory", True), field="run.in_memory"
             ),
             output=QoIOutputConfig(
                 directory=output_dir,
-                log=_resolve_path(
+                log=resolve_path(
                     base_dir,
                     output_raw.get(
                         "log", output_dir.parent / "build-qoi-datasets.log"
@@ -322,7 +322,7 @@ class BuildQoIDatasetsConfig:
                     must_exist=False,
                     kind="build-qoi-datasets log file",
                 ),
-                write_raw=_strict_bool(
+                write_raw=strict_bool(
                     output_raw.get("write_raw", False), field="output.write_raw"
                 ),
             ),

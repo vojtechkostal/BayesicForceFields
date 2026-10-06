@@ -7,10 +7,10 @@ import yaml
 
 from bff.workflows.build.config import BuildConfig
 from bff.workflows.build_qoi_datasets.config import BuildQoIDatasetsConfig
+from bff.workflows.campaign.job import MDJobConfig
 from bff.workflows.fit_lgp.config import FitLGPConfig
 from bff.workflows.label_snapshots.config import LabelSnapshotsConfig
 from bff.workflows.learn.config import LearnConfig
-from bff.workflows.md.config import MDJobConfig
 from bff.workflows.sample_parameters.config import SampleParametersConfig
 from bff.workflows.validate.config import ValidateConfig
 
@@ -383,28 +383,6 @@ def test_fit_lgp_config_loads_minimal_config(tmp_path: Path) -> None:
     assert config.datasets[0].fn_model == (tmp_path / "models" / "rdf.lgp").resolve()
 
 
-def test_fit_lgp_config_rejects_observation_scale(tmp_path: Path) -> None:
-    data = _write(tmp_path / "dataset.pt")
-
-    fn_config = tmp_path / "fit-lgp.yaml"
-    fn_config.write_text(
-        yaml.safe_dump(
-            {
-                "datasets": {
-                    "rdf": {
-                        "data": str(data),
-                        "observation_scale": 2.0,
-                    }
-                },
-                "fit": {"model_dir": "./models", "device": "cpu"},
-            }
-        )
-    )
-
-    with pytest.raises(ValueError, match="observation_scale"):
-        FitLGPConfig.load(fn_config)
-
-
 def test_learn_config_loads_effective_observation_modes(tmp_path: Path) -> None:
     specs = _write(tmp_path / "specs.yaml")
     model = _write(tmp_path / "model.lgp")
@@ -491,32 +469,6 @@ def test_learn_config_accepts_unlimited_marginal_samples(
     )
 
     assert LearnConfig.load(fn_config).plots.max_marginal_samples is None
-
-
-def test_learn_config_rejects_obsolete_effective_observation_keys(
-    tmp_path: Path,
-) -> None:
-    specs = _write(tmp_path / "specs.yaml")
-    model = _write(tmp_path / "model.lgp")
-    fn_config = tmp_path / "learn.yaml"
-    fn_config.write_text(
-        yaml.safe_dump(
-            {
-                "specs": str(specs),
-                "models": {
-                    "rdf": {
-                        "model_path": str(model),
-                        "infer_effective_observations": True,
-                        "tolerance": 0.1,
-                    }
-                },
-                "mcmc": {},
-            }
-        )
-    )
-
-    with pytest.raises(ValueError, match="unsupported key"):
-        LearnConfig.load(fn_config)
 
 
 def test_learn_config_rejects_ambiguous_effective_observations(
@@ -632,7 +584,6 @@ def test_md_job_config_loads_minimal_config(tmp_path: Path) -> None:
                 "campaign_dir": str(campaign_dir),
                 "fn_specs": str(specs),
                 "gmx_cmd": "gmx",
-                "job_scheduler": "local",
                 "systems": [
                     {
                         "system_id": "acetate",
@@ -874,3 +825,14 @@ def test_validate_config_rejects_conflicting_posterior_sources(
 
     with pytest.raises(ValueError):
         ValidateConfig.load(fn_config)
+
+
+def test_check_keys_reports_unknown_and_missing_keys() -> None:
+    from bff.workflows.config import check_keys
+
+    with pytest.raises(ValueError, match="stage contains unsupported key.*legacy"):
+        check_keys({"a": 1, "legacy": 2}, where="stage", allowed=("a",))
+    with pytest.raises(ValueError, match="stage is missing required key.*'b'"):
+        check_keys({"a": 1}, where="stage", allowed=("a", "b"), required=("b",))
+    with pytest.raises(ValueError, match="stage must be a mapping"):
+        check_keys([], where="stage", allowed=())

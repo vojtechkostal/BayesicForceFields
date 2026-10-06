@@ -8,6 +8,14 @@
    `bff.qoi.data.QoIDataset` imports `QoIDataset` from `bff.qoi`.
 2. Invalid built-in routine options are reported when the reference trajectory
    is analyzed instead of when the configuration is loaded.
+3. Campaign logs (`config.yaml`, `run.out`, `gmx.log`) now live in
+   `samples/<sample_id>/`; there is no `outputs/` directory. Existing campaign
+   manifests remain readable.
+4. Remove any `array` entry from `slurm.sbatch`. If the cluster limits array
+   size or submitted jobs per user below 1000, set `slurm.max_array_size`.
+   Slurm output appears in `samples/<sample_id>/run.out` (campaigns) and
+   `slurm/<job>_<task>.out`.
+5. Remove `mdp_npt` from explicit campaign `inputs`; it was never used there.
 
 # Pipeline Directory-Contract Migration
 

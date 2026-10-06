@@ -74,25 +74,3 @@ def patch_mdp(
     for key, value in updates.items():
         content[str(key)] = str(value)
     write_mdp(content, fn_out)
-
-
-def get_n_frames_target(fn_mdp: PathLike) -> tuple[int | None, int | None]:
-    """Extract the expected number of saved trajectory frames.
-
-    Parameters
-    ----------
-    fn_mdp
-        Input MDP file.
-
-    Returns
-    -------
-    tuple
-        Number of saved frames and trajectory stride. If ``nsteps`` is zero or
-        missing, both entries are returned as ``None``.
-    """
-    mdp_data = read_mdp(fn_mdp)
-    n_steps = int(mdp_data.get("nsteps", 0))
-    if n_steps <= 0:
-        return None, None
-    stride = int(mdp_data["nstxout-compressed"])
-    return int(n_steps / stride), stride

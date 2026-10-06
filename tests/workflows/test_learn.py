@@ -1,5 +1,4 @@
-from __future__ import annotations
-
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -8,115 +7,68 @@ import pytest
 import torch
 import yaml
 
-from bff.io.cp2k import (
-    HARTREE_TO_EV,
-    collect_single_atom_energies,
-)
-from bff.workflows.label_snapshots.config import LabelSnapshotsConfig
 from bff.workflows.learn.config import LearnConfig
 from bff.workflows.learn.main import (
+    _prepare_output,
     _qoi_log_likelihood_in_batches,
     _write_default_plots,
 )
-from bff.workflows.md.main import check_success
 
 
-def test_collect_single_atom_energies_uses_atomic_numbers(tmp_path: Path) -> None:
-    hydrogen = tmp_path / "hydrogen"
-    calcium = tmp_path / "calcium"
-    hydrogen.mkdir()
-    calcium.mkdir()
-
-    hydrogen.joinpath("pos.xyz").write_text("1\ncomment\nH 0.0 0.0 0.0\n")
-    calcium.joinpath("pos.xyz").write_text("1\ncomment\nCa 0.0 0.0 0.0\n")
-    hydrogen.joinpath("atom.out").write_text(
-        " ENERGY| Total FORCE_EVAL ( QS ) energy [a.u.]:      -0.500000\n"
-    )
-    calcium.joinpath("atom.out").write_text(
-        " ENERGY| Total FORCE_EVAL ( QS ) energy [a.u.]:      -1.250000\n"
-    )
-
-    energies = collect_single_atom_energies([hydrogen, calcium])
-
-    assert set(energies) == {1, 20}
-    assert energies[1] == pytest.approx(-0.5 * HARTREE_TO_EV)
-    assert energies[20] == pytest.approx(-1.25 * HARTREE_TO_EV)
+def _write(path: Path, text: str = "data\n") -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    return path
 
 
-def test_label_snapshots_rejects_import_mode(
-    tmp_path: Path,
-) -> None:
-    fn_config = tmp_path / "label-snapshots.yaml"
-    fn_config.write_text(
+def _learn_config(tmp_path: Path, *, resume: bool = False, overwrite: bool = False):
+    _write(tmp_path / "specs.yaml")
+    _write(tmp_path / "model.lgp")
+    config_path = tmp_path / "learn.yaml"
+    config_path.write_text(
         yaml.safe_dump(
             {
-                "mode": "import",
-                "output_dir": "./trajectories",
-                "systems": [],
+                "specs": "specs.yaml",
+                "models": {
+                    "pmf": {
+                        "model_path": "model.lgp",
+                        "independent_observations": True,
+                    }
+                },
+                "mcmc": {"resume": resume},
+                "output": {"directory": "run", "overwrite": overwrite},
             }
         )
     )
-
-    with pytest.raises(ValueError, match="unsupported key.*mode"):
-        LabelSnapshotsConfig.load(fn_config)
+    return LearnConfig.load(config_path)
 
 
-def test_check_success_uses_expected_saved_frame_count(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    fn_trj = tmp_path / "traj.xtc"
-    fn_trj.write_text("dummy xtc placeholder\n")
+def test_learning_collision_policy_only_removes_owned_files(tmp_path: Path) -> None:
+    config = _learn_config(tmp_path)
+    _write(config.output.log)
+    with pytest.raises(ValueError, match="already exist"):
+        _prepare_output(config)
 
-    monkeypatch.setattr(
-        "bff.workflows.md.main.get_n_frames_target",
-        lambda _: (1000, 500),
-    )
-
-    class DummyReader:
-        def __init__(self, _: str) -> None:
-            self.n_frames = 101
-
-        def __enter__(self) -> "DummyReader":
-            return self
-
-        def __exit__(self, exc_type, exc, tb) -> bool:
-            return False
-
-    import MDAnalysis.coordinates.XTC as xtc_module
-
-    monkeypatch.setattr(xtc_module, "XTCReader", DummyReader)
-
-    assert check_success(fn_trj, tmp_path / "prod.mdp", 50000) is True
+    config = _learn_config(tmp_path, overwrite=True)
+    unknown = _write(config.output.directory / "keep-me.txt")
+    _prepare_output(config)
+    assert not config.output.log.exists()
+    assert unknown.exists()
 
 
-def test_check_success_returns_false_for_too_few_frames(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    fn_trj = tmp_path / "traj.xtc"
-    fn_trj.write_text("dummy xtc placeholder\n")
+def test_learning_resume_requires_matching_copied_specs(tmp_path: Path) -> None:
+    config = _learn_config(tmp_path)
+    _prepare_output(config)
+    _write(config.output.checkpoint)
 
-    monkeypatch.setattr(
-        "bff.workflows.md.main.get_n_frames_target",
-        lambda _: (1000, 500),
-    )
+    config.output.specs.unlink()
+    with pytest.raises(ValueError, match="requires the copied specifications"):
+        _prepare_output(_learn_config(tmp_path, resume=True))
 
-    class DummyReader:
-        def __init__(self, _: str) -> None:
-            self.n_frames = 100
-
-        def __enter__(self) -> "DummyReader":
-            return self
-
-        def __exit__(self, exc_type, exc, tb) -> bool:
-            return False
-
-    import MDAnalysis.coordinates.XTC as xtc_module
-
-    monkeypatch.setattr(xtc_module, "XTCReader", DummyReader)
-
-    assert check_success(fn_trj, tmp_path / "prod.mdp", 50000) is False
+    shutil.copy2(config.specs, config.output.specs)
+    config.output.specs.write_text("bounds: {}\n")
+    with pytest.raises(ValueError, match="do not match"):
+        _prepare_output(_learn_config(tmp_path, resume=True))
 
 
 def test_write_default_plots_writes_expected_pngs(
@@ -186,39 +138,36 @@ def test_write_default_plots_writes_expected_pngs(
     )
 
     specs = tmp_path / "specs.yaml"
-    specs.write_text(
-        "bounds: {}\n"
-        "charge_constraints: []\n"
-    )
+    specs.write_text("bounds: {}\ncharge_constraints: []\n")
     model = tmp_path / "model.pt"
     model.write_text("model\n")
 
     fn_config = tmp_path / "learn.yaml"
     fn_config.write_text(
         yaml.safe_dump(
-                {
-                    "specs": str(specs),
-                    "models": {
-                        "qoi": {
-                            "model_path": str(model),
-                            "independent_observations": True,
+            {
+                "specs": str(specs),
+                "models": {
+                    "qoi": {
+                        "model_path": str(model),
+                        "independent_observations": True,
+                    }
+                },
+                "mcmc": {},
+                "plots": {
+                    "max_corner_samples": 5,
+                    "max_marginal_samples": 11,
+                    "max_qoi_samples": 7,
+                    "qoi_batch_size": 3,
+                    "plot_metadata": {
+                        "define VSA": {
+                            "xlabel": "O-VS",
+                            "ylabel": "angle [degree]",
                         }
                     },
-                    "mcmc": {},
-                    "plots": {
-                        "max_corner_samples": 5,
-                        "max_marginal_samples": 11,
-                        "max_qoi_samples": 7,
-                        "qoi_batch_size": 3,
-                        "plot_metadata": {
-                            "define VSA": {
-                                "xlabel": "O-VS",
-                                "ylabel": "angle [degree]",
-                            }
-                        },
-                    },
-                    "output": {"directory": str(tmp_path / "learn")},
-                }
+                },
+                "output": {"directory": str(tmp_path / "learn")},
+            }
         )
     )
 
@@ -226,9 +175,7 @@ def test_write_default_plots_writes_expected_pngs(
     problem = SimpleNamespace(
         n_params=1,
         models={
-            "qoi": SimpleNamespace(
-                lgps=[SimpleNamespace(X_train=torch.zeros((1, 1)))]
-            )
+            "qoi": SimpleNamespace(lgps=[SimpleNamespace(X_train=torch.zeros((1, 1)))])
         },
         to_torch=lambda device: problem,
     )

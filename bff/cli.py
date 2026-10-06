@@ -152,7 +152,7 @@ def validate(fn_config: Path = config_argument()) -> None:
 @app.command(hidden=True)
 def md(fn_config: Path = config_argument()) -> None:
     """Run molecular dynamics from a configuration file."""
-    from bff.workflows.md.main import main as md_main
+    from bff.workflows.campaign.job import main as md_main
 
     run_workflow(fn_config, md_main, "md")
 
@@ -160,7 +160,7 @@ def md(fn_config: Path = config_argument()) -> None:
 @app.command(name="label-snapshot-job", hidden=True)
 def label_snapshot_job(fn_config: Path = config_argument()) -> None:
     """Run one staged CP2K snapshot job from a configuration file."""
-    from bff.workflows.label_snapshots.main import run_job
+    from bff.workflows.label_snapshots.job import main as run_job
 
     run_workflow(fn_config, run_job, "label-snapshot-job")
 

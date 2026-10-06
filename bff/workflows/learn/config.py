@@ -7,7 +7,7 @@ from typing import Mapping
 
 from ...domain.systems import validate_system_id
 from ...io.utils import load_yaml
-from .._shared.config import PathLike, _resolve_path, _strict_bool
+from ..config import PathLike, resolve_path, strict_bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,11 +142,11 @@ class LearnConfig:
             thin=thin,
             progress_stride=progress_stride,
             n_walkers=None if n_walkers is None else int(n_walkers),
-            resume=_strict_bool(mcmc_raw.get("resume", False), field="mcmc.resume"),
+            resume=strict_bool(mcmc_raw.get("resume", False), field="mcmc.resume"),
             device=str(mcmc_raw.get("device", "cuda")),
             rhat_tol=float(mcmc_raw.get("rhat_tol", 1.01)),
             ess_min=int(mcmc_raw.get("ess_min", 100)),
-            include_implicit_charge=_strict_bool(
+            include_implicit_charge=strict_bool(
                 mcmc_raw.get("include_implicit_charge", False),
                 field="mcmc.include_implicit_charge",
             ),
@@ -242,7 +242,7 @@ class LearnConfig:
                     f"models.{name} contains unsupported key(s): "
                     + ", ".join(sorted(unknown))
                 )
-            independent = _strict_bool(
+            independent = strict_bool(
                 model.get("independent_observations", False),
                 field=f"models.{name}.independent_observations",
             )
@@ -271,7 +271,7 @@ class LearnConfig:
                     f"Curve model {name!r} requires a positive finite tolerance."
                 )
             models[name] = LearnModelConfig(
-                model_path=_resolve_path(
+                model_path=resolve_path(
                     base_dir, model["model_path"], kind=f"model {name!r} file"
                 ),
                 independent_observations=independent,
@@ -288,13 +288,13 @@ class LearnConfig:
                 "output contains unsupported key(s): "
                 + ", ".join(sorted(unknown_output))
             )
-        output_dir = _resolve_path(
+        output_dir = resolve_path(
             base_dir,
             output_raw.get("directory", "./"),
             must_exist=False,
             kind="learn output directory",
         )
-        overwrite = _strict_bool(
+        overwrite = strict_bool(
             output_raw.get("overwrite", False), field="output.overwrite"
         )
         if mcmc.resume and overwrite:
@@ -317,7 +317,7 @@ class LearnConfig:
         )
         return cls(
             fn_config=fn_config,
-            specs=_resolve_path(base_dir, config["specs"], kind="specs file"),
+            specs=resolve_path(base_dir, config["specs"], kind="specs file"),
             models=models,
             mcmc=mcmc,
             plots=plots,

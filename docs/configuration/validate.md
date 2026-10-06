@@ -4,7 +4,7 @@ Source code:
 
 - `bff/workflows/validate/config.py`
 - `bff/workflows/validate/main.py`
-- `bff/workflows/_shared/campaign.py`
+- `bff/workflows/campaign/`
 
 ## Purpose
 
@@ -84,14 +84,13 @@ only with `parameters` and is rejected with `posterior`.
   If `true`, compress finished simulation outputs.
 - `cleanup`
   If `true`, retain only extensions listed in `store` inside each system result
-  directory and delete `outputs/` after successful collection. If `false`,
-  retain all generated files.
+  directory after a successful campaign. If `false`, retain all generated files.
 - `store`
   File extensions to retain, without leading dots. Defaults to `['xtc']`.
-  Working-directory outputs are moved into the system's sample directory and
-  recorded as named manifest inputs.
+  Stored non-trajectory files are recorded as named manifest inputs.
 - `slurm`
-  Optional Slurm runtime configuration.
+  Slurm runtime configuration, as for
+  [sample-parameters](sample-parameters.md#slurm).
 
 ## `systems[]` Keys
 
@@ -115,10 +114,9 @@ charge O1 O2: [-0.7, -0.6, -0.5]
 Implicit charges are reconstructed from `specs.yaml`, so they do not need to
 appear in the file.
 
-Operational files use the same layout as sampling. The job `config.yaml`,
-`run.sh`, and Slurm `run.out` are copied to `samples/<sample_id>/`. The live
-`outputs/` working tree is retained only when cleanup is disabled; requested
-validation data remain in per-system directories below `samples/`.
+Validation campaigns use the same layout as sampling: each
+`samples/<sample_id>/` holds the job `config.yaml`, `run.out`, and `gmx.log`,
+with one directory per system below it.
 Locally dispatched campaigns show console-only progress from `0/N` while the
 first MD job is running and advance after each completed parameter sample.
 

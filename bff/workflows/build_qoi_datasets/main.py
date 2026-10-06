@@ -8,7 +8,7 @@ from typing import Any
 
 import numpy as np
 
-from ...domain.sample import SampleSet
+from ...domain.samples import SampleSet
 from ...io.logs import Logger
 from ...io.utils import save_json
 from ...qoi.analysis import AnalysisTask, analyze_samples

@@ -1,14 +1,17 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
 import torch
 
+from bff.bayes.gaussian_process import LGPCommittee, LocalGaussianProcess
 from bff.bayes.learning import (
     LearningProblem,
     _default_checkpoint_path,
     _default_lgp_hyperpriors,
     _resolve_mean,
+    fit_surrogates,
 )
 from bff.qoi.dataset import QoIDataset
 
@@ -175,3 +178,32 @@ def test_resolve_mean_rejects_rdf_bin_count_mismatch() -> None:
 
     with pytest.raises(ValueError, match="each RDF curve contains 3 values"):
         _resolve_mean(dataset, "sigmoid")
+
+
+def test_lgp_cache_rejects_same_shape_different_data(tmp_path: Path) -> None:
+    first = QoIDataset("pmf", [[0.0], [1.0]], [[1.0], [2.0]], [1.5])
+    second = QoIDataset("pmf", [[0.0], [1.0]], [[1.0], [3.0]], [1.5])
+    lgp = LocalGaussianProcess(
+        torch.tensor(first.inputs, dtype=torch.float32),
+        torch.tensor(first.outputs, dtype=torch.float32),
+        0.0,
+        torch.ones(1),
+        1.0,
+        0.1,
+        "cpu",
+    )
+    model = LGPCommittee(
+        [lgp],
+        first.outputs_ref,
+        n_curves=1,
+        dataset_fingerprint=first.fingerprint(),
+    )
+    fn_model = tmp_path / "pmf.lgp"
+    model.write(fn_model)
+    with pytest.raises(ValueError, match="different QoI data"):
+        fit_surrogates(
+            [second],
+            model_paths={"pmf": fn_model},
+            reuse_models=True,
+            device="cpu",
+        )

@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from bff.io.colvars import write_mdp_with_colvars
-from bff.io.mdp import get_n_frames_target, patch_mdp, read_mdp, write_mdp
+from bff.io.mdp import patch_mdp, read_mdp, write_mdp
 
 
 def test_read_write_mdp_preserves_comments_and_patches_values(tmp_path: Path) -> None:
@@ -25,7 +25,6 @@ def test_read_write_mdp_preserves_comments_and_patches_values(tmp_path: Path) ->
 
     assert patched_content["nsteps"] == "2000"
     assert patched_content["dt"] == "0.002"
-    assert get_n_frames_target(patched) == (20, 100)
 
     rewritten = tmp_path / "rewritten.mdp"
     write_mdp(content, rewritten)
@@ -55,10 +54,3 @@ def test_colvars_path_is_relative_to_gromacs_working_directory(
     content = read_mdp(output)
     assert content["colvars-active"] == "yes"
     assert content["colvars-configfile"] == "samples/000/acetate/bias.colvars.dat"
-
-
-def test_get_n_frames_target_returns_none_without_steps(tmp_path: Path) -> None:
-    mdp = tmp_path / "empty.mdp"
-    mdp.write_text("integrator = md\n")
-
-    assert get_n_frames_target(mdp) == (None, None)

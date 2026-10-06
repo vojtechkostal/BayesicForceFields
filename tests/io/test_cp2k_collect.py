@@ -5,6 +5,7 @@ import pytest
 from bff.io.cp2k import (
     HARTREE_PER_BOHR_TO_EV_PER_ANGSTROM,
     HARTREE_TO_EV,
+    collect_single_atom_energies,
     write_cp2k_snapshot_extxyz,
 )
 from bff.io.extxyz import read_extxyz_frame
@@ -43,3 +44,25 @@ def test_write_cp2k_snapshot_extxyz_converts_cp2k_units(tmp_path: Path) -> None:
             3.0 * HARTREE_PER_BOHR_TO_EV_PER_ANGSTROM,
         ]
     )
+
+
+def test_collect_single_atom_energies_uses_atomic_numbers(tmp_path: Path) -> None:
+    hydrogen = tmp_path / "hydrogen"
+    calcium = tmp_path / "calcium"
+    hydrogen.mkdir()
+    calcium.mkdir()
+
+    hydrogen.joinpath("pos.xyz").write_text("1\ncomment\nH 0.0 0.0 0.0\n")
+    calcium.joinpath("pos.xyz").write_text("1\ncomment\nCa 0.0 0.0 0.0\n")
+    hydrogen.joinpath("atom.out").write_text(
+        " ENERGY| Total FORCE_EVAL ( QS ) energy [a.u.]:      -0.500000\n"
+    )
+    calcium.joinpath("atom.out").write_text(
+        " ENERGY| Total FORCE_EVAL ( QS ) energy [a.u.]:      -1.250000\n"
+    )
+
+    energies = collect_single_atom_energies([hydrogen, calcium])
+
+    assert set(energies) == {1, 20}
+    assert energies[1] == pytest.approx(-0.5 * HARTREE_TO_EV)
+    assert energies[20] == pytest.approx(-1.25 * HARTREE_TO_EV)

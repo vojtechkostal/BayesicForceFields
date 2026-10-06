@@ -6,7 +6,7 @@ from typing import Any, Mapping
 
 from ...domain.systems import validate_system_id
 from ...io.utils import load_yaml
-from .._shared.config import PathLike, _resolve_path, _strict_bool
+from ..config import PathLike, resolve_path, strict_bool
 
 
 @dataclass(frozen=True)
@@ -59,7 +59,7 @@ class FitLGPConfig:
         options = config["fit"]
         if not isinstance(options, Mapping):
             raise ValueError("'fit' must be a mapping.")
-        model_dir = _resolve_path(
+        model_dir = resolve_path(
             base_dir,
             options.get("model_dir", "./models"),
             must_exist=False,
@@ -83,7 +83,7 @@ class FitLGPConfig:
             )
         fit = FitLGPOptionsConfig(
             model_dir=model_dir,
-            reuse_models=_strict_bool(
+            reuse_models=strict_bool(
                 options.get("reuse_models", True),
                 field="fit.reuse_models",
             ),
@@ -128,7 +128,7 @@ class FitLGPConfig:
             fn_model = (
                 model_dir / f"{name}.lgp"
                 if dataset.get("model") is None
-                else _resolve_path(
+                else resolve_path(
                     base_dir,
                     dataset["model"],
                     must_exist=False,
@@ -138,7 +138,7 @@ class FitLGPConfig:
             datasets.append(
                 FitLGPDatasetConfig(
                     name=str(name),
-                    fn_data=_resolve_path(
+                    fn_data=resolve_path(
                         base_dir,
                         dataset["data"],
                         kind=f"dataset {name!r} data file",
@@ -152,7 +152,7 @@ class FitLGPConfig:
             fn_config=fn_config,
             datasets=tuple(datasets),
             fit=fit,
-            log=_resolve_path(
+            log=resolve_path(
                 base_dir,
                 config.get("log", model_dir.parent / "fit-lgp.log"),
                 must_exist=False,

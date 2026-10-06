@@ -81,6 +81,7 @@ include = ["bff*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["slow: small end-to-end runs of several stages"]
 
 [tool.ruff]
 line-length = 88

@@ -1,5 +1,10 @@
-from .campaign import load_sample_manifest, write_sample_manifest
-from .sample import SampleSet, SimulationSystem, TrajectorySet
+from .samples import (
+    SampleSet,
+    SimulationSystem,
+    TrajectorySet,
+    load_sample_manifest,
+    write_sample_manifest,
+)
 from .specs import Bounds, ChargeConstraint, RandomParamsGenerator, Specs
 from .systems import SystemInputs, validate_system_id
 

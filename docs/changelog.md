@@ -15,6 +15,31 @@ release is `0.4.2`.
 - Moved `bff.qoi.data` to `bff.qoi.dataset` and `bff.tools.get_unitcell` to
   `bff.qoi`. Custom routines import `QoI`, `get_unitcell`, and `select_atoms`
   from `bff.qoi`.
+- Simulation campaigns (`sample-parameters`, `validate`) and snapshot labeling
+  run on Slurm as job arrays of one `run.sh` instead of one submission per
+  job. `slurm.max_parallel_jobs` limits running tasks; the new
+  `slurm.max_array_size` (default 1000) splits large campaigns into
+  consecutive arrays.
+- Campaign jobs write directly to `samples/<sample_id>/`; the `outputs/`
+  working directory is gone. GROMACS runs inside each system's run directory,
+  so `mdout.mdp` and bias outputs no longer land in input directories.
+- A sample whose MD fails no longer aborts a local campaign; it is recorded
+  as `failed`, as on Slurm.
+- `sample-parameters` draws all samples from one Latin hypercube instead of
+  drawing them one at a time, so samples now fill the parameter space evenly.
+- `build` shares an equilibration only between systems with identical
+  topology, templates, box, MDP files, and step counts.
+
+### Fixed
+
+- A transient `squeue` failure no longer counts submitted jobs as finished.
+- Trajectory completeness uses the configured `n_steps`, so production MDP
+  files with `nsteps <= 0` or `nstxout-compressed = 0` no longer mark every
+  sample as failed or crash.
+- Element guessing keeps name-based elements for deuterium and
+  repartitioned hydrogens instead of failing.
+- Molecule insertion stops with an error instead of looping forever when the
+  box is too small.
 
 ## `0.4.2` - 2026-10-02
 

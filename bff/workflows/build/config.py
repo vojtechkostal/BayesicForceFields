@@ -7,7 +7,7 @@ from typing import Optional
 from ...domain.bias import BiasSpec
 from ...domain.systems import validate_system_id, validate_unique_system_ids
 from ...io.utils import load_yaml
-from .._shared.config import PathLike, _resolve_path
+from ..config import PathLike, resolve_path
 
 
 @dataclass(frozen=True)
@@ -64,7 +64,7 @@ class BuildConfig:
 
         project = config['project']
         if isinstance(project, str):
-            project_dir = _resolve_path(
+            project_dir = resolve_path(
                 base_dir,
                 project,
                 must_exist=False,
@@ -80,7 +80,7 @@ class BuildConfig:
                 )
             if 'directory' not in project:
                 raise ValueError('project.directory is required.')
-            project_dir = _resolve_path(
+            project_dir = resolve_path(
                 base_dir,
                 project['directory'],
                 must_exist=False,
@@ -203,13 +203,13 @@ class BuildConfig:
                         system['system_id'], field=f'systems[{i}].system_id'
                     ),
                     system_name=system.get('system_name'),
-                    topology_path=_resolve_path(
+                    topology_path=resolve_path(
                         base_dir,
                         system['topology'],
                         kind=f'system {i} topology file',
                     ),
                     templates={
-                        name: _resolve_path(
+                        name: resolve_path(
                             base_dir,
                             path,
                             kind=f'system {i} template file for {name!r}',
@@ -222,17 +222,17 @@ class BuildConfig:
                     bias=BiasSpec.from_any(system.get('bias'), base_dir=base_dir),
                     nsteps_npt=nsteps_npt,
                     nsteps_prod=nsteps_prod,
-                    mdp_em_path=_resolve_path(
+                    mdp_em_path=resolve_path(
                         base_dir,
                         mdp['em'],
                         kind=f'system {i} em mdp file',
                     ),
-                    mdp_npt_path=_resolve_path(
+                    mdp_npt_path=resolve_path(
                         base_dir,
                         mdp['npt'],
                         kind=f'system {i} npt mdp file',
                     ),
-                    mdp_production_path=_resolve_path(
+                    mdp_production_path=resolve_path(
                         base_dir,
                         mdp['prod'],
                         kind=f'system {i} production mdp file',
@@ -252,7 +252,7 @@ class BuildConfig:
         resolved_log = (
             project_dir / 'build.log'
             if fn_log_raw is None
-            else _resolve_path(
+            else resolve_path(
                 base_dir,
                 fn_log_raw,
                 must_exist=False,

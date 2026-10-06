@@ -21,11 +21,14 @@ authoritative; do not treat this file as permission to broaden a task.
 - `bff/cli.py`: Typer CLI and public command names.
 - `bff/__init__.py`: supported public Python imports and package version.
 - `bff/workflows/`: one package per user-facing workflow stage.
-- `bff/workflows/_shared/`: configuration, campaign, preparation, and
-  scheduler infrastructure shared by stages.
+- `bff/workflows/campaign/`: MD campaigns shared by `sample-parameters` and
+  `validate`, including the per-sample `md` job.
+- `bff/workflows/config.py`: parsing helpers shared by stage configs.
+- `bff/gromacs.py` and `bff/slurm.py`: GROMACS runs and Slurm job arrays.
 - `bff/domain/`: stable domain models and serialized workflow records.
-- `bff/io/`: external process and file-format boundaries.
-- `bff/qoi/`: trajectory analysis and `QoIDataset` construction.
+- `bff/io/`: file formats and logging.
+- `bff/qoi/`: QoI routines (built-in and custom share one interface),
+  trajectory analysis, and `QoIDataset` construction.
 - `bff/bayes/` and `bff/mcmc/`: surrogate fitting and posterior learning.
 - `examples/`: user templates and self-contained notebook examples.
 - `docs/`: MkDocs site; configuration pages describe the YAML contract.

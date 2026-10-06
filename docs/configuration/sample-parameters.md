@@ -4,7 +4,7 @@ Source code:
 
 - `bff/workflows/sample_parameters/config.py`
 - `bff/workflows/sample_parameters/main.py`
-- `bff/workflows/_shared/campaign.py`
+- `bff/workflows/campaign/` (staging, running, and the per-sample job)
 
 ## Purpose
 
@@ -59,15 +59,13 @@ job_scheduler: local
   If `true`, compress finished simulation outputs.
 - `cleanup`
   If `true`, prune each system result directory to the extensions listed in
-  `store` and delete the campaign-level `outputs/` directory after successful
-  collection. If `false`, retain every generated system file and `outputs/`.
+  `store` after a successful campaign. If `false`, retain every generated file.
 - `store`
   File extensions to retain, without leading dots. Defaults to `['xtc']`.
-  Files such as Colvars `production.pmf` that are created in the job working
-  directory are assigned to the system that produced them and moved under
-  `samples/<sample_id>/<system_id>/`.
+  GROMACS runs inside `samples/<sample_id>/<system_id>/`, so files such as a
+  Colvars `production.pmf` are written next to the trajectory.
 - `slurm`
-  Slurm-only runtime settings.
+  Slurm-only runtime settings; see [Slurm](#slurm).
 
 ## `systems[]` Keys
 
@@ -82,8 +80,30 @@ job_scheduler: local
 When a system carries a Colvars bias, BFF copies the bias file into each
 `samples/<sample_id>/<system_id>/` run directory and writes a
 `production-colvars.mdp`. Its `colvars-configfile` value is generated relative
-to the actual GROMACS working directory, so users do not need to edit paths for
-local or Slurm campaigns.
+to the run directory, so users do not need to edit paths for local or Slurm
+campaigns.
+
+## Slurm
+
+With `job_scheduler: slurm`, all samples run from one script, `run.sh`, as
+Slurm job arrays. Each array task runs one sample; its output goes to
+`samples/<sample_id>/run.out`, and Slurm's own messages (for example time-limit
+cancellations) go to `slurm/<job>_<task>.out`.
+
+```yaml
+slurm:
+  max_parallel_jobs: 200   # tasks running at once (array %limit); -1 = no limit
+  max_array_size: 1000     # tasks per submitted array, default 1000
+  sbatch: {time: "00:40:00", mem: 1G, cpus_per_task: 1}
+  setup: [module load gromacs]
+  teardown: []
+```
+
+Campaigns larger than `max_array_size` are submitted as consecutive arrays;
+the next array is submitted once the previous one has finished. Keep
+`max_array_size` below the cluster's `MaxArraySize` and per-user submit limit.
+`sbatch` must not set `array`. With `dispatch: false`, BFF stages the campaign
+and prints the `sbatch --array=...` command for manual submission.
 
 ## `charge_constraints[]` Keys
 
@@ -171,20 +191,17 @@ all of them to the same sampled value.
 - `campaign_dir/specs.yaml`
 - `campaign_dir/samples.yaml`
 - `campaign_dir/systems/<system_id>/`
-- `campaign_dir/samples/<sample_id>/<system_id>/`
-- `campaign_dir/outputs/<sample_id>/`
-- per-sample modified topologies
-- stored trajectories and energy files
+- `campaign_dir/samples/<sample_id>/`: the job `config.yaml`, its output
+  `run.out`, and the GROMACS log `gmx.log`
+- `campaign_dir/samples/<sample_id>/<system_id>/`: the modified topology and
+  all MD outputs of that system
+- `campaign_dir/run.sh` and `campaign_dir/slurm/` for Slurm campaigns
 
-Each `samples/<sample_id>/` contains the available `config.yaml`, `run.sh`, and
-Slurm `run.out`, alongside one directory per system. Non-trajectory files are
-recorded by extension under each `samples.yaml` output's `inputs` mapping; for
-example, `store: [xtc, pmf]` creates `inputs.pmf` for systems that produced a
-PMF.
+Non-trajectory files are recorded by extension under each `samples.yaml`
+output's `inputs` mapping; for example, `store: [xtc, pmf]` creates
+`inputs.pmf` for systems that produced a PMF. With `cleanup: true`, system
+directories retain only the requested extensions; the files directly in
+`samples/<sample_id>/` are always kept.
 
-`outputs/<sample_id>/` is the live job working area containing `gmx.log` and
-other operational files. With `cleanup: false` it is retained, and every file
-generated under the system result directories is also retained. With
-`cleanup: true`, system directories retain only requested extensions and the
-entire `outputs/` tree is deleted after the sample job files have been copied
-to `samples/<sample_id>/`.
+A sample whose MD fails is recorded as `failed` in `samples.yaml`; the rest of
+the campaign continues, locally and on Slurm.
