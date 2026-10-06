@@ -10,9 +10,7 @@ REFERENCE = np.load(Path(__file__).with_name("reference_values.npz"))
 
 
 def _hydrogen_bonds(universe, **options):
-    return hydrogen_bonds(
-        universe, frames=slice(None), system_id="s", sample_id="0", options=options
-    )
+    return hydrogen_bonds(universe, frames=slice(None), options=options)
 
 
 @pytest.mark.parametrize("update_selections", [False, True])

@@ -145,7 +145,7 @@ def test_real_cpu_file_pipeline_build_qoi_fit_lgp_learn(tmp_path: Path) -> None:
     routine_module = _write(
         tmp_path / "pmf.py",
         "from bff.qoi.dataset import QoI\n"
-        "def load_profile(*, inputs, system_id, sample_id, options):\n"
+        "def load_profile(*, inputs, options):\n"
         "    value = float(inputs['pmf'].read_text())\n"
         "    return QoI('ignored', [value], labels=('profile',))\n",
     )

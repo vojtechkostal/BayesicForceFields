@@ -10,9 +10,7 @@ REFERENCE = np.load(Path(__file__).with_name("reference_values.npz"))
 
 
 def _rdf(universe, **options):
-    return rdf(
-        universe, frames=slice(None), system_id="s", sample_id="0", options=options
-    )
+    return rdf(universe, frames=slice(None), options=options)
 
 
 def _three_atoms() -> mda.Universe:
@@ -93,8 +91,6 @@ def test_rdf_rejects_empty_frame_slice() -> None:
         rdf(
             universe,
             frames=slice(2, None),
-            system_id="s",
-            sample_id="0",
             options={"group_a": "index 0", "group_b": "index 2"},
         )
 

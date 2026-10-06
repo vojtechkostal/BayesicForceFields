@@ -300,7 +300,7 @@ def test_parallel_analysis_respects_available_cpus(
         def progress_status(self, *args, **kwargs) -> None:
             pass
 
-        def result_summary(self, *args, **kwargs) -> None:
+        def info(self, *args, **kwargs) -> None:
             pass
 
     monkeypatch.setattr(analysis.os, "sched_getaffinity", lambda pid: {0, 1})

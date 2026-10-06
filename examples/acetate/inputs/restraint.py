@@ -12,8 +12,6 @@ def distance_distribution(
     universe: Any,
     *,
     frames: slice,
-    system_id: str,
-    sample_id: str,
     options: dict[str, Any],
 ) -> QoI:
     """Compute one capped-distance distribution for a requested atom-name pair.

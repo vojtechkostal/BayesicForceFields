@@ -8,6 +8,9 @@
 - Moved `bff.qoi.data` to `bff.qoi.dataset` and `bff.tools.get_unitcell` to
   `bff.qoi`. Custom routines import `QoI`, `get_unitcell`, and `select_atoms`
   from `bff.qoi`.
+- Routines are called as `routine(universe, *, frames, options)` or
+  `routine(*, inputs, options)`; `system_id` and `sample_id` are no longer
+  passed.
 - Moved surrogate fitting (`fit_surrogates`, MAP search) to `bff.bayes.fit`;
   `bff.bayes.learning` holds posterior learning only.
 - Simulation campaigns (`sample-parameters`, `validate`) and snapshot labeling

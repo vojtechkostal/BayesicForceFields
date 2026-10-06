@@ -85,8 +85,8 @@ Built-in and custom routines share one interface. A routine receives one
 system of one sample (or the reference) and returns exactly one `QoI`:
 
 ```python
-routine(universe, *, frames, system_id, sample_id, options) -> QoI  # trajectory
-routine(*, inputs, system_id, sample_id, options) -> QoI            # files
+routine(universe, *, frames, options) -> QoI  # trajectory
+routine(*, inputs, options) -> QoI            # files
 ```
 
 Built-ins receive their `selections` merged into `options`. Every routine
@@ -114,7 +114,7 @@ training sample.
 Declare `inputs` when the quantity is already stored in files such as a PMF:
 
 ```python
-def load_profile(*, inputs, system_id, sample_id, options) -> QoI:
+def load_profile(*, inputs, options) -> QoI:
     pmf_path = inputs["pmf"]
     data = np.loadtxt(pmf_path, comments="#")
     coordinate = data[:, 0]
@@ -146,7 +146,7 @@ resolved `Path`; a role backed by multiple paths is passed as a tuple of paths.
 A custom callable without `inputs` is trajectory-based:
 
 ```python
-def trajectory_qoi(universe, *, frames, system_id, sample_id, options) -> QoI:
+def trajectory_qoi(universe, *, frames, options) -> QoI:
     values = calculate(universe, frames, options)
     return QoI(name="custom", values=values)
 ```

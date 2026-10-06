@@ -3,8 +3,8 @@
 Every routine, built-in or custom, follows one of two signatures and returns
 exactly one :class:`~bff.qoi.dataset.QoI`::
 
-    routine(universe, *, frames, system_id, sample_id, options) -> QoI
-    routine(*, inputs, system_id, sample_id, options) -> QoI
+    routine(universe, *, frames, options) -> QoI
+    routine(*, inputs, options) -> QoI
 
 Routines that declare ``inputs`` read files; all others analyze a trajectory.
 Built-in routines receive their ``selections`` merged into ``options`` and
@@ -227,8 +227,6 @@ def run_routine(
             result = routine.function(
                 universe=universe,
                 frames=frames,
-                system_id=system_id,
-                sample_id=sample_id,
                 options=dict(routine.options),
             )
         else:
@@ -237,8 +235,6 @@ def run_routine(
                 raise ValueError(f"required input role(s) missing: {missing}")
             result = routine.function(
                 inputs={role: inputs[role] for role in routine.inputs},
-                system_id=system_id,
-                sample_id=sample_id,
                 options=dict(routine.options),
             )
     except (TypeError, ValueError) as exc:

@@ -250,20 +250,6 @@ class Logger:
             write_file=write_file,
         )
 
-    def result_summary(
-        self,
-        count: int,
-        outcome: str,
-        elapsed: float,
-        *,
-        level: int = 0,
-        style: str | tuple[str, ...] | None = None,
-    ) -> None:
-        """Write a compact terminal completion summary."""
-        if style is None:
-            style = ("bold", "green") if outcome == "completed" else ("bold", "red")
-        self.info(f"Done. Finished in {elapsed:.2f}s", level=level, style=style)
-
 
 def print_progress_mcmc(
     sampler: Sampler,

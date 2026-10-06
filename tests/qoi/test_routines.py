@@ -17,10 +17,9 @@ def test_custom_file_routine_receives_roles_and_authoritative_name(
     module = _write(
         tmp_path / "routine.py",
         "from bff.qoi import QoI\n"
-        "def load_profile(*, inputs, system_id, sample_id, options):\n"
+        "def load_profile(*, inputs, options):\n"
         "    assert inputs == {'pmf': inputs['pmf']}\n"
         "    assert inputs['pmf'].name == 'profile.pmf'\n"
-        "    assert system_id == 'contact' and sample_id == 'reference'\n"
         "    assert options == {'scale': 2}\n"
         "    return QoI('ignored', [1.0, 2.0])\n",
     )
@@ -53,10 +52,9 @@ def test_custom_trajectory_routine_receives_universe_and_frames(
     module = _write(
         tmp_path / "trajectory_routine.py",
         "from bff.qoi import QoI\n"
-        "def calculate(universe, *, frames, system_id, sample_id, options):\n"
+        "def calculate(universe, *, frames, options):\n"
         "    assert universe == 'universe'\n"
         "    assert frames == slice(2, 8, 2)\n"
-        "    assert system_id == 'contact' and sample_id == 'sample-0'\n"
         "    return QoI('ignored', [options['value']])\n",
     )
     (routine,) = load_routine_configs(
@@ -106,7 +104,7 @@ def test_builtin_routine_receives_selections_as_options() -> None:
 def test_routine_errors_name_the_routine_system_and_sample(tmp_path: Path) -> None:
     module = _write(
         tmp_path / "broken.py",
-        "def calculate(universe, *, frames, system_id, sample_id, options):\n"
+        "def calculate(universe, *, frames, options):\n"
         "    raise ValueError('bad option')\n",
     )
     (routine,) = load_routine_configs(

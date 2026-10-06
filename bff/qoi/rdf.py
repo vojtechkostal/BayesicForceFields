@@ -21,8 +21,6 @@ def rdf(
     universe: mda.Universe,
     *,
     frames: slice,
-    system_id: str,
-    sample_id: str,
     options: dict[str, Any],
 ) -> QoI:
     """Radial distribution functions from each atom type of group_a to group_b.

@@ -52,4 +52,4 @@ def iter_progress(
         logger.progress_status(detail, i, total, level=0)
 
     elapsed_time = time.time() - start_time
-    logger.result_summary(total, "completed", elapsed_time)
+    logger.info(f"Done. Finished in {elapsed_time:.2f}s", style=("bold", "green"))

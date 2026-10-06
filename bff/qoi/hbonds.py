@@ -36,8 +36,6 @@ def hydrogen_bonds(
     universe: mda.Universe,
     *,
     frames: slice,
-    system_id: str,
-    sample_id: str,
     options: dict[str, Any],
 ) -> QoI:
     """Average number of hydrogen bonds per frame between a solute and water.

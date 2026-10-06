@@ -6,6 +6,10 @@
    `from bff.qoi.data import QoI` and `from bff.tools import get_unitcell`
    with `from bff.qoi import QoI, get_unitcell`. Python code using
    `bff.qoi.data.QoIDataset` imports `QoIDataset` from `bff.qoi`.
+   Routines no longer receive `system_id` and `sample_id`; drop both
+   parameters: `routine(universe, *, frames, options)` or
+   `routine(*, inputs, options)`. Results in `raw.json` are already keyed
+   by system and sample.
 2. Invalid built-in routine options are reported when the reference trajectory
    is analyzed instead of when the configuration is loaded.
 3. Campaign logs (`config.yaml`, `run.out`, `gmx.log`) now live in
