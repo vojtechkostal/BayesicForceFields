@@ -11,7 +11,7 @@ from .config import FitLGPConfig
 def main(fn_config: str | Path) -> None:
     workflow_start = time.perf_counter()
     try:
-        from ...bayes.learning import fit_surrogates
+        from ...bayes.fit import fit_surrogates
     except ModuleNotFoundError as exc:
         if exc.name == "torch":
             raise RuntimeError(

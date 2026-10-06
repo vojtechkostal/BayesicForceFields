@@ -15,6 +15,8 @@ release is `0.4.2`.
 - Moved `bff.qoi.data` to `bff.qoi.dataset` and `bff.tools.get_unitcell` to
   `bff.qoi`. Custom routines import `QoI`, `get_unitcell`, and `select_atoms`
   from `bff.qoi`.
+- Moved surrogate fitting (`fit_surrogates`, MAP search) to `bff.bayes.fit`;
+  `bff.bayes.learning` holds posterior learning only.
 - Simulation campaigns (`sample-parameters`, `validate`) and snapshot labeling
   run on Slurm as job arrays of one `run.sh` instead of one submission per
   job. `slurm.max_parallel_jobs` limits running tasks; the new

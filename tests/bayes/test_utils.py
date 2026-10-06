@@ -1,11 +1,12 @@
 import torch
 
-from bff.bayes.utils import find_map, find_max_stable_lr, initialize_walkers
+from bff.bayes.fit import find_map, find_max_stable_lr
+from bff.bayes.utils import initialize_walkers
 
 
 def test_find_map_returns_best_observed_iterate(monkeypatch) -> None:
     monkeypatch.setattr(
-        "bff.bayes.utils.find_max_stable_lr",
+        "bff.bayes.fit.find_max_stable_lr",
         lambda *args, **kwargs: 2.2,
     )
 

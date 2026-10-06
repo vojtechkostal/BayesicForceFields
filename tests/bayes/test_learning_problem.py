@@ -5,14 +5,9 @@ import numpy as np
 import pytest
 import torch
 
+from bff.bayes.fit import _default_lgp_hyperpriors, _resolve_mean, fit_surrogates
 from bff.bayes.gaussian_process import LGPCommittee, LocalGaussianProcess
-from bff.bayes.learning import (
-    LearningProblem,
-    _default_checkpoint_path,
-    _default_lgp_hyperpriors,
-    _resolve_mean,
-    fit_surrogates,
-)
+from bff.bayes.learning import LearningProblem, _default_checkpoint_path
 from bff.qoi.dataset import QoIDataset
 
 

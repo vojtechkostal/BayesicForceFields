@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
-from typing import Callable, Mapping, Optional, Sequence, Union
+from typing import Callable, Mapping, Optional, Union
 
 import numpy as np
 import torch
@@ -10,25 +10,16 @@ from ..io.logs import Logger, print_progress_mcmc
 from ..io.utils import mapping_fingerprint
 from ..mcmc.proposal import AdaptiveGaussianProposal
 from ..mcmc.sampler import Sampler
-from ..qoi.dataset import QoIDataset
 from .gaussian_process import (
     LGPCommittee,
-    LocalGaussianProcess,
-    MeanFunction,
-    evaluate_mean,
 )
-from .likelihoods import gaussian_log_likelihood, loo_log_likelihood
-from .means import rdf_sigmoid_mean
+from .likelihoods import gaussian_log_likelihood
 from .posterior import log_posterior
-from .priors import Prior, Priors
+from .priors import Priors
 from .results import PosteriorResults
 from .utils import (
-    check_device,
     check_tensor,
-    find_map,
     initialize_walkers,
-    laplace_approximation,
-    train_test_split,
 )
 
 PathLike = Union[str, Path]
@@ -335,268 +326,9 @@ class LearningProblem:
         )
 
 
-def _resolve_mean(
-    dataset: QoIDataset,
-    mean: MeanFunction | str,
-) -> MeanFunction:
-    """Resolve a configured surrogate mean specification."""
-    if isinstance(mean, str):
-        if mean == "sigmoid":
-            bins = dataset.settings.get("bins")
-            distance_range = dataset.settings.get("range")
-            if bins is None or distance_range is None:
-                raise ValueError(
-                    "RDF sigmoid mean requires shared RDF settings in the dataset. "
-                    "Build the dataset with one consistent RDF routine definition "
-                    "per QoI."
-                )
-            if bins != dataset.curve_length:
-                raise ValueError(
-                    "RDF dataset settings declare "
-                    f"bins={bins!r}, but each RDF curve contains "
-                    f"{dataset.curve_length} values."
-                )
-            return rdf_sigmoid_mean(bins, distance_range, dataset.outputs_ref)
-        else:
-            raise NotImplementedError(
-                "Other than 'sigmoid' or single-value mean is not implemented")
-    return mean
-
-
 def _default_checkpoint_path(fn_posterior: Path) -> Path:
     suffix = "".join(fn_posterior.suffixes) or ".pt"
     stem = fn_posterior.name[: -len(suffix)] if suffix else fn_posterior.name
     return fn_posterior.with_name(f"{stem}.ckpt{suffix}")
 
 
-def _default_lgp_hyperpriors(
-    X: torch.Tensor,
-    residuals: torch.Tensor,
-) -> Priors:
-    """Build scale-aware priors for log GP hyperparameters."""
-    input_scales = X.std(dim=0, unbiased=False)
-    input_scales = torch.where(
-        torch.isfinite(input_scales) & (input_scales > 0),
-        input_scales,
-        torch.ones_like(input_scales),
-    )
-
-    target_scale = residuals.std(unbiased=False)
-    if not torch.isfinite(target_scale) or target_scale <= 0:
-        target_scale = torch.sqrt(torch.mean(residuals.square()))
-    if not torch.isfinite(target_scale) or target_scale <= 0:
-        target_scale = torch.ones((), dtype=residuals.dtype)
-
-    # LocalGaussianProcess adds ``sigma`` directly to the covariance diagonal,
-    # so its natural scale is a fraction of the target variance.
-    noise_scale = 0.1 * target_scale.square()
-    tiny = torch.finfo(noise_scale.dtype).tiny
-    noise_scale = torch.clamp(noise_scale, min=tiny)
-
-    return Priors(
-        [
-            Prior("normal", float(torch.log(scale)), 2.0, name=f"length_{i}")
-            for i, scale in enumerate(input_scales)
-        ]
-        + [
-            Prior("normal", float(torch.log(target_scale)), 2.0, name="width"),
-            Prior("normal", float(torch.log(noise_scale)), 3.0, name="noise"),
-        ]
-    )
-
-
-def fit_lgp_committee(
-    X: torch.Tensor,
-    y: torch.Tensor,
-    y_mean: MeanFunction,
-    test_fraction: float,
-    n_hyper: int,
-    committee: int,
-    reference_values: np.ndarray,
-    n_curves: int,
-    nuisance: float | None,
-    fn_out: PathLike | None,
-    device: str,
-    logger: Optional[Logger] = None,
-    opt_kwargs: Optional[dict[str, Union[int, float, str]]] = None,
-    hyperpriors: Optional[Priors | Sequence] = None,
-    dataset_fingerprint: str | None = None,
-) -> LGPCommittee:
-    """Fit a committee of local Gaussian-process surrogates."""
-    check_device(device)
-    logger = logger or Logger("fit-lgp")
-    opt_kwargs = dict(opt_kwargs or {})
-
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_fraction)
-    n_hyper = min(n_hyper, len(X_train))
-
-    X_hyper = check_tensor(X_train[:n_hyper], device="cpu")
-    y_hyper = check_tensor(y_train[:n_hyper], device="cpu")
-    y_hyper_mean = evaluate_mean(y_mean, X_hyper, device="cpu")
-
-    n_params = X.shape[1]
-    if hyperpriors is None:
-        priors = _default_lgp_hyperpriors(X_hyper, y_hyper - y_hyper_mean)
-    else:
-        priors = Priors.from_any(hyperpriors)
-    if len(priors) != n_params + 2:
-        raise ValueError(
-            "LGP hyperpriors must define one length scale per input parameter, "
-            "followed by width and noise."
-        )
-    p0 = torch.tensor(priors.means, dtype=torch.float32)
-
-    log_likelihood = partial(
-        loo_log_likelihood,
-        X=X_hyper,
-        y=y_hyper - y_hyper_mean,
-    )
-    log_probability = partial(
-        log_posterior,
-        priors=priors,
-        log_likelihood_fn=log_likelihood,
-        device="cpu",
-    )
-
-    map_theta = find_map(log_probability, p0, logger=logger, **opt_kwargs)
-
-    if committee > 1:
-        cov = laplace_approximation(log_probability, map_theta, device="cpu")
-        hyper_dist = torch.distributions.MultivariateNormal(map_theta, cov)
-        hyper_samples = hyper_dist.sample((committee,))
-    else:
-        hyper_samples = map_theta.unsqueeze(0)
-
-    hyper_samples = hyper_samples.exp()
-    lengths = hyper_samples[:, :-2]
-    widths = hyper_samples[:, -2]
-    sigmas = hyper_samples[:, -1]
-
-    logger.status("Committee", f"0/{committee}", level=2, overwrite=True)
-    lgps = []
-    for i, (length, width, sigma) in enumerate(
-        zip(lengths, widths, sigmas),
-        start=1,
-    ):
-        lgps.append(
-            LocalGaussianProcess(
-                X_train,
-                y_train,
-                y_mean,
-                length,
-                width,
-                sigma,
-                device,
-            )
-        )
-        if i < committee:
-            logger.status("Committee", f"{i}/{committee}", level=2, overwrite=True)
-
-    lgp_committee = LGPCommittee(
-        lgps=lgps,
-        reference_values=reference_values,
-        n_curves=n_curves,
-        nuisance=nuisance,
-        dataset_fingerprint=dataset_fingerprint,
-    )
-    lgp_committee.validate(X_test, y_test)
-    logger.done(
-        "Committee",
-        detail=f"{committee}/{committee} (100%) | MAPE = {lgp_committee.error:.2f}%",
-        level=2,
-    )
-
-    if fn_out is not None:
-        lgp_committee.write(fn_out)
-
-    return lgp_committee
-
-
-def fit_surrogates(
-    datasets: Sequence[QoIDataset],
-    *,
-    y_means: Optional[Mapping[str, MeanFunction | str]] = None,
-    hyperpriors: Optional[Mapping[str, Priors | Sequence]] = None,
-    model_paths: Optional[Mapping[str, PathLike | None]] = None,
-    reuse_models: bool = True,
-    n_hyper_max: int = 200,
-    committee_size: int = 1,
-    test_fraction: float = 0.2,
-    device: str = "cuda",
-    logger: Optional[Logger] = None,
-    **opt_kwargs,
-) -> dict[str, LGPCommittee]:
-    """Fit or load QoI surrogate models."""
-    owns_logger = logger is None
-    logger = logger or Logger("fit-lgp")
-    y_means = dict(y_means or {})
-    hyperpriors = dict(hyperpriors or {})
-    model_paths = dict(model_paths or {})
-
-    if owns_logger:
-        logger.section("Surrogate Fitting")
-        logger.blank()
-
-    models: dict[str, LGPCommittee] = {}
-    for dataset in datasets:
-        if not isinstance(dataset, QoIDataset):
-            raise TypeError(
-                f"Invalid dataset type: {type(dataset)}. Expected QoIDataset."
-            )
-
-        qoi = dataset.name
-        logger.info(f"QoI {qoi}", level=1)
-
-        fn_model_raw = model_paths.get(qoi)
-        fn_model = None if fn_model_raw is None else Path(fn_model_raw).resolve()
-        if fn_model is not None:
-            fn_model.parent.mkdir(parents=True, exist_ok=True)
-
-        if reuse_models and fn_model is not None and fn_model.exists():
-            models[qoi] = LGPCommittee.load(fn_model)
-            fingerprint = dataset.fingerprint()
-            if models[qoi].dataset_fingerprint != fingerprint:
-                raise ValueError(
-                    f"Cached surrogate for {qoi!r} at {fn_model} was fitted "
-                    "from different QoI data. Set fit.reuse_models: false "
-                    "or remove the stale model."
-                )
-            models[qoi].reference_values = np.asarray(
-                dataset.outputs_ref,
-                dtype=float,
-            ).reshape(-1)
-            models[qoi].n_eff = float(models[qoi].reference_values.size)
-            models[qoi].n_curves = dataset.n_curves
-            if models[qoi].reference_values.size != models[qoi].y_size:
-                raise ValueError(
-                    f"Cached surrogate for {qoi!r} is incompatible with the "
-                    "current reference observation size."
-                )
-            models[qoi].write(fn_model)
-            logger.info(
-                f"Using cached surrogate model. | MAPE = {models[qoi].error:.2f}",
-                level=2,
-            )
-            logger.blank()
-            continue
-
-        models[qoi] = fit_lgp_committee(
-            X=dataset.inputs,
-            y=dataset.outputs,
-            y_mean=_resolve_mean(dataset, y_means.get(qoi, 0)),
-            test_fraction=test_fraction,
-            n_hyper=n_hyper_max,
-            committee=committee_size,
-            reference_values=dataset.outputs_ref,
-            n_curves=dataset.n_curves,
-            nuisance=dataset.nuisance,
-            fn_out=fn_model,
-            device=device,
-            logger=logger,
-            opt_kwargs=opt_kwargs,
-            hyperpriors=hyperpriors.get(qoi),
-            dataset_fingerprint=dataset.fingerprint(),
-        )
-        logger.blank()
-
-    return models

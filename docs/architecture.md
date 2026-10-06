@@ -69,7 +69,7 @@ BayesicForceFields/
 | `bff.slurm` | Slurm configuration, task scripts, chunked job-array submission, and queue polling. |
 | `bff.io` | File formats and helpers: CP2K, EXTXYZ, MDP, PLUMED, Colvars, logging, and YAML/PT. |
 | `bff.qoi` | Built-in and custom routines with one interface, trajectory opening, and serialized `QoI`/`QoIDataset` objects. |
-| `bff.bayes` | Local Gaussian-process surrogates, kernels, means, likelihoods, priors, posterior learning, and result handling. |
+| `bff.bayes` | Local Gaussian-process surrogates, kernels, means, likelihoods, and priors; `fit` trains surrogate committees, `learning` runs posterior learning, `results` handles posteriors. |
 | `bff.mcmc` | Torch-native Metropolis-Hastings sampling, adaptive proposals, checkpoints, restart support, and convergence diagnostics. |
 | `bff.plotting` | Posterior and surrogate visualization. |
 

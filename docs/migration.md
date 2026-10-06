@@ -16,6 +16,8 @@
    Slurm output appears in `samples/<sample_id>/run.out` (campaigns) and
    `slurm/<job>_<task>.out`.
 5. Remove `mdp_npt` from explicit campaign `inputs`; it was never used there.
+6. Import `fit_surrogates` from `bff.bayes.fit`; `LearningProblem` stays in
+   `bff.bayes.learning`.
 
 # Pipeline Directory-Contract Migration
 
