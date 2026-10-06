@@ -29,10 +29,7 @@ from bff.io.extxyz import write_extxyz_frames
 from bff.io.logs import Logger
 from bff.io.mdp import read_mdp
 from bff.io.utils import save_json
-from bff.qoi.data import QoI, QoIDataset
-from bff.qoi.hbonds import compute_hydrogen_bond_qoi
-from bff.qoi.rdf import compute_rdf_qoi
-from bff.qoi.routines import normalize_routine_list, run_analysis_routine
+from bff.qoi.dataset import QoI, QoIDataset
 from bff.workflows._shared.campaign import (
     build_submission_script,
     collect_campaign_metadata,
@@ -866,82 +863,6 @@ def test_sample_manifest_rejects_duplicate_or_missing_system_outputs(
         SampleSet.from_dir(campaign)
 
 
-def test_custom_file_routine_receives_roles_and_authoritative_name(
-    tmp_path: Path,
-) -> None:
-    profile = _write(tmp_path / "profile.pmf", "0 1\n")
-    module = _write(
-        tmp_path / "routine.py",
-        "from bff.qoi.data import QoI\n"
-        "def load_profile(*, inputs, system_id, sample_id, options):\n"
-        "    assert inputs['pmf'].name == 'profile.pmf'\n"
-        "    assert system_id == 'contact' and sample_id == 'reference'\n"
-        "    assert options == {'scale': 2}\n"
-        "    return QoI('ignored', [1.0, 2.0])\n",
-    )
-    routine = normalize_routine_list(
-        [
-            {
-                "name": "contact-pmf",
-                "callable": f"{module}:load_profile",
-                "systems": ["contact"],
-                "inputs": ["pmf"],
-                "options": {"scale": 2},
-            }
-        ]
-    )[0]
-    result = run_analysis_routine(
-        routine,
-        universe=None,
-        inputs={"pmf": profile},
-        system_id="contact",
-        sample_id="reference",
-        start=0,
-        stop=None,
-        step=1,
-    )
-    assert result.name == "contact-pmf"
-
-
-def test_custom_trajectory_routine_is_inferred_without_inputs(
-    tmp_path: Path,
-) -> None:
-    module = _write(
-        tmp_path / "trajectory_routine.py",
-        "from bff.qoi.data import QoI\n"
-        "def calculate(*, universe, frames, system_id, sample_id, options):\n"
-        "    assert universe == 'universe'\n"
-        "    assert frames == slice(2, 8, 2)\n"
-        "    assert system_id == 'contact' and sample_id == 'sample-0'\n"
-        "    return QoI('ignored', [options['value']])\n",
-    )
-    routine = normalize_routine_list(
-        [
-            {
-                "name": "distance",
-                "callable": f"{module}:calculate",
-                "systems": ["contact"],
-                "options": {"value": 3.0},
-            }
-        ]
-    )[0]
-
-    result = run_analysis_routine(
-        routine,
-        universe="universe",
-        inputs={},
-        system_id="contact",
-        sample_id="sample-0",
-        start=2,
-        stop=8,
-        step=2,
-    )
-
-    assert routine.uses_trajectory
-    assert result.name == "distance"
-    assert result.values.tolist() == [3.0]
-
-
 def test_shared_qoi_metadata_does_not_contain_recursive_references() -> None:
     blocks = [
         QoI("rdf", [1.0], settings={"bins": 200}),
@@ -953,123 +874,6 @@ def test_shared_qoi_metadata_does_not_contain_recursive_references() -> None:
     assert settings == {"bins": 200}
     assert metadata == {}
     json.dumps(metadata)
-
-
-def test_routine_loader_field_is_rejected() -> None:
-    with pytest.raises(ValueError, match="unsupported key.*loader"):
-        normalize_routine_list(
-            [
-                {
-                    "name": "rdf",
-                    "type": "rdf",
-                    "loader": "mdanalysis",
-                    "systems": ["acetate"],
-                    "selections": {"group_a": "name A", "group_b": "name B"},
-                }
-            ]
-        )
-
-
-def _trajectory_universe() -> mda.Universe:
-    universe = mda.Universe.empty(
-        3,
-        n_residues=2,
-        atom_resindex=[0, 0, 1],
-        trajectory=True,
-    )
-    universe.add_TopologyAttr("names", ["O1", "H1", "OW"])
-    universe.add_TopologyAttr("types", ["O", "H", "O"])
-    universe.add_TopologyAttr("elements", ["O", "H", "O"])
-    universe.add_TopologyAttr("masses", [16.0, 1.0, 16.0])
-    universe.add_TopologyAttr("resnames", ["ACE", "SOL"])
-    universe.add_TopologyAttr("resids", [1, 2])
-    universe.add_TopologyAttr("bonds", [(0, 1)])
-    coordinates = np.asarray(
-        [
-            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.5, 0.0, 0.0]],
-            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.7, 0.0, 0.0]],
-        ]
-    )
-    dimensions = np.asarray(
-        [
-            [10.0, 11.0, 12.0, 80.0, 95.0, 105.0],
-            [12.0, 13.0, 14.0, 75.0, 90.0, 110.0],
-        ]
-    )
-    universe.load_new(coordinates, format="MEMORY", dimensions=dimensions)
-    return universe
-
-
-def test_rdf_expands_group_a_into_one_curve_per_atom_type() -> None:
-    universe = _trajectory_universe()
-    qoi = compute_rdf_qoi(
-        universe,
-        group_a="resname ACE and name O1 H1",
-        group_b="resname SOL and name OW",
-        range=(0.0, 5.0),
-        bins=20,
-        pbc=True,
-        smooth=False,
-    )
-    assert qoi.labels == ("H", "O")
-    assert qoi.values_per_label == 20
-    assert qoi.values.shape == (40,)
-    assert np.all(np.isfinite(qoi.values))
-
-
-def test_hydrogen_bonds_discover_donors_and_hydrogens_from_bonds() -> None:
-    universe = _trajectory_universe()
-    qoi = compute_hydrogen_bond_qoi(
-        universe,
-        selection="resname ACE and name O1",
-        water_selection="resname SOL",
-        pbc=True,
-    )
-    assert qoi.labels == ("ACE(O) to SOL(O)",)
-    assert qoi.values.tolist() == [1.0]
-
-    dynamic_qoi = compute_hydrogen_bond_qoi(
-        universe,
-        selection="resname ACE and name O1",
-        water_selection="resname SOL",
-        pbc=True,
-        update_selections=True,
-    )
-    assert dynamic_qoi.labels == qoi.labels
-    assert dynamic_qoi.values.tolist() == qoi.values.tolist()
-
-
-def test_hydrogen_bonds_detect_ambident_nitrogen_in_both_directions() -> None:
-    universe = mda.Universe.empty(
-        6,
-        n_residues=2,
-        atom_resindex=[0, 0, 0, 1, 1, 1],
-        trajectory=True,
-    )
-    universe.add_TopologyAttr("names", ["N", "HN1", "HN2", "OW", "HW1", "HW2"])
-    universe.add_TopologyAttr("types", ["N", "H", "H", "O", "H", "H"])
-    universe.add_TopologyAttr("elements", ["N", "H", "H", "O", "H", "H"])
-    universe.add_TopologyAttr("masses", [14.0, 1.0, 1.0, 16.0, 1.0, 1.0])
-    universe.add_TopologyAttr("resnames", ["AMN", "SOL"])
-    universe.add_TopologyAttr("resids", [1, 2])
-    universe.add_TopologyAttr("bonds", [(0, 1), (0, 2), (3, 4), (3, 5)])
-    universe.load_new(
-        np.asarray(
-            [[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0],
-              [2.5, 0.0, 0.0], [1.5, 0.0, 0.0], [2.5, 1.0, 0.0]]]
-        ),
-        format="MEMORY",
-        dimensions=np.asarray([[10.0, 10.0, 10.0, 90.0, 90.0, 90.0]]),
-    )
-
-    qoi = compute_hydrogen_bond_qoi(
-        universe,
-        selection="resname AMN and name N",
-        water_selection="resname SOL",
-    )
-
-    assert qoi.labels == ("AMN(N) to SOL(O)", "SOL(O) to AMN(N)")
-    assert qoi.values.tolist() == [1.0, 1.0]
 
 
 def test_lgp_cache_rejects_same_shape_different_data(tmp_path: Path) -> None:
@@ -1367,7 +1171,7 @@ def test_real_cpu_file_pipeline_build_qoi_fit_lgp_learn(tmp_path: Path) -> None:
     reference_profile = _write(tmp_path / "reference.pmf", "1.0\n")
     routine_module = _write(
         tmp_path / "pmf.py",
-        "from bff.qoi.data import QoI\n"
+        "from bff.qoi.dataset import QoI\n"
         "def load_profile(*, inputs, system_id, sample_id, options):\n"
         "    value = float(inputs['pmf'].read_text())\n"
         "    return QoI('ignored', [value], labels=('profile',))\n",

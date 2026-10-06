@@ -10,7 +10,7 @@ from bff.bayes.learning import (
     _default_lgp_hyperpriors,
     _resolve_mean,
 )
-from bff.qoi.data import QoIDataset
+from bff.qoi.dataset import QoIDataset
 
 
 class FakeLGP:

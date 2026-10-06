@@ -5,8 +5,7 @@ from typing import Any, Sequence
 import numpy as np
 from MDAnalysis.lib.distances import capped_distance
 
-from bff.qoi.data import QoI
-from bff.tools import get_unitcell
+from bff.qoi import QoI, get_unitcell
 
 
 def distance_distribution(

@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 
 from ...io.logs import Logger
-from ...qoi.data import QoIDataset
+from ...qoi.dataset import QoIDataset
 from .config import FitLGPConfig
 
 

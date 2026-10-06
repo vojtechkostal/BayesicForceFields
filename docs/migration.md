@@ -1,3 +1,14 @@
+# Migration
+
+## Unreleased
+
+1. Custom QoI routines import from `bff.qoi`: replace
+   `from bff.qoi.data import QoI` and `from bff.tools import get_unitcell`
+   with `from bff.qoi import QoI, get_unitcell`. Python code using
+   `bff.qoi.data.QoIDataset` imports `QoIDataset` from `bff.qoi`.
+2. Invalid built-in routine options are reported when the reference trajectory
+   is analyzed instead of when the configuration is loaded.
+
 # Pipeline Directory-Contract Migration
 
 This release deliberately has no runtime compatibility shim for the previous

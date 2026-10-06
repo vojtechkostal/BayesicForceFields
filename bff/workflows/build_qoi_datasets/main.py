@@ -12,7 +12,7 @@ from ...domain.sample import SampleSet
 from ...io.logs import Logger
 from ...io.utils import save_json
 from ...qoi.analysis import AnalysisTask, analyze_samples
-from ...qoi.data import QoI, QoIDataset
+from ...qoi.dataset import QoI, QoIDataset
 from .config import BuildQoIDatasetsConfig
 
 

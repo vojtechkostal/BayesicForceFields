@@ -1,3 +1,5 @@
+"""QoI blocks from one trajectory and training-ready QoI datasets."""
+
 import hashlib
 import json
 from collections.abc import Mapping
@@ -87,8 +89,8 @@ class QoIDataset:
         self.inputs = np.asarray(self.inputs, dtype=float)
         self.outputs = np.asarray(self.outputs, dtype=float)
         self.outputs_ref = np.asarray(self.outputs_ref, dtype=float).reshape(-1)
-        self.settings = self._coerce_mapping(self.settings)
-        self.metadata = self._coerce_mapping(self.metadata)
+        self.settings = dict(self.settings or {})
+        self.metadata = dict(self.metadata or {})
         self.labels = None if self.labels is None else tuple(self.labels)
         self.values_per_label = int(self.values_per_label)
 
@@ -119,10 +121,6 @@ class QoIDataset:
             raise ValueError(
                 "Reference output size does not match labels * values_per_label."
             )
-
-    @staticmethod
-    def _coerce_mapping(value: Any) -> dict[str, Any]:
-        return dict(value or {})
 
     @property
     def n_samples(self) -> int:

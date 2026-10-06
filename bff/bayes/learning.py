@@ -10,7 +10,7 @@ from ..io.logs import Logger, print_progress_mcmc
 from ..io.utils import mapping_fingerprint
 from ..mcmc.proposal import AdaptiveGaussianProposal
 from ..mcmc.sampler import Sampler
-from ..qoi.data import QoIDataset
+from ..qoi.dataset import QoIDataset
 from .gaussian_process import (
     LGPCommittee,
     LocalGaussianProcess,

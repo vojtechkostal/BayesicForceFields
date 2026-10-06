@@ -13,7 +13,7 @@ from ...domain.systems import (
 from ...io.utils import load_yaml
 from ...qoi.routines import (
     AnalysisRoutineConfig,
-    normalize_routine_list,
+    load_routine_configs,
 )
 from .._shared.config import PathLike, _resolve_path, _strict_bool
 
@@ -205,7 +205,7 @@ class BuildQoIDatasetsConfig:
             )
 
         routines_raw = config["routines"]
-        routines = normalize_routine_list(routines_raw, base_dir=base_dir)
+        routines = load_routine_configs(routines_raw, base_dir=base_dir)
         selected_id_set = set(selected_ids)
         for routine in routines:
             unknown_systems = sorted(set(routine.systems) - selected_id_set)

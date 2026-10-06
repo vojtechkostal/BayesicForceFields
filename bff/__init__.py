@@ -101,10 +101,10 @@ def __getattr__(name: str) -> Any:
     if name in _INTERNAL_MODULES:
         return import_module(f".{name}", __name__)
     if name == "QoI":
-        from .qoi.data import QoI
+        from .qoi.dataset import QoI
         return QoI
     if name == "QoIDataset":
-        from .qoi.data import QoIDataset
+        from .qoi.dataset import QoIDataset
         return QoIDataset
     if name == "PosteriorResults":
         from .bayes.results import PosteriorResults

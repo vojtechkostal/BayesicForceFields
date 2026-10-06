@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from bff.qoi.data import QoI, QoIDataset
+from bff.qoi.dataset import QoI, QoIDataset
 
 
 def test_qoi_validates_label_shape_and_round_trips_dict() -> None:

@@ -4,8 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from bff.qoi import analysis
-from bff.qoi.data import QoI
+from bff.qoi import QoI, analysis, trajectory
 from bff.qoi.routines import AnalysisRoutineConfig
 
 
@@ -56,10 +55,12 @@ def test_analysis_uses_all_readable_frames_for_each_trajectory(
     expected_stop: int,
 ) -> None:
     universe = _Universe(frame_count, unreadable)
-    monkeypatch.setattr(analysis, "prepare_universe", lambda *args, **kwargs: universe)
+    monkeypatch.setattr(
+        trajectory, "prepare_universe", lambda *args, **kwargs: universe
+    )
     monkeypatch.setattr(
         analysis,
-        "run_analysis_routine",
+        "run_routine",
         lambda *args, **kwargs: QoI(name="rdf", values=[1.0]),
     )
     routine = AnalysisRoutineConfig(
@@ -106,13 +107,15 @@ def test_streamed_analysis_uses_the_readable_trajectory_end(
 ) -> None:
     universe = _Universe(10, {9})
     received: dict[str, int | None] = {}
-    monkeypatch.setattr(analysis, "prepare_universe", lambda *args, **kwargs: universe)
+    monkeypatch.setattr(
+        trajectory, "prepare_universe", lambda *args, **kwargs: universe
+    )
 
     def run_routine(*args, **kwargs):
-        received["stop"] = kwargs["stop"]
+        received["stop"] = kwargs["frames"].stop
         return QoI(name="rdf", values=[1.0])
 
-    monkeypatch.setattr(analysis, "run_analysis_routine", run_routine)
+    monkeypatch.setattr(analysis, "run_routine", run_routine)
     routine = AnalysisRoutineConfig(
         name="rdf",
         systems=("acetate",),
@@ -145,10 +148,12 @@ def test_analysis_does_not_warn_when_last_frame_is_outside_stride(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     universe = _Universe(14, set())
-    monkeypatch.setattr(analysis, "prepare_universe", lambda *args, **kwargs: universe)
+    monkeypatch.setattr(
+        trajectory, "prepare_universe", lambda *args, **kwargs: universe
+    )
     monkeypatch.setattr(
         analysis,
-        "run_analysis_routine",
+        "run_routine",
         lambda *args, **kwargs: QoI(name="rdf", values=[1.0]),
     )
     routine = AnalysisRoutineConfig(
@@ -197,8 +202,8 @@ def test_sample_reuses_one_universe_for_all_trajectory_routines(
         received_universes.append(kwargs["universe"])
         return QoI(name="result", values=[1.0])
 
-    monkeypatch.setattr(analysis, "prepare_universe", prepare)
-    monkeypatch.setattr(analysis, "run_analysis_routine", run_routine)
+    monkeypatch.setattr(trajectory, "prepare_universe", prepare)
+    monkeypatch.setattr(analysis, "run_routine", run_routine)
     routines = (
         AnalysisRoutineConfig(name="rdf", systems=("acetate",), type="rdf"),
         AnalysisRoutineConfig(
@@ -235,13 +240,13 @@ def test_file_only_system_does_not_open_a_universe(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        analysis,
+        trajectory,
         "prepare_universe",
         lambda *args, **kwargs: pytest.fail("file routine opened a Universe"),
     )
     monkeypatch.setattr(
         analysis,
-        "run_analysis_routine",
+        "run_routine",
         lambda *args, **kwargs: QoI(name="pmf", values=[1.0]),
     )
     routine = AnalysisRoutineConfig(
@@ -307,7 +312,7 @@ def test_parallel_analysis_respects_available_cpus(
     monkeypatch.setattr(analysis, "ProcessPoolExecutor", Executor)
     monkeypatch.setattr(
         analysis,
-        "run_analysis_routine",
+        "run_routine",
         lambda *args, **kwargs: QoI(name="pmf", values=[1.0]),
     )
     routine = AnalysisRoutineConfig(

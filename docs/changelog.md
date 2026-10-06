@@ -5,6 +5,17 @@ The public reproduction snapshot for the published study is archived as
 Use that tag for exact reproduction of the paper results. The current workflow
 release is `0.4.2`.
 
+## Unreleased
+
+### Changed
+
+- Built-in `rdf` and `hydrogen_bonds` routines now use the same interface as
+  custom routines and validate their own options when they run. Their outputs
+  are unchanged; hydrogen-bond analysis is substantially faster.
+- Moved `bff.qoi.data` to `bff.qoi.dataset` and `bff.tools.get_unitcell` to
+  `bff.qoi`. Custom routines import `QoI`, `get_unitcell`, and `select_atoms`
+  from `bff.qoi`.
+
 ## `0.4.2` - 2026-10-02
 
 Local Gaussian-process fitting now derives its default hyperparameter-prior

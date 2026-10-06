@@ -65,6 +65,11 @@ bonds, and evaluates both solute-to-water and water-to-solute combinations.
 Override the candidate elements with `options.elements` when needed. An NH2
 nitrogen can therefore contribute as both a donor and an acceptor.
 
+RDF options are `range` (default `[0, 10]` Angstrom), `bins` (200), `pbc`
+(true), `update_selections` (false), and `smooth` (false). Hydrogen-bond
+options are `elements` (`[O, N, S]`), `donor_acceptor_cutoff` (3.5 Angstrom),
+`angle_cutoff` (150 degrees), `pbc`, and `update_selections`.
+
 Selections are full MDAnalysis expressions. Static selections are the default;
 `update_selections: true` reevaluates them each frame. Empty selections,
 missing bonds, and invalid PBC boxes are errors.
@@ -74,9 +79,34 @@ coordinates created by `bff build`. The external MLIP trajectory must contain
 the same atoms in the same order. BFF keeps the trajectory explicit because
 training and running the MLIP are outside this workflow.
 
-## Custom Routine Interface
+## Routine Interface
 
-Every custom routine returns exactly one `QoI`; the name configured under
+Built-in and custom routines share one interface. A routine receives one
+system of one sample (or the reference) and returns exactly one `QoI`:
+
+```python
+routine(universe, *, frames, system_id, sample_id, options) -> QoI  # trajectory
+routine(*, inputs, system_id, sample_id, options) -> QoI            # files
+```
+
+Built-ins receive their `selections` merged into `options`. Every routine
+validates its own options when it runs; the reference is analyzed before the
+training samples, so configuration errors surface within seconds. The
+built-ins in `bff/qoi/rdf.py` and `bff/qoi/hbonds.py` are complete examples of
+trajectory routines.
+
+Custom routines import their helpers from `bff.qoi`:
+
+```python
+from bff.qoi import QoI, get_unitcell, select_atoms
+```
+
+`get_unitcell(universe, ts)` returns the validated box of a frame; frames that
+store no box fall back to the box of the configured coordinate file.
+`select_atoms(universe, selection, field=...)` rejects empty or invalid
+selections with an error naming the option.
+
+Every routine returns exactly one `QoI`; the name configured under
 `routines[].name` replaces the name returned by the callable. Labels,
 `values_per_label`, and settings must be identical for the reference and every
 training sample.
@@ -116,7 +146,7 @@ resolved `Path`; a role backed by multiple paths is passed as a tuple of paths.
 A custom callable without `inputs` is trajectory-based:
 
 ```python
-def trajectory_qoi(*, universe, frames, system_id, sample_id, options) -> QoI:
+def trajectory_qoi(universe, *, frames, system_id, sample_id, options) -> QoI:
     values = calculate(universe, frames, options)
     return QoI(name="custom", values=values)
 ```
