@@ -64,31 +64,43 @@ def test_notebook_examples_write_qoi_marginals() -> None:
 def test_acetate_learn_config_sets_tolerances_per_qoi() -> None:
     learn = yaml.safe_load((ACETATE / "06-learn/config.yaml").read_text())
 
-    assert learn["models"]["rdf"]["tolerance"] > 0
-    assert set(learn["models"]["hb"]) == {"model_path"}
-    assert learn["models"]["contact-distance"]["tolerance"] > 0
-    assert all("model_path" in model for model in learn["models"].values())
+    assert set(learn["models"]) == {"rdf", "pmf"}
+    assert all(model["tolerance"] > 0 for model in learn["models"].values())
 
 
 def test_acetate_includes_cp2k_inputs_for_labeling() -> None:
     inputs = ACETATE / "02-reference-md/cp2k"
     names = {path.name for path in inputs.glob("*.inp")}
     assert names == {
-        "sp-0.inp",
-        "sp-1.inp",
-        "sp-2.inp",
+        "sp-acetate.inp",
+        "sp-calcium-acetate.inp",
         "single-atom-h.inp",
         "single-atom-c.inp",
         "single-atom-o.inp",
         "single-atom-ca.inp",
     }
-    assert "&HF" in (inputs / "sp-0.inp").read_text()
     for path in inputs.glob("*.inp"):
         text = path.read_text()
         assert "COORD_FILE_NAME structure.xyz" in text
         assert ("@INCLUDE cell.inc" in text) is path.name.startswith("sp-")
-    for index, charge in enumerate((-1, 1, 1)):
-        assert f"CHARGE {charge}" in (inputs / f"sp-{index}.inp").read_text()
+    assert "CHARGE -1" in (inputs / "sp-acetate.inp").read_text()
+    assert "CHARGE 1" in (inputs / "sp-calcium-acetate.inp").read_text()
+
+
+def test_acetate_pmf_routine_reads_the_reference_profile() -> None:
+    spec = importlib.util.spec_from_file_location("pmf", ACETATE / "inputs/pmf.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    qoi = yaml.safe_load((ACETATE / "04-build-qoi-datasets/config.yaml").read_text())
+    options = next(r for r in qoi["routines"] if r["name"] == "pmf")["options"]
+
+    pmf = module.read_pmf(
+        inputs={"pmf": ACETATE / "02-reference-md/calcium-acetate.pmf"},
+        options=options,
+    )
+
+    assert pmf.n_values == options["points"]
+    assert abs(pmf.values.mean()) < 1e-9
 
 
 def test_neon_notebook_uses_local_pmf_mean() -> None:
@@ -100,37 +112,48 @@ def test_neon_notebook_uses_local_pmf_mean() -> None:
 
 
 def test_acetate_uses_numbered_stage_contract() -> None:
-    stages = {
-        "01-build": {"config.yaml", "config-plumed.yaml"},
-        "03-sample-parameters": {"config.yaml", "config-slurm.yaml"},
-        "04-build-qoi-datasets": {"config.yaml"},
-        "05-fit-lgp": {"config.yaml"},
-        "06-learn": {"config.yaml"},
-        "07-validate": {"config.yaml"},
-    }
-    for stage, names in stages.items():
-        assert {p.name for p in (ACETATE / stage).glob("config*.yaml")} == names
+    for stage in (
+        "01-build",
+        "03-sample-parameters",
+        "04-build-qoi-datasets",
+        "05-fit-lgp",
+        "06-learn",
+        "07-validate",
+    ):
+        assert [p.name for p in (ACETATE / stage).glob("*.yaml")] == ["config.yaml"]
 
     qoi = yaml.safe_load((ACETATE / "04-build-qoi-datasets/config.yaml").read_text())
     assert qoi["training_samples"]["manifest"] == (
         "../03-sample-parameters/samples.yaml"
     )
-    for system in qoi["reference"]["systems"]:
-        trajectory = ACETATE / "04-build-qoi-datasets" / system["inputs"]["trajectory"]
-        assert trajectory.is_file()  # the committed reference trajectory
+    stage = ACETATE / "04-build-qoi-datasets"
+    references = {s["system_id"]: s["inputs"] for s in qoi["reference"]["systems"]}
+    assert (stage / references["acetate"]["trajectory"]).is_file()
+    assert (stage / references["calcium-acetate"]["pmf"]).is_file()
 
     source = NOTEBOOKS[0].read_text()
     assert "Results.load('outputs/results.pt')" in source
     assert "results.draw(" in source
 
 
+def _uncomment_slurm(config: Path) -> None:
+    """Enable the commented Slurm block, as the config tells users to do."""
+    head, block = config.read_text().split("# --- Slurm", 1)
+    lines = block.splitlines()[1:]
+    config.write_text(
+        head.replace("job_scheduler: local", "job_scheduler: slurm")
+        + "\n".join(line.removeprefix("# ") for line in lines)
+        + "\n"
+    )
+
+
 def test_acetate_configs_load_against_staged_contract(tmp_path: Path) -> None:
     """Copy configs and inputs, stage the files earlier stages would write, and
     load every config with the parser the CLI uses."""
     shutil.copytree(ACETATE / "inputs", tmp_path / "inputs")
+    shutil.copytree(ACETATE / "02-reference-md", tmp_path / "02-reference-md")
     for stage in (
         "01-build",
-        "02-reference-md",
         "03-sample-parameters",
         "04-build-qoi-datasets",
         "05-fit-lgp",
@@ -138,15 +161,9 @@ def test_acetate_configs_load_against_staged_contract(tmp_path: Path) -> None:
         "07-validate",
     ):
         (tmp_path / stage).mkdir()
-        for config in (ACETATE / stage).glob("*.yaml"):
-            shutil.copy2(config, tmp_path / stage / config.name)
-    for name in ("trajectories", "cp2k"):
-        shutil.copytree(
-            ACETATE / "02-reference-md" / name, tmp_path / "02-reference-md" / name
-        )
+        shutil.copy2(ACETATE / stage / "config.yaml", tmp_path / stage)
 
-    system_ids = ("acetate", "acetate-contact", "acetate-separated")
-    for system_id in system_ids:
+    for system_id in ("acetate", "calcium-acetate"):
         system_dir = tmp_path / "01-build/systems" / system_id
         (system_dir / "reference").mkdir(parents=True)
         for filename in (
@@ -162,24 +179,24 @@ def test_acetate_configs_load_against_staged_contract(tmp_path: Path) -> None:
             "reference/coordinates.gro",
         ):
             (system_dir / filename).write_text("staged fixture\n")
+    (tmp_path / "01-build/systems/calcium-acetate/bias.colvars.dat").write_text("x\n")
     for name in ("samples.yaml", "specs.yaml"):
         (tmp_path / "03-sample-parameters" / name).write_text("staged fixture\n")
     for directory, suffix, names in (
-        ("04-build-qoi-datasets/qoi", "pt", ("rdf", "hb")),
-        ("05-fit-lgp/models", "lgp", ("rdf", "hb")),
+        ("04-build-qoi-datasets/qoi", "pt", ("rdf", "pmf")),
+        ("05-fit-lgp/models", "lgp", ("rdf", "pmf")),
         ("06-learn/outputs", "pt", ("results",)),
     ):
         (tmp_path / directory).mkdir()
         for name in names:
             (tmp_path / directory / f"{name}.{suffix}").write_text("staged fixture\n")
-    for name in ("contact-distance", "separated-distance"):
-        (tmp_path / "04-build-qoi-datasets/qoi" / f"{name}.pt").write_text("fixture\n")
-        (tmp_path / "05-fit-lgp/models" / f"{name}.lgp").write_text("fixture\n")
 
-    for name in ("config.yaml", "config-plumed.yaml"):
-        BuildConfig.load(tmp_path / "01-build" / name)
-    for name in ("config.yaml", "config-slurm.yaml"):
-        SampleParametersConfig.load(tmp_path / "03-sample-parameters" / name)
+    BuildConfig.load(tmp_path / "01-build/config.yaml")
+    sample = tmp_path / "03-sample-parameters/config.yaml"
+    assert SampleParametersConfig.load(sample).job_scheduler == "local"
+    _uncomment_slurm(sample)
+    slurm = SampleParametersConfig.load(sample)
+    assert slurm.job_scheduler == "slurm" and slurm.max_restarts == 3
     BuildQoIDatasetsConfig.load(tmp_path / "04-build-qoi-datasets/config.yaml")
     FitLGPConfig.load(tmp_path / "05-fit-lgp/config.yaml")
     LearnConfig.load(tmp_path / "06-learn/config.yaml")

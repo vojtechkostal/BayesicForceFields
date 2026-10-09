@@ -97,8 +97,10 @@ QoIs and for parameter dimensions expressed on very different numerical scales.
 
 A model records an exact fingerprint of its QoI dataset and the `mean` it was
 fitted with. With `reuse_models: true`, a model file is reused only if both
-match; otherwise it is refitted and replaced, and the log says why. Means given
-as Python objects through the Python API are always refitted.
+match; otherwise it is refitted and replaced, and the log says why. The
+`fit` options are not compared, so set `reuse_models: false` after changing
+them; edits inside a custom mean file are not detected either. Means given as
+Python objects through the Python API are always refitted.
 
 ## Model Contents
 

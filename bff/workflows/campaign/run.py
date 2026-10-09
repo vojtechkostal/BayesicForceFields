@@ -34,7 +34,7 @@ from ...domain.specs import Specs
 from ...io.logs import Logger
 from ...io.utils import compress_results, load_yaml, save_yaml
 from .config import SimulationCampaignConfig, SimulationSystemConfig
-from .job import write_sample_topology
+from .job import DONE_MARKER, write_sample_topology
 
 # Campaign files and directories; overwrite removes exactly these.
 OWNED_PATHS = (
@@ -152,6 +152,12 @@ def _read_result(campaign_dir: Path, sample_id: str) -> dict[str, Any]:
     return load_yaml(fn_result) if fn_result.is_file() else {}
 
 
+def _forget_results(campaign_dir: Path, sample_ids: list[str]) -> None:
+    """Delete earlier results, so a job that dies without one reads as failed."""
+    for sample_id in sample_ids:
+        (campaign_dir / "samples" / sample_id / "result.yaml").unlink(missing_ok=True)
+
+
 def _resumed_samples(
     config: SimulationCampaignConfig, specs: Specs
 ) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
@@ -212,11 +218,19 @@ def _cleanup(
     systems: list[SimulationSystemConfig],
     store: tuple[str, ...],
 ) -> None:
-    """Keep only stored suffixes and each sample's topology."""
-    keep = {f".{suffix}" for suffix in store} | {".top"}
+    """Keep only stored suffixes and each sample's topology.
+
+    A system without a completed production run is left untouched: its
+    checkpoint, log, and ``.tpr`` are what a later ``resume: true`` needs to
+    continue it, and pruning them here would force it to restart from
+    scratch.
+    """
+    keep = {f".{suffix}" for suffix in store} | {".top", Path(DONE_MARKER).suffix}
     for sample_id in samples:
         for system in systems:
             system_dir = campaign_dir / "samples" / sample_id / system.system_id
+            if not (system_dir / DONE_MARKER).is_file():
+                continue
             for path in system_dir.glob("*"):
                 if path.is_dir():
                     shutil.rmtree(path)
@@ -237,7 +251,8 @@ def _run_local(
     def run(sample_id: str) -> int:
         sample_dir = campaign_dir / "samples" / sample_id
         sample_dir.mkdir(parents=True, exist_ok=True)
-        with open(sample_dir / "run.out", "w", encoding="utf-8") as output:
+        # Appended, like on Slurm, so a resumed sample keeps its earlier output.
+        with open(sample_dir / "run.out", "a", encoding="utf-8") as output:
             return subprocess.run(
                 [sys.executable, "-m", "bff.cli", "md", str(fn_campaign), sample_id],
                 cwd=campaign_dir,
@@ -292,7 +307,7 @@ def _log_summary(
     )
     # Full paths and hashes are in samples.yaml; show the settings briefly.
     details = [
-        f"{key} {Path(value).name if key in ('parameters', 'posterior') else value}"
+        f"{key} {Path(value).name if key in ('parameters', 'results') else value}"
         for key, value in provenance.items()
         if key not in {"source", "specs"} and not key.endswith("_sha256")
     ]
@@ -421,6 +436,7 @@ def run_campaign(
                 array = slurm.array_option(len(pending), config.slurm.max_parallel_jobs)
                 logger.info(f"Submit with: sbatch --array={array} {fn_script}")
         elif config.job_scheduler == "local":
+            _forget_results(campaign_dir, pending)
             _run_local(
                 fn_campaign,
                 pending,
@@ -435,7 +451,8 @@ def run_campaign(
                         f"Resubmitting {len(pending)} incomplete sample(s) "
                         f"(restart {restart}/{config.max_restarts})."
                     )
-                fn_tasks.write_text("".join(f"{sample_id}\n" for sample_id in pending))
+                    fn_tasks.write_text("".join(f"{sid}\n" for sid in pending))
+                _forget_results(campaign_dir, pending)
                 task_ids = slurm.run_tasks(
                     fn_script, len(pending), config=config.slurm, logger=logger
                 )

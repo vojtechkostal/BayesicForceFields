@@ -1,5 +1,7 @@
 """Simulation campaigns shared by sample-parameters and validate."""
 
+import os
+import signal
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -24,7 +26,7 @@ from bff.workflows.sample_parameters.config import SampleParametersConfig
 from bff.workflows.validate.config import ValidateConfig
 
 ROOT = Path(__file__).parents[2]
-ACE_TOP = ROOT / "examples/acetate/inputs/topol.top"
+ACE_TOP = ROOT / "examples/acetate/inputs/acetate.top"
 
 
 def _write(path: Path, text: str = "data\n") -> Path:
@@ -294,6 +296,30 @@ def test_md_job_stopped_by_time_limit_is_incomplete_and_restartable(
     assert commands == []
 
 
+def test_md_job_stops_after_sigterm_and_is_restartable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Slurm's SIGTERM at the time limit must not lose the sample: the job
+    starts no further run and records it as incomplete."""
+    run_md = job_module.run_md
+
+    def terminated_during_minimization(deffnm, **kwargs):
+        if Path(deffnm).name == "em":
+            os.kill(os.getpid(), signal.SIGTERM)
+        return run_md(deffnm, **kwargs)
+
+    monkeypatch.setattr(job_module, "run_md", terminated_during_minimization)
+    sample_dir, commands = _md_job(
+        tmp_path, monkeypatch, scratch_dir=str(tmp_path / "scratch")
+    )
+
+    assert [Path(command[-1]).name for command in commands] == ["acetate"] * 2
+    assert "em" in commands[0][commands[0].index("-o") + 1]
+    result = yaml.safe_load((sample_dir / "result.yaml").read_text())
+    assert result["status"] == "incomplete"
+    assert signal.getsignal(signal.SIGTERM) is signal.SIG_DFL
+
+
 def test_md_job_completes_without_a_stored_trajectory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -344,6 +370,50 @@ def test_trajectory_without_compressed_output_is_incomplete(tmp_path: Path) -> N
     assert trajectory_is_complete(trajectory, mdp, 1000) is False
 
 
+def test_cleanup_leaves_unfinished_systems_untouched(tmp_path: Path) -> None:
+    """Regression test: an incomplete system's checkpoint, log, and .tpr are
+    what a later ``resume: true`` needs; cleanup must not prune them just
+    because the sample as a whole isn't marked completed yet."""
+    system = SimulationSystemConfig(
+        system_id="acetate",
+        topology_path=Path("topology.top"),
+        coordinates_path=Path("coordinates.gro"),
+        mdp_em_path=None,
+        mdp_production_path=Path("production.mdp"),
+        index_path=Path("index.ndx"),
+        bias=BiasSpec(),
+        n_steps=10,
+    )
+    system_dir = tmp_path / "samples" / "0" / "acetate"
+    for name in (
+        "production.xtc",
+        "production.cpt",
+        "production.log",
+        "production.tpr",
+        "topology.top",
+    ):
+        _write(system_dir / name)
+
+    run_module._cleanup(tmp_path, {"0": {}}, [system], store=("xtc",))
+
+    assert {p.name for p in system_dir.iterdir()} == {
+        "production.xtc",
+        "production.cpt",
+        "production.log",
+        "production.tpr",
+        "topology.top",
+    }
+
+    (system_dir / "production.done").write_text("10\n")
+    run_module._cleanup(tmp_path, {"0": {}}, [system], store=("xtc",))
+
+    assert {p.name for p in system_dir.iterdir()} == {
+        "production.xtc",
+        "topology.top",
+        "production.done",
+    }
+
+
 @pytest.mark.parametrize("cleanup", [False, True])
 def test_campaign_merges_job_results_and_cleans_up(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cleanup: bool
@@ -353,7 +423,12 @@ def test_campaign_merges_job_results_and_cleans_up(
     def fake_md(command, **kwargs):
         fn_campaign, sample_id = Path(command[-2]), command[-1]
         system_dir = fn_campaign.parent / "samples" / sample_id / "acetate"
-        for name in ("production.xtc", "production.log", "topology.top"):
+        for name in (
+            "production.xtc",
+            "production.log",
+            "topology.top",
+            "production.done",
+        ):
             _write(system_dir / name)
         _write(
             system_dir.parent / "result.yaml",
@@ -380,7 +455,7 @@ def test_campaign_merges_job_results_and_cleans_up(
     assert record["status"] == "completed"
     assert record["outputs"]["acetate"]["trajectory"].endswith("production.xtc")
     assert not (campaign_dir / "samples" / "0" / "result.yaml").exists()
-    expected = {"production.xtc", "topology.top"}
+    expected = {"production.xtc", "topology.top", "production.done"}
     if not cleanup:
         expected.add("production.log")
     assert {p.name for p in (campaign_dir / "samples/0/acetate").iterdir()} == expected
@@ -416,6 +491,27 @@ def test_local_campaign_records_failures_and_continues(
     log = config.log.read_text()
     assert "Running MD: 0/2" not in log
     assert "Campaign: Done. | 1 completed, 1 failed" in log
+
+
+def test_job_that_writes_no_result_is_failed_not_a_stale_earlier_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        run_module.subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=1)
+    )
+    run_campaign(_campaign(tmp_path), **_empty_draw(1))
+    # Left by an earlier job whose result was never collected.
+    config = _campaign(tmp_path, resume=True)
+    stale = _write(
+        config.campaign_dir / "samples" / "0" / "result.yaml",
+        yaml.safe_dump({"status": "incomplete", "outputs": {}}),
+    )
+
+    run_campaign(config, **_empty_draw(1))
+
+    assert not stale.exists()
+    samples = yaml.safe_load((config.campaign_dir / "samples.yaml").read_text())
+    assert samples["samples"]["0"]["status"] == "failed"
 
 
 def test_slurm_campaign_runs_samples_as_job_arrays(

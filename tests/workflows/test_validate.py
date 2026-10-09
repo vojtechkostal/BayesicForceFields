@@ -16,7 +16,7 @@ from bff.workflows.build_qoi_datasets.main import main as build_qoi_datasets_mai
 from bff.workflows.campaign import run as run_module
 
 ROOT = Path(__file__).parents[2]
-ACE_TOP = ROOT / "examples/acetate/inputs/topol.top"
+ACE_TOP = ROOT / "examples/acetate/inputs/acetate.top"
 SPECS = {"bounds": {"charge C2": [0.0, 1.0]}, "charge_constraints": []}
 
 

@@ -24,7 +24,7 @@ PENDING_STATES = {"PD", "CF", "CONFIGURING"}
 @dataclass(frozen=True)
 class SlurmConfig:
     """Job-array limits, extra ``sbatch`` options, and shell lines run before
-    (``setup``) and after (``teardown``) each job."""
+    (``setup``) and after (``teardown``, also when the job fails) each job."""
 
     max_parallel_jobs: int = 1
     max_array_size: int = 1000
@@ -90,10 +90,12 @@ def write_task_script(
         "",
         "set -eo pipefail",
         "TASK_ID=$((SLURM_ARRAY_TASK_ID + ${BFF_TASK_OFFSET:-0}))",
-        *config.setup,
-        *commands,
-        *config.teardown,
     ]
+    if config.teardown:
+        # An EXIT trap also runs after a failing command, which `set -e` ends.
+        teardown = [f"    {line}" for line in config.teardown]
+        lines += ["teardown() {", *teardown, "}", "trap teardown EXIT"]
+    lines += [*config.setup, *commands]
     fn_script.parent.mkdir(parents=True, exist_ok=True)
     fn_script.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return fn_script

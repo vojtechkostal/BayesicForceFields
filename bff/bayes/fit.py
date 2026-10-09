@@ -401,9 +401,14 @@ def fit_surrogates(
             fn_model.parent.mkdir(parents=True, exist_ok=True)
 
         if reuse_models and fn_model is not None and fn_model.exists():
-            cached = LGPCommittee.load(fn_model)
+            try:
+                cached = LGPCommittee.load(fn_model)
+            except ValueError as exc:  # written by an older BFF version
+                logger.info(f"{exc}; refitting.", level=2)
+                cached = None
             if (
-                cached.dataset_fingerprint == dataset.fingerprint()
+                cached is not None
+                and cached.dataset_fingerprint == dataset.fingerprint()
                 and describe_spec(spec) is not None
                 and cached.mean_spec == describe_spec(spec)
             ):
@@ -415,10 +420,12 @@ def fit_surrogates(
                 )
                 logger.blank()
                 continue
-            logger.info(
-                f"{fn_model} was fitted to other data or another mean; refitting.",
-                level=2,
-            )
+            if cached is not None:
+                logger.info(
+                    f"{fn_model} was fitted to other data or another mean; "
+                    "refitting.",
+                    level=2,
+                )
 
         models[qoi] = fit_lgp_committee(
             X=dataset.X,

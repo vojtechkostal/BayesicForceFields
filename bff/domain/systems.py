@@ -36,7 +36,7 @@ def _resolve_value(value: Any, base_dir: Path, *, field: str) -> PathValue:
     if value is None:
         return None
     if isinstance(value, (str, Path)):
-        path = (base_dir / value).resolve()
+        path = (base_dir / Path(value).expanduser()).resolve()
         if not path.is_file():
             raise FileNotFoundError(
                 f"{field}: expected an existing file, resolved {path}; correct "
@@ -76,28 +76,6 @@ class SystemInputs:
             raise ValueError(
                 f"system {self.system_id!r} inputs must be a non-empty role mapping."
             )
-
-    def require_path(self, role: str) -> Path:
-        """The path of ``role``; raises if it is missing or not one path."""
-        value = self.inputs.get(role)
-        if not isinstance(value, Path):
-            raise ValueError(
-                f"system {self.system_id!r}, input role {role!r}: expected one "
-                f"path, got {value!r}."
-            )
-        return value
-
-    def optional_path(self, role: str) -> Path | None:
-        """The path of ``role``, or ``None`` if it is not given."""
-        value = self.inputs.get(role)
-        if value is None:
-            return None
-        if not isinstance(value, Path):
-            raise ValueError(
-                f"system {self.system_id!r}, input role {role!r}: expected one "
-                f"path or null, got {value!r}."
-            )
-        return value
 
 
 def resolve_explicit_inputs(

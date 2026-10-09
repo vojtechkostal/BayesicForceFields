@@ -31,7 +31,7 @@ gromacs:
 systems:
   - system_id: acetate
     system_name: Aqueous acetate
-    topology: ../inputs/topol.top
+    topology: ../inputs/acetate.top
     templates:
       ACE: ../inputs/ace.gro
     mdp:
@@ -64,7 +64,7 @@ General rules for all options are on the
 | `system_name` | string | none | Display name shown in the log; never used for matching or paths. |
 | `topology` | path | *required* | GROMACS topology; its molecule counts define the box contents. |
 | `templates` | mapping | `{}` | Residue name to coordinate template file, for residues other than built-in water and monoatomic ions. |
-| `box` | 3 or 6 positive numbers | guessed from the heavy-atom count | Box lengths in angstrom, optionally followed by the three angles in degrees (default 90). |
+| `box` | 3 positive numbers | guessed from the heavy-atom count | Box lengths in angstrom. Only rectangular boxes are supported; three angles of 90 may follow. |
 | `bias.colvars_file` | path | none | Colvars input for the production run and for campaigns built on this system; equilibration is unbiased. |
 | `bias.plumed_file` | path | none | PLUMED input; at most one of `colvars_file` and `plumed_file`. |
 | `nsteps.npt` | integer >= 0 | *required* | NpT equilibration steps; `0` skips NpT. |

@@ -166,6 +166,11 @@ def test_saved_model_is_reused_only_for_the_same_data_and_mean(
     fit(first, mean=0.0)
     assert refitted == ["data", 0.0]
 
+    # A file of an older BFF version is refitted instead of stopping the stage.
+    torch.save({"weights": []}, fn_model)
+    fit(first)
+    assert refitted == ["data", 0.0, "data"]
+
 
 def test_qoi_likelihood_batches_shrink_after_cuda_oom(monkeypatch) -> None:
     from types import SimpleNamespace

@@ -58,7 +58,7 @@ class AdaptiveGaussianProposal(Proposal):
         Whether to adapt the proposal during warmup.
     adapt_start : int, default=100
         First warmup step at which adaptation is allowed.
-    adapt_interval : int, default=100
+    adapt_interval : int, default=10
         Adaptation frequency in number of warmup steps.
     target_acceptance : float, default=0.234
         Target acceptance rate used for multiplicative scale adaptation.

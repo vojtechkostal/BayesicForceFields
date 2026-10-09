@@ -683,6 +683,7 @@ def _build_config(tmp_path: Path, **system_overrides) -> Path:
     [
         ({"nsteps": {"npt": 0, "prod": 0}}, r"systems\[0\].nsteps.prod must be"),
         ({"nsteps": {"npt": 1.5, "prod": 10}}, "nsteps.npt must be an integer"),
+        ({"box": [10, 10, 10, 60, 90, 90]}, "only rectangular boxes"),
         ({"box": [10, -1, 10]}, "box must be 3 or 6 positive numbers"),
         (
             {"bias": {"colvars_file": "a.colvars.dat", "plumed_file": "b.dat"}},

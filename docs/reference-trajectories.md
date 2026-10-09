@@ -1,55 +1,46 @@
-# Reference Trajectories
+# Reference Data
 
-`build-qoi-datasets` compares every sampled force field with a reference
-trajectory of the same system. BFF does not produce that trajectory: you run
-the reference simulation yourself, with whatever level of theory the
-calibration targets.
+**BFF does not generate the reference data.** `build-qoi-datasets` compares
+every sampled force field with a reference simulation of the same system, and
+you run that simulation yourself, at the level of theory the force field
+should reproduce.
 
-```text
-build -> [your reference MD] -> sample-parameters -> build-qoi-datasets
-      -> fit-lgp -> learn -> validate
-```
+## What BFF provides
 
-## What BFF Provides
-
-`bff build` equilibrates each system and writes a virtual-site-free reference
-pair:
+`bff build` writes, for every system, a virtual-site-free topology and
+coordinates to start the reference from:
 
 ```text
 systems/<system_id>/reference/topology.top
 systems/<system_id>/reference/coordinates.gro
 ```
 
-The coordinates are the last frame of the seeded classical production run and
-are a convenient starting structure for the reference simulation. The
-reference trajectory must have the same atom count and atom order as this
-pair. `build-qoi-datasets` reads the pair and your trajectory as explicit
-inputs for each `system_id`.
+A reference trajectory must contain the same atoms in the same order as this
+pair. A reference can also be a file instead of a trajectory, for example a
+PMF that a [file-based QoI routine](configuration/build-qoi-datasets.md#routine-interface)
+reads, as in the [acetate example](examples/acetate.md).
 
-## Choosing a Reference
+## Choosing a reference
 
-Any trajectory that satisfies the atom-order contract works: ab initio MD, an
-existing MLIP, or an external simulation package. Two machine-learned routes
-are common:
+- **Ab initio MD** is the most direct reference, if you can afford long enough
+  trajectories for your QoIs.
+- **A machine-learned interatomic potential (MLIP)** reaches longer
+  trajectories and enhanced sampling (for example a PMF). A pretrained
+  foundation model, such as a MACE foundation model, can be used directly;
+  check that it is accurate enough for your QoIs.
+- **A fine-tuned foundation model** is what we recommend: run MD with the
+  foundation model, label frames of it with DFT using
+  [`label_structures.py`](#labeling-snapshots-with-cp2k), fine-tune on those
+  labels, and run the reference MD with the fine-tuned model. Frames from
+  foundation-model MD stay close to the configurations the fine-tuned model
+  will visit.
 
-1. **Foundation model.** Run MD directly with a pretrained foundation MLIP,
-   such as a MACE foundation model, starting from `reference/coordinates.gro`.
-   This is the fastest route. Check that the model is accurate enough for the
-   quantities of interest you calibrate against.
-2. **Fine-tuned foundation model.** Run foundation-model MD first, label
-   frames from it with a reference electronic-structure method using
-   [`scripts/label_structures.py`](#labeling-snapshots-with-cp2k), fine-tune
-   the model on those labels, and run the production reference MD with the
-   fine-tuned model. Sampling frames from foundation-model MD rather than from
-   the classical build trajectory keeps the training data close to the
-   configurations the fine-tuned model will visit.
-
-Training, fine-tuning, and running the MLIP happen outside BFF.
+Training and running the MLIP happen outside BFF.
 
 ## Labeling Snapshots with CP2K
 
-`scripts/label_structures.py` is a standalone helper distributed in the BFF
-repository. It is not part of the installed `bff` package or CLI and does not
+`scripts/label_structures.py` is a standalone helper in the BFF repository.
+**It is not installed by `pip`** and is not a `bff` command; it does not
 import BFF. It needs PyYAML, NumPy, MDAnalysis (or ASE for `.traj` input), CP2K,
 and Slurm. Use the copy from the release tag matching your BFF version:
 

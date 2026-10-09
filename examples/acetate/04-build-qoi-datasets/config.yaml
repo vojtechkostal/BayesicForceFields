@@ -1,50 +1,36 @@
-# Analyze the sampled and the reference trajectories into one dataset per QoI.
+# Turn the reference and every sample into one dataset per QoI:
+#   rdf  acetate-water RDFs from the acetate trajectories (built-in routine)
+#   pmf  the Ca-C2 PMF of calcium acetate (custom routine, ../inputs/pmf.py)
 training_samples:
   manifest: ../03-sample-parameters/samples.yaml
   systems:
     - system_id: acetate
-    - system_id: acetate-contact
-    - system_id: acetate-separated
+    - system_id: calcium-acetate
 
-# The reference MD is external: see ../02-reference-md/. Each trajectory must
-# match the topology and coordinates BFF wrote in 01-build.
 reference:
   systems:
+    # The reference trajectory must match the vsite-free topology and
+    # coordinates that bff build wrote: same atoms in the same order.
     - system_id: acetate
       inputs:
-        coordinates: ../01-build/systems/acetate/reference/coordinates.gro
         topology: ../01-build/systems/acetate/reference/topology.top
-        trajectory: ../02-reference-md/trajectories/acetate/trajectory.xtc
-    - system_id: acetate-contact
+        coordinates: ../01-build/systems/acetate/reference/coordinates.gro
+        trajectory: ../02-reference-md/acetate.xtc
+    - system_id: calcium-acetate
       inputs:
-        coordinates: ../01-build/systems/acetate-contact/reference/coordinates.gro
-        topology: ../01-build/systems/acetate-contact/reference/topology.top
-        trajectory: ../02-reference-md/trajectories/acetate-contact/trajectory.xtc
-    - system_id: acetate-separated
-      inputs:
-        coordinates: ../01-build/systems/acetate-separated/reference/coordinates.gro
-        topology: ../01-build/systems/acetate-separated/reference/topology.top
-        trajectory: ../02-reference-md/trajectories/acetate-separated/trajectory.xtc
+        pmf: ../02-reference-md/calcium-acetate.pmf
 
 routines:
   - name: rdf
     type: rdf
-    systems: [acetate, acetate-contact, acetate-separated]
+    systems: [acetate]
     selections:
       group_a: resname ACE and name O1 O2 H1 H2 H3
       group_b: resname SOL and name O*
-    options: {range: [1.0, 7.0]}
-  - name: hb
-    type: hydrogen_bonds
-    systems: [acetate, acetate-contact, acetate-separated]
-    selections:
-      selection: resname ACE and name O1 O2
-  # Custom routine: distribution of the biased acetate-calcium distance.
-  - name: contact-distance
-    callable: ../inputs/routines.py:distance_distribution
-    systems: [acetate-contact]
-    options: {atom_pair: [C2, CAL], range: [2.0, 5.0]}
-  - name: separated-distance
-    callable: ../inputs/routines.py:distance_distribution
-    systems: [acetate-separated]
-    options: {atom_pair: [C2, CAL], range: [4.0, 6.0]}
+    options: {range: [1.0, 7.0]}  # angstrom
+
+  - name: pmf
+    callable: ../inputs/pmf.py:read_pmf
+    systems: [calcium-acetate]
+    inputs: [pmf]  # samples: production.pmf, stored by sample-parameters
+    options: {range: [0.27, 0.65], points: 39}  # nm

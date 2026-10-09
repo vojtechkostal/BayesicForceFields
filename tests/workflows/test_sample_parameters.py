@@ -19,8 +19,8 @@ def _write(path: Path, text: str = "data\n") -> Path:
     return path
 
 
-ACE_TOP = ROOT / "examples/acetate/inputs/topol.top"
-ACE_IONS_TOP = ROOT / "examples/acetate/inputs/topol-ions.top"
+ACE_TOP = ROOT / "examples/acetate/inputs/acetate.top"
+ACE_IONS_TOP = ROOT / "examples/acetate/inputs/calcium-acetate.top"
 
 
 def compile_specs(config: SimpleNamespace):

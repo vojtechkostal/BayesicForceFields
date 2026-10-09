@@ -40,6 +40,12 @@ def _load_box(system: ConfigSection) -> list[float] | None:
         raise ValueError(
             f"{system.field('box')} must be 3 or 6 positive numbers, got {box!r}."
         )
+    if len(box) == 6 and any(angle != 90 for angle in box[3:]):
+        # Molecules are inserted on a rectangular grid.
+        raise ValueError(
+            f"{system.field('box')}: only rectangular boxes are supported; the "
+            f"angles must be 90, got {box[3:]!r}."
+        )
     return [float(value) for value in (box if len(box) == 6 else [*box, 90, 90, 90])]
 
 

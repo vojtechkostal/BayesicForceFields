@@ -1,3 +1,5 @@
+import os
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -30,6 +32,9 @@ def test_slurm_config_rejects_array_and_validates_limits() -> None:
         _load_slurm({"sbatch": {}, "partition": "cpu"})
     with pytest.raises(ValueError, match="missing required key"):
         _load_slurm({"max_parallel_jobs": 4})
+    # YAML reads an unquoted 4:00:00 as 14400 (base 60).
+    with pytest.raises(ValueError, match="must be quoted"):
+        _load_slurm({"sbatch": {"time": 14400}})
 
 
 def test_task_script_maps_array_index_to_global_task(tmp_path: Path) -> None:
@@ -49,13 +54,35 @@ def test_task_script_maps_array_index_to_global_task(tmp_path: Path) -> None:
     assert "#SBATCH --job-name=bff" in lines
     assert "#SBATCH --cpus-per-task=4" in lines
     assert not any("--array" in line for line in lines)
-    assert lines[-5:] == [
+    assert lines[-8:] == [
         "set -eo pipefail",
         "TASK_ID=$((SLURM_ARRAY_TASK_ID + ${BFF_TASK_OFFSET:-0}))",
+        "teardown() {",
+        "    echo done",
+        "}",
+        "trap teardown EXIT",
         "module load gromacs",
         "echo $TASK_ID",
-        "echo done",
     ]
+
+
+def test_task_script_runs_teardown_after_a_failing_task(tmp_path: Path) -> None:
+    config = slurm.SlurmConfig(teardown=(f"touch {tmp_path / 'torn-down'}",))
+    script = slurm.write_task_script(
+        tmp_path / "run.sh", config=config, commands=["false", "echo unreachable"]
+    )
+
+    result = subprocess.run(
+        ["bash", str(script)],
+        env={"SLURM_ARRAY_TASK_ID": "0", "PATH": os.environ["PATH"]},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "unreachable" not in result.stdout
+    assert (tmp_path / "torn-down").is_file()
 
 
 @pytest.mark.parametrize(("limit", "array"), [(3, "0-9%3"), (-1, "0-9")])

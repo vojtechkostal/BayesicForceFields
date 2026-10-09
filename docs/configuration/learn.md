@@ -59,7 +59,9 @@ log L = -(n_eff / 2) * MSE / (sigma^2 + tolerance^2) - (n_eff / 2) * log(sigma^2
 ```
 
 - `sigma` is the noise of the data, learned over the whole QoI as a nuisance
-  parameter (or fixed by `nuisance` in fit-lgp).
+  parameter (or fixed by `nuisance` in fit-lgp). Its prior is a normal
+  distribution on `log sigma` with mean -2 and standard deviation 2, in the
+  QoI's units.
 - `tolerance` is the deviation you accept: a model that stays within about
   `tolerance` of the reference is nearly as good as a perfect one. It matters
   when it is larger than the learned `sigma`, and leaves the result unchanged
@@ -82,7 +84,7 @@ The learn log reports each QoI's `n_eff` and tolerance.
 | `mcmc.total_steps` | integer >= 1 | `1500` | MCMC steps per walker. |
 | `mcmc.warmup` | integer >= 0 | `500` | Discarded initial steps; smaller than `total_steps`. |
 | `mcmc.thin` | integer >= 1 | `1` | Keep every this many steps after warmup. |
-| `mcmc.n_walkers` | integer >= 2 | 5 x number of sampled parameters | Parallel walkers. |
+| `mcmc.n_walkers` | integer >= 2 | 5 x number of sampled dimensions | Parallel walkers. The sampled dimensions are the parameters plus one noise `sigma` per QoI without a fixed `nuisance`. |
 | `mcmc.priors_disttype` | `normal` or `uniform` | `normal` | Prior family over the parameter bounds. |
 | `mcmc.rhat_tol` | number > 1 | `1.01` | Convergence: sampling stops early once the largest rank-normalized split R-hat (over all parameters and the log probability) is below `rhat_tol` and the smallest bulk and tail effective sample size is at least `ess_min`, at two consecutive checks (made when the chain has grown by 10 %). |
 | `mcmc.ess_min` | integer >= 1 | `400` | See `rhat_tol`. |

@@ -7,7 +7,11 @@ import yaml
 from bff.domain.samples import write_sample_manifest
 from bff.qoi import QoI
 from bff.qoi.dataset import QoIDataset
-from bff.workflows.build_qoi_datasets.main import _shared_block_metadata, main
+from bff.workflows.build_qoi_datasets.main import (
+    _mismatch,
+    _shared_block_metadata,
+    main,
+)
 
 
 def _write(path: Path, text: str = "data\n") -> Path:
@@ -101,3 +105,12 @@ def test_samples_use_their_own_topology_and_bad_samples_are_skipped(
     assert "Sample 1 skipped: ValueError" in log
     assert "Sample 2 skipped: no {'a': ['pmf']} output" in log
     assert not (tmp_path / "qoi" / "raw.json").exists()
+
+
+def test_sample_qoi_on_a_different_grid_is_a_mismatch() -> None:
+    reference = QoI("pmf", [0.0, 1.0], settings={"distance_nm": [0.3, 0.4]})
+    shifted = QoI("pmf", [0.0, 1.0], settings={"distance_nm": [0.35, 0.45]})
+    same_grid = QoI("pmf", [2.0, 3.0], settings=reference.settings)
+
+    assert _mismatch(reference, same_grid) is None
+    assert "settings" in _mismatch(reference, shifted)

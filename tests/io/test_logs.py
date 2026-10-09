@@ -1,13 +1,11 @@
 import io
-import json
 import sys
 from pathlib import Path
 
-import numpy as np
+import pytest
 
 from bff.io.logs import Logger
 from bff.io.progress import iter_progress
-from bff.io.utils import save_json
 
 
 def test_logger_writes_colored_console_and_plain_file(
@@ -41,17 +39,41 @@ def test_logger_progress_status_right_aligns_percentage(capsys) -> None:
 def test_iter_progress_prints_pytest_style_summary(capsys) -> None:
     logger = Logger("test", color=False, width=50)
 
-    assert list(iter_progress(range(3), total=3, logger=logger, label="items")) == [
-        0,
-        1,
-        2,
-    ]
+    items = iter_progress(range(3), total=3, logger=logger, label="items", log_every=1)
+    assert list(items) == [0, 1, 2]
 
     out = capsys.readouterr().out
     assert "[ 33%]" in out
     assert "[100%]" not in out
     assert "items: Done. | 3/3 in 0s" in out
     assert "===" not in out
+
+
+def test_iter_progress_logs_every_n_items_and_the_console_follows(
+    tmp_path: Path, capsys
+) -> None:
+    log = tmp_path / "workflow.log"
+    logger = Logger("test", fn_log=log, mode="w", color=False)
+
+    list(iter_progress(range(250), total=250, logger=logger, label="items"))
+
+    lines = log.read_text().splitlines()
+    assert [line.split("|")[0].strip() for line in lines[:2]] == [
+        "> items: 100/250",
+        "> items: 200/250",
+    ]
+    assert "items: Done. | 250/250" in lines[2]
+    # Not a terminal: the console shows the same lines, not one per item.
+    assert capsys.readouterr().out.count("items:") == 3
+
+
+def test_iter_progress_rejects_a_bad_stride() -> None:
+    with pytest.raises(ValueError, match="log_every"):
+        list(
+            iter_progress(
+                range(3), total=3, logger=Logger("t"), label="x", log_every=0
+            )
+        )
 
 
 def test_status_can_be_console_only(tmp_path: Path, capsys) -> None:
@@ -64,14 +86,7 @@ def test_status_can_be_console_only(tmp_path: Path, capsys) -> None:
     assert log.read_text() == ""
 
 
-def test_raw_json_and_non_tty_progress_are_lossless(
-    tmp_path: Path, monkeypatch
-) -> None:
-    value = 0.1234567890123456
-    output = tmp_path / "raw.json"
-    save_json({"value": np.float64(value)}, output)
-    assert json.loads(output.read_text())["value"] == value
-
+def test_non_tty_progress_does_not_overwrite_lines(monkeypatch) -> None:
     stream = io.StringIO()
     monkeypatch.setattr(sys, "stdout", stream)
     logger = Logger("sample")

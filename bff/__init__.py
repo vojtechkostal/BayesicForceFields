@@ -6,15 +6,16 @@ from importlib import import_module
 from pathlib import Path
 from typing import Any
 
-__version__ = "0.4.2"
+__version__ = "0.5.0"
 
 _INTERNAL_MODULES = {
     "bayes",
     "domain",
     "io",
+    "mcmc",
     "plotting",
     "qoi",
-    "tools",
+    "workflows",
 }
 
 __all__ = [

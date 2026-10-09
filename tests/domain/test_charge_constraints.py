@@ -6,8 +6,8 @@ import pytest
 from bff.domain.charge_constraints import check_specs_topologies, compile_specs
 
 ROOT = Path(__file__).parents[2]
-ACE_TOP = ROOT / "examples/acetate/inputs/topol.top"
-ACE_IONS_TOP = ROOT / "examples/acetate/inputs/topol-ions.top"
+ACE_TOP = ROOT / "examples/acetate/inputs/acetate.top"
+ACE_IONS_TOP = ROOT / "examples/acetate/inputs/calcium-acetate.top"
 
 
 def _constraint(selection: str, scope: str, implicit: str, target: float):

@@ -127,7 +127,12 @@ class Checkpoint:
         sampler._chain = [chain[i].detach().clone() for i in range(n_saved)]
         sampler._chain_logp = [chain_logp[i].detach().clone() for i in range(n_saved)]
 
-        sampler.rng.set_state(self.rng_state)
+        try:
+            sampler.rng.set_state(self.rng_state)
+        except RuntimeError:
+            # Saved on another device type (CPU vs. CUDA), whose generator
+            # state differs; the chain resumes the same with a fresh stream.
+            sampler.rng.manual_seed(torch.seed())
         sampler.proposal.load_state_dict(self.proposal_state)
         sampler.converged = self.converged
         sampler._n_passed = self.n_passed
@@ -148,14 +153,15 @@ class Sampler:
     ----------
     log_prob : callable
         Target log-probability function with signature
-        ``log_prob(x, *args) -> np.ndarray``, where ``x`` has shape
+        ``log_prob(x, *args) -> torch.Tensor``, where ``x`` has shape
         ``(n_walkers, n_dim)`` and the return value has shape ``(n_walkers,)``.
     proposal : Proposal
         Proposal mechanism used to generate trial moves.
     args : tuple, optional
         Additional arguments passed to ``log_prob``.
-    rng : np.random.Generator, optional
-        Random number generator. If ``None``, a new default generator is created.
+    rng : torch.Generator, optional
+        Random number generator on ``device``. If ``None``, a freshly seeded
+        one is created.
     """
 
     def __init__(
@@ -315,14 +321,12 @@ class Sampler:
             Save every ``thin``-th production step.
         progress_stride : int, default=100
             Frequency of yielding progress information.
-        fn_chain: str or Path, optional
-            If provided, the chain will be saved to this file in
-            PyTorch format after each progress report.
-        restart: bool, default=False
-            If True and fn_chain exists, the sampler will attempt
-            to load the chain from the file
-            and resume sampling from the last saved position.
-            Otherwise, sampling starts from p0.
+        fn_checkpoint : str or Path, optional
+            If given, a checkpoint is written to this file after each
+            progress report.
+        restart : bool, default=False
+            Resume from ``fn_checkpoint`` if it exists, instead of starting
+            from ``p0``.
         rhat_tol : float, default=1.01
             Largest R-hat below which the chain counts as converged.
         ess_min : int, default=400

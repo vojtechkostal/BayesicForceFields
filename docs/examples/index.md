@@ -1,15 +1,12 @@
 # Examples
 
-Choose the example that matches the data you already have.
+Pick the example that matches your data:
 
-- [Acetate workflow](acetate.md): adapt the complete set of BFF-owned stages
-  from system construction through validation. Requires MD software and an
-  external reference simulation.
-- [Arbitrary-data notebook](arbitrary-data.md): start from sampled parameters,
-  simulated observables, and reference targets in tables. No MD software is
-  required.
-- [Neon Mie notebook](neon-mie-lgpmd.md): inspect real RDF inference with a
-  parameter-dependent surrogate mean. No MD software is required.
+| Example | You have | Needs |
+| --- | --- | --- |
+| [Acetate](acetate.md) | molecular systems and a reference simulation | GROMACS with Colvars |
+| [Arbitrary data](arbitrary-data.md) | parameter samples, simulated observables, and targets in tables | nothing but BFF |
+| [Neon Mie](neon-mie-lgpmd.md) | published RDFs; shows a parameter-dependent surrogate mean | nothing but BFF |
 
-The notebook examples write the posterior samples and checkpoints under their
-local `generated/` directories.
+`bff examples` copies all three, in the version matching your installed BFF.
+The notebooks write their results under a local `generated/` directory.

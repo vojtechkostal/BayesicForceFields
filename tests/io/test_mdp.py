@@ -1,34 +1,41 @@
 from pathlib import Path
 
 from bff.io.colvars import write_mdp_with_colvars
-from bff.io.mdp import patch_mdp, read_mdp, write_mdp
+from bff.io.mdp import patch_mdp, read_mdp
 
 
-def test_read_write_mdp_preserves_comments_and_patches_values(tmp_path: Path) -> None:
+def test_read_mdp_ignores_comments_and_normalizes_keys(tmp_path: Path) -> None:
     src = tmp_path / "in.mdp"
     src.write_text(
         "; comment\n"
+        "   ; indented comment\n"
         "\n"
         "integrator = md\n"
-        "nsteps = 1000\n"
-        "nstxout-compressed = 100\n"
+        "nstxout_compressed = 500 ; 1 ps\n"
+        "Tcoupl = v-rescale\n"
     )
 
-    content = read_mdp(src)
+    assert read_mdp(src) == {
+        "integrator": "md",
+        "nstxout-compressed": "500",
+        "tcoupl": "v-rescale",
+    }
 
-    assert list(content)[:2] == ["C000", "B000"]
-    assert content["integrator"] == "md"
 
+def test_patch_mdp_replaces_and_appends_keeping_other_lines(tmp_path: Path) -> None:
+    src = tmp_path / "in.mdp"
+    src.write_text("; header\n\nnsteps = 1000 ; old\ndt = 0.001\n")
     patched = tmp_path / "patched.mdp"
-    patch_mdp(src, {"nsteps": 2000, "dt": "0.002"}, patched)
-    patched_content = read_mdp(patched)
 
-    assert patched_content["nsteps"] == "2000"
-    assert patched_content["dt"] == "0.002"
+    patch_mdp(src, {"nsteps": 2000, "dt": "0.002", "colvars_active": "yes"}, patched)
 
-    rewritten = tmp_path / "rewritten.mdp"
-    write_mdp(content, rewritten)
-    assert rewritten.read_text().startswith("; comment\n\n")
+    lines = patched.read_text().splitlines()
+    assert lines[:2] == ["; header", ""]
+    assert read_mdp(patched) == {
+        "nsteps": "2000",
+        "dt": "0.002",
+        "colvars-active": "yes",
+    }
 
 
 def test_colvars_path_is_relative_to_gromacs_working_directory(

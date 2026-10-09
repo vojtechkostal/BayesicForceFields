@@ -18,9 +18,8 @@ def load_parameter_samples(fn_samples: Path, specs: Specs) -> np.ndarray:
     """Load samples from a YAML mapping of parameter name to a list of values.
 
     Every explicit parameter needs a column. Columns of implicit charges, as
-    written by ``PosteriorResults.sample_posterior(include_implicit_charge=
-    True)``, are accepted and ignored: they are reconstructed from the
-    constraints.
+    written by ``Results.draw(..., implicit=True)``, are accepted and ignored:
+    they are reconstructed from the constraints.
     """
     raw = load_yaml(fn_samples)
     names = specs.explicit_names

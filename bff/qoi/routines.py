@@ -71,7 +71,7 @@ def load_custom_routine(
         )
 
     if module_name.endswith(".py") or "/" in module_name:
-        module_path = Path(module_name)
+        module_path = Path(module_name).expanduser()
         if base_dir is not None and not module_path.is_absolute():
             module_path = base_dir / module_path
         module_path = module_path.resolve()
@@ -117,7 +117,7 @@ def run_routine(
     try:
         if routine.uses_trajectory:
             result = routine.function(
-                universe=universe,
+                universe,
                 frames=frames,
                 options=dict(routine.options),
             )

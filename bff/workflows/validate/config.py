@@ -91,6 +91,6 @@ class ValidateConfig(SimulationCampaignConfig):
                 confidence=posterior.number(
                     "confidence", 0.9, minimum=0, maximum=1, exclusive=True
                 ),
-                seed=posterior.integer("seed", None),
+                seed=posterior.integer("seed", None, minimum=0),
             ),
         )

@@ -49,25 +49,6 @@ def load_yaml(fn: PathLike) -> dict:
         return yaml.load(f, Loader=_YAML_LOADER)
 
 
-class NumpyArrayEncoder(json.JSONEncoder):
-    """Lossless JSON encoder for numpy arrays and scalar values."""
-
-    def default(self, obj):
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        elif isinstance(obj, (np.generic, np.number)):
-            return obj.item()
-        elif hasattr(obj, '__dict__'):
-            return obj.__dict__
-        return super().default(obj)
-
-def save_json(data: dict, fn: PathLike) -> None:
-    """Save a dictionary as JSON without changing numeric precision."""
-    fn = str(fn) if isinstance(fn, Path) else fn
-    with open(fn, "w") as f:
-        json.dump(data, f, cls=NumpyArrayEncoder)
-
-
 def file_sha256(filename: PathLike) -> str:
     """Return the SHA-256 hash of a file without loading it all at once."""
     digest = hashlib.sha256()

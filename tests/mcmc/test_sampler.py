@@ -94,6 +94,21 @@ def test_checkpoint_round_trip_and_restore(tmp_path: Path) -> None:
     assert torch.allclose(restored_sampler.chain.cpu(), checkpoint.chain)
 
 
+def test_checkpoint_from_another_device_type_restores(tmp_path: Path) -> None:
+    sampler = _sampler()
+    checkpoint = list(
+        sampler.run(torch.zeros((3, 2)), total_steps=4, warmup=1, progress_stride=4)
+    )[-1]
+    # A CUDA generator state has a different size than a CPU one.
+    checkpoint.rng_state = torch.zeros(16, dtype=torch.uint8)
+
+    restored = _sampler()
+    restored.proposal.initialize(2)
+    *_, step = checkpoint.restore(restored)
+
+    assert step == checkpoint.step
+
+
 def test_restart_rejects_mismatched_checkpoint_settings(tmp_path: Path) -> None:
     checkpoint = list(
         _sampler().run(

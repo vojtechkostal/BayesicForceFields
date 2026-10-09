@@ -1,16 +1,16 @@
-# Sample charge sets and run a short biased MD of every system for each.
-# Use config-slurm.yaml to run the samples as a Slurm job array.
+# Draw acetate charge sets and run, for each, MD of both systems.
+# Runs locally. For Slurm, set job_scheduler: slurm and uncomment the block at
+# the end.
 campaign_dir: ./
 source: ../01-build
-gmx_cmd: gmx  # ADAPT
+gmx_cmd: gmx  # ADAPT: for example "srun gmx_mpi" on a Slurm cluster
 job_scheduler: local
 
-systems:  # ADAPT: simulation length
-  - {system_id: acetate, n_steps: 20000}
-  - {system_id: acetate-contact, n_steps: 20000}
-  - {system_id: acetate-separated, n_steps: 20000}
+systems:  # ADAPT: simulation lengths (dt = 2 fs); shorten them for a smoke test
+  - {system_id: acetate, n_steps: 1000000}  # 2 ns
+  - {system_id: calcium-acetate, n_steps: 5000000}  # 10 ns, writes production.pmf
 
-n_samples: 20  # ADAPT: use hundreds for production
+n_samples: 100  # ADAPT
 bounds:
   charge C1: [-1.0, 0.3]
   charge C2: [0.0, 1.0]
@@ -23,4 +23,20 @@ charge_constraints:
     scope: residue
     implicit: C2
 
-cleanup: true
+store: [xtc, pmf]  # keep the trajectory and the Colvars PMF of every sample
+cleanup: true  # delete everything else once a system has finished
+
+# --- Slurm ---------------------------------------------------------------------
+# scratch_dir: $SLURM_TMPDIR  # run GROMACS on node-local disk
+# max_restarts: 3  # continue samples stopped by the time limit from checkpoints
+# slurm:  # ADAPT: resources and GROMACS setup for your cluster
+#   max_parallel_jobs: 100
+#   sbatch:
+#     job_name: bff-sample
+#     nodes: 1
+#     ntasks_per_node: 1
+#     cpus_per_task: 8
+#     mem: 2G
+#     time: "04:00:00"
+#   setup:
+#     - module load gromacs

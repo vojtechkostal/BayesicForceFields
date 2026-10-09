@@ -1,4 +1,4 @@
-## Unreleased
+## `0.5.0` - 2026-10-09
 
 ### Changed
 
@@ -9,12 +9,14 @@
 - Examples are streamlined. The acetate example has one directory per stage,
   named after its command (`01-build`, `02-reference-md`,
   `03-sample-parameters`, `04-build-qoi-datasets`, `05-fit-lgp`, `06-learn`,
-  `07-validate`), each holding its `config.yaml` (alternatives:
-  `config-plumed.yaml`, `config-slurm.yaml`); the old `configs/` directory and
-  its copy step are gone. The inputs moved to `inputs/` (flattened from
-  `inputs/common/`), the committed reference trajectories to
-  `02-reference-md/trajectories/<system_id>/trajectory.xtc`, and the CP2K
-  inputs of the labeling script (revPBE0-D3 only) to `02-reference-md/cp2k/`.
+  `07-validate`), each holding one `config.yaml`; the old `configs/`
+  directory and its copy step are gone. It has two systems: `acetate` (QoI:
+  acetate-water RDFs) and `calcium-acetate`, whose Ca-C2 distance is biased by
+  Colvars metadynamics (`inputs/colvars.dat`) and whose PMF is a QoI read by
+  the custom file routine `inputs/pmf.py` and compared with an MLIP reference
+  PMF (`02-reference-md/calcium-acetate.pmf`). The sampling config runs
+  locally and carries the Slurm settings as a commented block. The CP2K inputs
+  of the labeling script (revPBE0-D3 only) are in `02-reference-md/cp2k/`.
   The two acetate notebooks are merged into `06-learn/posterior.ipynb`, and
   the arbitrary-data and neon notebooks are shortened. `LGPCommittee.n_eff` is
   inferred from the reference curve when the committee is created.
@@ -158,6 +160,18 @@
   GPU-to-CPU copy), and local-GP predictions reuse a precomputed
   `K^-1 (y - mean)` instead of multiplying by the inverse kernel each call.
 - A NaN parameter vector now gets `-inf` for its own walker only.
+- The source distribution on PyPI no longer contains the tests (the wheel never
+  did); they stay in the repository.
+- Documentation is reorganized: a settings overview links every option group
+  of every stage, *How BFF Works* replaces the architecture page (the package
+  map moved to *Development*), and the README and docs state that BFF does not
+  generate reference data.
+- `slurm.sbatch.time` must be a quoted string; YAML reads an unquoted
+  `4:00:00` as the number 14400. `slurm.teardown` also runs after a failed
+  task. `build.systems[].box` accepts only rectangular boxes, as molecule
+  insertion always assumed. `validate.posterior.seed` must be >= 0.
+- Errors of every stage are reported as one line naming the stage, instead of
+  a usage message about the config argument.
 
 ### Removed
 
@@ -188,6 +202,37 @@
 
 ### Fixed
 
+- A campaign's final cleanup deleted the checkpoints of samples that were
+  still incomplete, so `resume: true` had to restart them from scratch; it now
+  prunes only systems whose production run finished. A rerun no longer fails
+  on the topology left by an attempt that never reached a checkpoint.
+- A Slurm task stopped by `SIGTERM` (time limit, `scancel`) now lets the
+  running mdrun checkpoint, copies its files back, and is recorded as
+  `incomplete`, so `max_restarts` continues it; before, the sample was lost as
+  `failed`. A sample whose job writes no result is `failed` instead of
+  reusing a result from an earlier round, and local reruns append to
+  `run.out` instead of truncating it.
+- MDP files with inline comments (`nsteps = 500 ; 1 ps`), indented comments,
+  or `_` spellings of keys failed or were patched twice; MDP keys are now read
+  the way GROMACS reads them.
+- Custom trajectory routines receive the universe positionally, as
+  documented, so its parameter may have any name. Samples whose QoI settings
+  (for example a grid) differ from the reference are skipped. `~` is expanded
+  in reference inputs and custom routine paths. Parallel analysis caps
+  in-memory trajectories by the Slurm memory allocation, and a worker killed
+  for lack of memory is reported with a hint.
+- `scripts/label_structures.py run` collected results while array tasks were
+  still running, because `sbatch --wait` returned early; it now polls
+  `squeue` until the arrays leave the queue.
+- `bff learn` resumes a checkpoint written on another device type (CPU vs.
+  CUDA) instead of failing on the random-generator state.
+- A charge-constraint selection that fails reports the underlying error
+  instead of calling the selection invalid.
+- `fit-lgp` refits a model file written by an older BFF version instead of
+  stopping with `reuse_models: true`.
+- `build-qoi-datasets` writes its progress to the log every 100 samples and
+  announces the start of the reference and of the sample analysis; a batch
+  job's console shows the same lines instead of one per sample.
 - `mean: sigmoid` no longer fails when the sigmoid values are built into the
   surrogate.
 - Running `sample-parameters` or `validate` again on an existing campaign no

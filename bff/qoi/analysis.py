@@ -14,6 +14,7 @@ import multiprocessing as mp
 import os
 from collections.abc import Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 from functools import partial
 from typing import Any
 
@@ -77,11 +78,22 @@ def analyze_sample(
 
 
 def _available_memory() -> int | None:
-    """Physical memory currently available, in bytes, where the OS reports it."""
+    """Memory available to this job in bytes: the free physical memory, capped
+    by the Slurm allocation, which is far less than the node's on a shared node.
+    """
+    limits = []
     try:
-        return os.sysconf("SC_AVPHYS_PAGES") * os.sysconf("SC_PAGE_SIZE")
+        limits.append(os.sysconf("SC_AVPHYS_PAGES") * os.sysconf("SC_PAGE_SIZE"))
     except (AttributeError, ValueError, OSError):
-        return None
+        pass
+    per_node = os.environ.get("SLURM_MEM_PER_NODE")
+    per_cpu = os.environ.get("SLURM_MEM_PER_CPU")
+    cpus = os.environ.get("SLURM_CPUS_ON_NODE")
+    if per_node:
+        limits.append(int(per_node) * 2**20)
+    elif per_cpu and cpus:
+        limits.append(int(per_cpu) * int(cpus) * 2**20)
+    return min(limits) if limits else None
 
 
 def analyze_samples(
@@ -106,6 +118,9 @@ def analyze_samples(
             else mp.cpu_count()
         )
     workers = max(1, min(workers, len(tasks)))
+    logger.status(
+        label, "started", detail=f"{len(tasks)} sample(s), {workers} worker(s)"
+    )
     available = _available_memory()
     # In-memory trajectories may use half the available memory, shared by
     # the workers; larger ones are read from disk.
@@ -124,7 +139,14 @@ def analyze_samples(
         max_workers=workers, mp_context=mp.get_context("spawn")
     ) as executor:
         outcomes = executor.map(analyze_one, tasks, chunksize=1)
-        return _collect(outcomes, len(tasks), logger, label)
+        try:
+            return _collect(outcomes, len(tasks), logger, label)
+        except BrokenProcessPool as exc:
+            raise RuntimeError(
+                "An analysis worker was killed, most likely for running out of "
+                "memory; lower training_samples.workers or set run.in_memory: "
+                "false."
+            ) from exc
 
 
 def _collect(

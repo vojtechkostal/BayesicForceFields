@@ -8,7 +8,7 @@ training_samples:
   manifest: ../03-sample-parameters/samples.yaml
   systems:
     - system_id: acetate
-    - system_id: acetate-contact
+    - system_id: calcium-acetate
   frames: {start: 1, stop: null, step: 1}
   workers: -1
 
@@ -18,32 +18,25 @@ reference:
       inputs:
         topology: ../01-build/systems/acetate/reference/topology.top
         coordinates: ../01-build/systems/acetate/reference/coordinates.gro
-        trajectory: ../02-reference-md/trajectories/acetate/trajectory.xtc
-    - system_id: acetate-contact
+        trajectory: ../02-reference-md/acetate.xtc
+    - system_id: calcium-acetate
       inputs:
-        topology: ../01-build/systems/acetate-contact/reference/topology.top
-        coordinates: ../01-build/systems/acetate-contact/reference/coordinates.gro
-        trajectory: ../02-reference-md/trajectories/acetate-contact/trajectory.xtc
-        pmf: ../02-reference-md/trajectories/acetate-contact/profile.pmf
+        pmf: ../02-reference-md/calcium-acetate.pmf
   frames: {start: 1, stop: null, step: 1}
 
 routines:
-  - name: acetate-water-rdf
+  - name: rdf
     type: rdf
-    systems: [acetate, acetate-contact]
+    systems: [acetate]
     selections:
       group_a: "resname ACE and name O1 O2 H1 H2 H3"
       group_b: "resname SOL and name O*"
-    options:
-      range: [1.0, 7.0]
-      bins: 200
-      pbc: true
-      update_selections: false
-      smooth: false
-  - name: contact-pmf
-    callable: ../inputs/pmf.py:load_profile
-    systems: [acetate-contact]
+    options: {range: [1.0, 7.0], bins: 200}
+  - name: pmf
+    callable: ../inputs/pmf.py:read_pmf
+    systems: [calcium-acetate]
     inputs: [pmf]
+    options: {range: [0.27, 0.65], points: 39}
 
 run:
   in_memory: true
@@ -123,7 +116,7 @@ nitrogen can therefore contribute as both a donor and an acceptor.
 | `group_b` | selection | *required* | Neighbor atoms. |
 | `range` | `[min, max]` | `[0, 10]` | Distance range in angstrom. |
 | `bins` | integer | `200` | Histogram bins per curve. |
-| `pbc` | boolean | `true` | Use periodic boundary conditions. |
+| `pbc` | boolean | `true` | Use periodic boundary conditions; without them the curves are pair counts per shell, not normalized by the box volume. |
 | `update_selections` | boolean | `false` | Reevaluate selections every frame. |
 | `smooth` | boolean | `false` | Smooth each curve. |
 
@@ -175,39 +168,51 @@ store no box fall back to the box of the configured coordinate file.
 selections with an error naming the option.
 
 Every routine returns exactly one `QoI`; the name configured under
-`routines[].name` replaces the name returned by the callable. Labels,
-`values_per_label`, and settings must be identical for the reference and every
-training sample.
+`routines[].name` replaces the name returned by the callable. A sample whose
+labels, `values_per_label`, number of values, or settings differ from the
+reference's is skipped, so put everything that defines the QoI, such as a
+grid, into `settings`. A routine applied to several systems must return the
+same labels and length for each.
 
 Declare `inputs` when the quantity is already stored in files such as a PMF:
 
 ```python
-def load_profile(*, inputs, options) -> QoI:
-    pmf_path = inputs["pmf"]
-    data = np.loadtxt(pmf_path, comments="#")
-    coordinate = data[:, 0]
-    values = data[:, 1] - data[:, 1].min()
+import numpy as np
+from bff.qoi import QoI
+
+
+def read_pmf(*, inputs, options) -> QoI:
+    lower, upper = options.get("range", (0.27, 0.65))
+    points = int(options.get("points", 39))
+    distance, free_energy = np.loadtxt(
+        inputs["pmf"], comments="#", usecols=(0, 1), unpack=True
+    )
+    grid = np.linspace(lower, upper, points)
+    values = np.interp(grid, distance, free_energy)
     return QoI(
         name="pmf",
-        values=values,
-        labels=("PMF",),
-        values_per_label=len(values),
-        settings={"coordinate": tuple(float(value) for value in coordinate)},
+        values=values - values.mean(),  # a PMF is defined up to a constant
+        labels=("Ca-C2",),
+        values_per_label=points,
+        settings={"distance_nm": grid.round(6).tolist()},
     )
 ```
 
-Declare every required role explicitly:
+This is `inputs/pmf.py` of the [acetate example](../examples/acetate.md).
+Declare the roles a routine reads with `inputs`:
 
 ```yaml
 - name: pmf
-  callable: ./pmf.py:load_profile
-  systems: [acetate-calcium]
+  callable: ../inputs/pmf.py:read_pmf
+  systems: [calcium-acetate]
   inputs: [pmf]
-  options: {}
+  options: {range: [0.27, 0.65], points: 39}
 ```
 
-For training samples, roles such as `pmf` come from
-`samples.yaml` under `outputs[].inputs`. For reference systems, add the same
+For training samples, roles such as `pmf` come from `samples.yaml`, under
+`samples.<sample_id>.outputs.<system_id>`: every suffix in the campaign's
+`store` (for example `store: [xtc, pmf]`) is recorded there under its own
+name. For reference systems, add the same
 role under `reference.systems[].inputs`. Each declared role is passed as a
 resolved `Path`; a role backed by multiple paths is passed as a tuple of paths.
 
@@ -243,7 +248,9 @@ dataset contains the same samples. A failing reference stops the stage.
 
 ## Outputs
 
-One `qoi/<routine-name>.pt` per routine and `build-qoi-datasets.log`. Each
+One `qoi/<routine-name>.pt` per routine and `build-qoi-datasets.log`. The log
+marks the start of the reference and of the sample analysis and, every 100
+samples, the progress and the estimated remaining time. Each
 dataset records the `sample_ids` of its rows, the `parameter_names` of its
 input columns (from the campaign), and the `system_ids` it combines.
 `fit-lgp` stores the parameter names in the model, and `learn` checks them

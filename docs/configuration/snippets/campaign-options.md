@@ -5,12 +5,12 @@
 | `campaign_dir` | path | *required* | Output directory of the campaign; created if missing. An existing campaign in it must be resumed or overwritten; see [Rerunning a campaign](#rerunning-a-campaign). |
 | `log` | path | `<campaign_dir>/<stage>.log` | Workflow log file. |
 | `gmx_cmd` | string | *required* | GROMACS executable, for example `gmx` or `gmx_mpi`. |
-| `job_scheduler` | `local` or `slurm` | *required* | Run samples one after another here, or as Slurm job arrays. |
+| `job_scheduler` | `local` or `slurm` | *required* | Run samples on this machine (`local.max_parallel_jobs` at once) or as Slurm job arrays. |
 | `source` | path | none | `bff build` project directory. With it, `systems[]` lists only IDs and lengths, and each `systems/<system_id>/` must contain `topology.top`, `production.gro`, `index.ndx`, `em.mdp`, `production.mdp`, and any `bias.*.dat`; the build trajectory is not needed. Without it, every system gives explicit `inputs`. |
 | `systems` | list | *required* | Systems simulated for every sample; see [systems](#systems). |
 | `dispatch` | boolean | `true` | Run the jobs after staging them. With `false`, stage only (and print the `sbatch` command on Slurm). |
 | `compress` | boolean | `false` | Pack `.tpr`, `.xtc`, `.yaml`, `.top`, and `.gro` files of the finished campaign into `<campaign_dir>.tar.gz`. |
-| `cleanup` | boolean | `false` | After a successful system run, keep only the `store` suffixes and the sample's topology in its result directory. |
+| `cleanup` | boolean | `false` | Once a system's production run is complete, keep only the `store` suffixes and the sample's topology in its result directory. Unfinished systems keep everything a restart needs. |
 | `store` | list of strings | `[xtc]` | File suffixes, without dots, kept by `cleanup` and recorded as sample outputs (for example `[xtc, pmf]`). |
 | `scratch_dir` | string | none | Directory, usually node-local, in which GROMACS runs; may contain `$VARIABLES` expanded on the compute node. See [Scratch directory](sample-parameters.md#scratch-directory). |
 | `max_restarts` | integer >= 0 | `0` | Slurm only (an error with `local`): how often samples stopped by the time limit are resubmitted. See [Time limits and restarts](sample-parameters.md#time-limits-and-restarts). |
@@ -37,11 +37,11 @@
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
-| `slurm.sbatch` | mapping | *required* | `sbatch` options written as `#SBATCH --<key>=<value>` (underscores become dashes). Must not set `array`. |
+| `slurm.sbatch` | mapping | *required* | `sbatch` options written as `#SBATCH --<key>=<value>` (underscores become dashes). Must not set `array`. Quote `time` (`"04:00:00"`): YAML reads an unquoted `4:00:00` as a number. |
 | `slurm.max_parallel_jobs` | integer >= 1 or -1 | `1` | Array tasks running at once (`%` limit); `-1` for no limit. |
 | `slurm.max_array_size` | integer >= 1 | `1000` | Tasks per submitted array; keep below the cluster's `MaxArraySize`. |
 | `slurm.setup` | list of strings | `[]` | Shell lines run before each task, such as `module load gromacs`. |
-| `slurm.teardown` | list of strings | `[]` | Shell lines run after each task. |
+| `slurm.teardown` | list of strings | `[]` | Shell lines run after each task, also when it failed. |
 
 ### Rerunning a campaign
 

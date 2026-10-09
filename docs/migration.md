@@ -1,6 +1,6 @@
 # Migration
 
-## Unreleased
+## From 0.4.2 to 0.5.0
 
 1. Custom QoI routines import from `bff.qoi`: replace
    `from bff.qoi.data import QoI` and `from bff.tools import get_unitcell`
@@ -94,6 +94,13 @@
     the stage they belong to. The `data/` directory of templates is removed;
     `LGPCommittee.n_eff` is inferred at creation, so Python code no longer
     needs `effective_observations` to set it.
+20. The acetate example has two systems, `acetate` and `calcium-acetate`
+    (formerly `acetate`, `acetate-contact`, `acetate-separated`), and one
+    config per stage; Slurm settings are a commented block in
+    `03-sample-parameters/config.yaml`. Its topologies are
+    `inputs/acetate.top` and `inputs/calcium-acetate.top`.
+21. Quote `slurm.sbatch.time` (`time: "04:00:00"`); a number is rejected.
+    Give `build` boxes as three lengths: angles other than 90 are rejected.
 
 # Pipeline Directory-Contract Migration
 

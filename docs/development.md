@@ -1,128 +1,87 @@
 # Development
 
-## Get The Code
+## Setup
 
 ```bash
 git clone https://github.com/vojtechkostal/BayesicForceFields.git
 cd BayesicForceFields
-mamba env create -f environment.yaml
+mamba env create -f environment.yaml   # editable install with dev, docs, notebook extras
 mamba activate bfflearn
+pip install torch                      # the build for your machine
 ```
 
-The environment installs BFF in editable mode with the developer, docs, and
-notebook extras. Install the PyTorch build that matches your machine before
-running `bff fit-lgp`, `bff learn`, or posterior notebooks.
-
-## Start A Feature Branch
-
-Keep `main` clean and do work on a branch:
+## Check a change
 
 ```bash
-git switch main
-git pull
-git switch -c feature/my-change
+make check      # compileall, ruff, pytest, mkdocs build --strict
 ```
 
-Use short branch names that describe the change, for example:
+Run the narrowest tests while you work (`pytest tests/qoi -q`), and `make
+check` before you push. Tests use temporary files and mocked GROMACS, Slurm,
+and CP2K; nothing external has to be installed.
+
+## Code layout
 
 ```text
-feature/new-qoi
-fix/slurm-submit
-docs/acetate-example
+bff/
+├── cli.py                  the `bff` command; thin, calls workflows
+├── __init__.py             public Python API: stage functions, Project, QoI, Results
+├── workflows/
+│   ├── config.py           ConfigSection: the typed YAML reader of every stage
+│   ├── build/              bff build
+│   ├── campaign/           MD campaigns of sample-parameters and validate,
+│   │                       including the per-sample job `bff md`
+│   ├── sample_parameters/
+│   ├── build_qoi_datasets/
+│   ├── fit_lgp/
+│   ├── learn/
+│   └── validate/
+├── domain/                 specs, charge constraints, systems, samples.yaml, biases
+├── qoi/                    routines (rdf, hydrogen_bonds, custom), analysis, QoIDataset
+├── bayes/                  Gaussian-process surrogates, likelihoods, priors, results
+├── mcmc/                   Metropolis-Hastings sampler, proposals, checkpoints
+├── io/                     MDP, Colvars, PLUMED, YAML, logs
+├── gromacs.py              grompp/mdrun with an optional bias
+├── slurm.py                job arrays and queue polling
+├── topology.py             force-field parameter edits on GROMACS topologies
+└── plotting.py
+scripts/label_structures.py standalone CP2K labeling; must not import bff
 ```
 
-## Make The Change
+## Design rules
 
-Before committing, run the checks that match your change:
+- **Stage files are interfaces.** Directory layouts, file names, and
+  `system_id`/`sample_id` values are what stages and users rely on; change them
+  only deliberately, with a changelog and migration note.
+- **IDs pair systems**, never list order or display names.
+- **Configs go through `ConfigSection`.** It reports unknown keys, wrong types,
+  and missing files with the full key path. A new option needs its parser,
+  a test, the option table in `docs/configuration/`, and the example YAML if
+  it is user-facing; `tests/test_docs_config.py` fails when an accepted key is
+  missing from its table.
+- **External tools stay at the edges**: GROMACS in `gromacs.py`, Slurm in
+  `slurm.py`, file formats in `io/`. The reference MD is outside BFF.
+- **Plain code first.** Prefer linear functions over small wrappers, and raise
+  errors that name the stage, system or sample, and the path or key.
 
-```bash
-python -m compileall -q bff
-ruff check .
-python -m pytest -q
-mkdocs build --strict
-```
+## Branches and pull requests
 
-For docs-only changes, `mkdocs build --strict` is usually enough.
+Work on a branch (`fix/slurm-time`, `docs/acetate`), keep pull requests
+focused, describe the behavior change, and add a regression test for every
+bug fix. After `main` moves on: `git rebase origin/main` and `git push
+--force-with-lease`.
 
-## Commit And Push
+## Release
 
-Review what changed:
+1. Set the version in `pyproject.toml`, `bff/__init__.py`, and `CITATION.cff`;
+   update `CHANGELOG.md` and `docs/changelog.md`.
+2. Run `make check`, `python -m build`, and `python -m twine check dist/*`,
+   and execute the notebooks in a temporary copy.
+3. Check that new files are tracked (`git status`).
+4. Merge into `main`, tag `vX.Y.Z`, and publish the GitHub release; the release
+   workflow publishes to PyPI.
+5. Install the wheel and run `bff examples`, which fetches the examples of
+   the tag.
+6. Archive the release on Zenodo and record its DOI in `CITATION.cff`.
 
-```bash
-git status
-git diff
-```
-
-Commit focused changes:
-
-```bash
-git add PATHS_YOU_CHANGED
-git commit -m "Short imperative summary"
-```
-
-Push the branch:
-
-```bash
-git push -u origin feature/my-change
-```
-
-Open a pull request from your branch into `main`.
-
-## Updating A Branch
-
-If `main` changed while you were working:
-
-```bash
-git fetch origin
-git rebase origin/main
-git push --force-with-lease
-```
-
-Use `--force-with-lease`, not plain `--force`, so you do not overwrite someone
-else's pushed work by accident.
-
-## Repository Layout
-
-- `bff/`: package code
-- `docs/`: documentation site
-- `examples/acetate/`: worked example
-- `tests/`: tests
-- `.github/workflows/`: CI and publishing workflows
-- `AGENTS.md`: repository guidance for AI coding agents
-
-The [architecture guide](architecture.md) describes the package modules,
-workflow stages, and persisted artifacts in more detail.
-
-AI-assisted contributions should also follow the repository-specific guidance
-in [`AGENTS.md`](https://github.com/vojtechkostal/BayesicForceFields/blob/main/AGENTS.md).
-
-## Publishing Research Software
-
-For a citable BFF release:
-
-1. Update the changelog, version, examples, and documentation together.
-2. Reserve a version-specific Zenodo DOI if the release needs an archival DOI.
-3. Run the test suite, lint checks, both self-contained notebooks, package
-   build and Twine check, and the strict documentation build.
-4. Confirm every new workflow package, configuration page, example input, and
-   test is tracked by the release commit.
-5. Merge the release branch into `main` and create an annotated `vX.Y.Z` tag.
-6. Publish the GitHub release from that tag. The release workflow builds,
-   verifies, and publishes the distributions through PyPI trusted publishing.
-7. Install the tagged wheel and run `bff examples` to verify the example archive
-   can be fetched from the version tag.
-8. Archive the tagged release in Zenodo and record its version-specific DOI
-   and release date in `CITATION.cff`.
-
-The repository already includes package metadata, an OSI-approved license,
-`CITATION.cff`, a changelog, documentation, examples, tests, and GitHub Actions
-workflows. Contribution, support, and security policies live in the repository
-root. Expand API reference documentation as the public Python API matures.
-
-Useful references:
-
-- [FAIR Principles for Research Software](https://doi.org/10.15497/RDA00068)
-- [GitHub citation-file documentation](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-citation-files)
-- [Zenodo DOI documentation](https://help.zenodo.org/docs/deposit/describe-records/reserve-doi/)
-- [JOSS review criteria](https://joss.readthedocs.io/en/latest/review_criteria.html)
-- [Diátaxis documentation framework](https://diataxis.fr/)
+AI coding agents follow [`AGENTS.md`](https://github.com/vojtechkostal/BayesicForceFields/blob/main/AGENTS.md).

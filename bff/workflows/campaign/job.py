@@ -5,9 +5,10 @@ as one Slurm array task. Results end up in ``samples/<ID>/``. With a scratch
 directory, GROMACS runs there and only the results are copied back.
 
 The job can be rerun: systems whose production run is complete are skipped
-and an interrupted production run continues from its checkpoint. With ``max_hours``
-the production run stops cleanly before that wall time and the sample is
-reported as ``incomplete``.
+and an interrupted production run continues from its checkpoint. With
+``max_hours`` the production run stops cleanly before that wall time, and on
+SIGTERM (Slurm's time limit or ``scancel``) the running mdrun checkpoints and
+no further run starts; either way the sample is reported as ``incomplete``.
 """
 
 from __future__ import annotations
@@ -15,7 +16,9 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import signal
 import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -103,7 +106,9 @@ def write_sample_topology(
                     f"Applied charge constraint {charge_constraint.selection!r} has "
                     f"charge {actual}, expected {charge_constraint.target}."
                 )
-    topology.write(fn_out)
+    # An existing file is from an earlier attempt that never reached a
+    # checkpoint (or from staging): the same parameters, safe to replace.
+    topology.write(fn_out, overwrite=True)
 
 
 def last_checkpoint_step(fn_log: Path) -> int | None:
@@ -137,7 +142,7 @@ def production_is_complete(directory: Path, fn_mdp: Path, n_steps: int) -> bool:
 def trajectory_is_complete(fn_xtc: Path, fn_mdp: Path, n_steps: int) -> bool:
     """Whether the trajectory holds every frame written over ``n_steps``."""
     mdp = read_mdp(fn_mdp)
-    stride = int(mdp.get("nstxout-compressed", mdp.get("nstxout_compressed", 0)))
+    stride = int(mdp.get("nstxout-compressed", 0))
     if stride <= 0 or not fn_xtc.exists():
         return False
     try:
@@ -171,6 +176,18 @@ def main(fn_campaign: PathLike, sample_id: str) -> None:
             )
     fn_log = work_dir / "gmx.log"
 
+    # mdrun also receives the SIGTERM and stops with a checkpoint; keep going
+    # so that checkpoint is copied back, but start no further run.
+    terminated = False
+
+    def on_sigterm(signum, frame) -> None:
+        nonlocal terminated
+        terminated = True
+
+    in_main_thread = threading.current_thread() is threading.main_thread()
+    if in_main_thread:
+        previous_handler = signal.signal(signal.SIGTERM, on_sigterm)
+
     def copy_back(
         run_dir: Path, system_dir: Path, suffixes: tuple[str, ...] | None = None
     ) -> None:
@@ -201,9 +218,9 @@ def main(fn_campaign: PathLike, sample_id: str) -> None:
                 max_hours = None
                 if job.max_hours is not None:
                     max_hours = job.max_hours - (time.monotonic() - started) / 3600
-                    if max_hours < 0.02:
-                        complete = False
-                        break
+                if terminated or (max_hours is not None and max_hours < 0.02):
+                    complete = False
+                    break
                 topology = run_dir / "topology.top"
                 coordinates = system.coordinates_path
                 if not restart:
@@ -222,6 +239,9 @@ def main(fn_campaign: PathLike, sample_id: str) -> None:
                             log=fn_log,
                         )
                         coordinates = run_dir / "em.gro"
+                        if terminated:
+                            complete = False
+                            break
                 run_md(
                     run_dir / "production",
                     mdp=mdp,
@@ -244,8 +264,8 @@ def main(fn_campaign: PathLike, sample_id: str) -> None:
                     system_dir,
                     (*job.store, "top") if done and job.cleanup else None,
                 )
-                if done:
-                    (system_dir / DONE_MARKER).write_text(f"{system.n_steps}\n")
+            if done:
+                (system_dir / DONE_MARKER).write_text(f"{system.n_steps}\n")
 
             stored: dict[str, str | list[str]] = {
                 "topology": str(
@@ -278,3 +298,5 @@ def main(fn_campaign: PathLike, sample_id: str) -> None:
                     handle.write(fn_log.read_text(encoding="utf-8"))
             shutil.rmtree(work_dir, ignore_errors=True)
         save_yaml({"status": status, "outputs": outputs}, sample_dir / "result.yaml")
+        if in_main_thread:
+            signal.signal(signal.SIGTERM, previous_handler)

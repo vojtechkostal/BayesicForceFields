@@ -180,6 +180,12 @@ def load_slurm_config(config: ConfigSection) -> SlurmConfig:
             "slurm.sbatch.array is set by BFF; use slurm.max_parallel_jobs to "
             "limit concurrently running tasks."
         )
+    if "time" in sbatch and not isinstance(sbatch["time"], str):
+        # YAML reads an unquoted 4:00:00 as the base-60 number 14400.
+        raise ValueError(
+            f"slurm.sbatch.time must be quoted, for example \"04:00:00\"; "
+            f"got {sbatch['time']!r}."
+        )
     return SlurmConfig(
         max_parallel_jobs=slurm.integer(
             "max_parallel_jobs", 1, minimum=1, special=(-1,)

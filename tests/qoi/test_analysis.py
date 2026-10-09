@@ -289,6 +289,8 @@ def test_parallel_analysis_respects_available_cpus(
             pass
 
     class Logger:
+        interactive = False
+
         def status(self, *args, **kwargs) -> None:
             pass
 
@@ -351,7 +353,10 @@ def test_a_failing_sample_is_reported_without_stopping_the_others(
         name="pmf", systems=("acetate",), callable="pmf:load", inputs=("pmf",)
     )
     logger = SimpleNamespace(
-        progress_status=lambda *a, **k: None, done=lambda *a, **k: None
+        interactive=False,
+        status=lambda *a, **k: None,
+        progress_status=lambda *a, **k: None,
+        done=lambda *a, **k: None,
     )
 
     results, failures = analysis.analyze_samples(
@@ -396,3 +401,13 @@ def test_trajectory_too_large_for_memory_is_streamed(
 
     assert universe.transfer_arguments is None
     assert frames == slice(0, 10, 1)
+
+
+def test_available_memory_is_capped_by_the_slurm_allocation(monkeypatch) -> None:
+    monkeypatch.delenv("SLURM_MEM_PER_NODE", raising=False)
+    monkeypatch.setenv("SLURM_MEM_PER_CPU", "1024")
+    monkeypatch.setenv("SLURM_CPUS_ON_NODE", "4")
+    assert analysis._available_memory() <= 4 * 2**30
+
+    monkeypatch.setenv("SLURM_MEM_PER_NODE", "512")
+    assert analysis._available_memory() <= 512 * 2**20

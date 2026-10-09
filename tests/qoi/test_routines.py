@@ -61,8 +61,8 @@ def test_custom_trajectory_routine_receives_universe_and_frames(
     module = _write(
         tmp_path / "trajectory_routine.py",
         "from bff.qoi import QoI\n"
-        "def calculate(universe, *, frames, options):\n"
-        "    assert universe == 'universe'\n"
+        "def calculate(u, *, frames, options):\n"
+        "    assert u == 'universe'\n"
         "    assert frames == slice(2, 8, 2)\n"
         "    return QoI('ignored', [options['value']])\n",
     )

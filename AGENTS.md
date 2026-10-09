@@ -1,136 +1,105 @@
 # Guidance for AI Coding Agents
 
-This file gives coding agents the repository-specific context needed to make
-safe, focused changes. User instructions and the documentation remain
-authoritative; do not treat this file as permission to broaden a task.
+Repository context for making safe, focused changes. The user's instructions
+and the documentation come first; this file does not widen a task.
 
-## Start Here
+## Before editing
 
-1. Read `README.md`, `docs/architecture.md`, and the documentation for the
-   workflow or module being changed.
-2. Inspect `git status --short` and the relevant diff before editing. The
-   worktree may contain intentional user changes; preserve unrelated work and
-   never discard it to obtain a clean tree.
-3. Find nearby tests and follow existing public names, artifact layouts, and
-   configuration conventions.
-4. Make the smallest cohesive change, update tests and user-facing
-   documentation together, and run checks proportional to the change.
+1. Read `README.md`, `docs/workflow.md`, `docs/development.md`, and the page
+   of the stage you change (`docs/configuration/<stage>.md`).
+2. Run `git status --short`. The worktree may hold the user's work, including
+   untracked run outputs inside `examples/`: keep it, never discard it for a
+   clean tree.
+3. Find the nearby tests and follow existing names, file layouts, and config
+   conventions.
+4. Make the smallest cohesive change; update tests and docs with it.
 
-## Project Map
+## Map
 
-- `bff/cli.py`: Typer CLI and public command names.
-- `bff/__init__.py`: supported public Python imports and package version.
-- `bff/workflows/`: one package per user-facing workflow stage.
-- `bff/workflows/campaign/`: MD campaigns shared by `sample-parameters` and
-  `validate`, including the per-sample `md` job.
-- `bff/workflows/config.py`: `ConfigSection`, the typed reader every stage
-  config loader uses; read new options through it, not with ad hoc checks.
-- `bff/gromacs.py` and `bff/slurm.py`: GROMACS runs and Slurm job arrays.
-- `bff/domain/`: stable domain models and serialized workflow records.
-- `bff/io/`: file formats and logging.
-- `bff/qoi/`: QoI routines (built-in and custom share one interface),
-  trajectory analysis, and `QoIDataset` construction.
-- `bff/bayes/` and `bff/mcmc/`: surrogate fitting and posterior learning.
-- `examples/`: user templates and self-contained notebook examples.
-- `scripts/`: standalone helpers distributed with the repository but not the
-  package, such as `label_structures.py` for CP2K labeling on Slurm.
-- `docs/`: MkDocs site; configuration pages describe the YAML contract.
-- `tests/`: unit, integration, configuration, and example-contract tests.
+| Path | Content |
+| --- | --- |
+| `bff/cli.py` | the `bff` command; thin, calls `bff/workflows/<stage>/main.py` |
+| `bff/__init__.py` | public Python API and `__version__` |
+| `bff/workflows/config.py` | `ConfigSection`: read every option through it |
+| `bff/workflows/<stage>/` | one package per stage: `config.py` (parser) and `main.py` |
+| `bff/workflows/campaign/` | MD campaigns of `sample-parameters` and `validate`; `job.py` is the per-sample `bff md` job |
+| `bff/gromacs.py`, `bff/slurm.py` | GROMACS runs, Slurm job arrays |
+| `bff/qoi/` | QoI routines (built-in and custom share one interface), analysis, `QoIDataset` |
+| `bff/bayes/`, `bff/mcmc/` | surrogates, likelihoods, posterior sampling |
+| `bff/domain/`, `bff/io/` | data models (`specs.yaml`, `samples.yaml`), file formats |
+| `scripts/label_structures.py` | standalone CP2K labeling; not installed by pip; must not import `bff` |
+| `examples/` | acetate MD workflow and two notebooks |
+| `docs/` | MkDocs site; `docs/configuration/` is the YAML contract |
 
-## Canonical Pipeline
-
-The public pipeline is:
+## Pipeline
 
 ```text
-build -> [external reference MD] -> sample-parameters -> build-qoi-datasets
+build -> [reference MD, outside BFF] -> sample-parameters -> build-qoi-datasets
       -> fit-lgp -> learn -> validate
 ```
 
-Use these names in code, tests, examples, and documentation. Do not add aliases
-for retired stage names unless the user explicitly requests compatibility.
-The scheduled-job command `md` is internal, even though workflow code invokes
-it. The reference MD is external; `scripts/label_structures.py` is a standalone
-CP2K labeling helper for it that must not import `bff` and is not part of the
-CLI.
+Use these stage names everywhere and add no aliases for retired names. `bff md`
+is internal. BFF never runs the reference MD; do not add substitute reference
+trajectories or an MLIP implementation.
 
-Stage directories and serialized files are interfaces, not incidental output.
-Preserve stable `system_id` and `sample_id` values, fixed artifact names,
-explicit handoffs, and compatibility metadata. Pair systems by ID, never by
-YAML order or display name. When changing a configuration model or artifact,
-update its parser, tests, example YAML, configuration reference, and migration
-notes when the change is user-visible. `tests/test_docs_config.py` fails when
-an accepted key is missing from its stage's options table.
+## Contracts
 
-## External Software Boundaries
+- Stage directories, file names, `system_id` and `sample_id` values, and
+  `samples.yaml`/`specs.yaml` are interfaces. Pair systems by ID, never by
+  order or display name.
+- A new or changed option needs: its parser (through `ConfigSection`), a test,
+  its row in `docs/configuration/` (`tests/test_docs_config.py` checks this),
+  a link in `docs/configuration/index.md` for a new option group, the example
+  YAML if users set it, and a changelog entry if it is user-visible.
+- Campaign files of unfinished samples (`production.cpt`, `.tpr`, `.log`) are
+  what a restart needs: never prune them. Only systems with a
+  `production.done` marker are cleaned up.
+- A reference trajectory has the atoms, in order, of
+  `systems/<system_id>/reference/` written by `bff build`.
 
-BFF orchestrates GROMACS, PLUMED or Colvars, and optionally Slurm. Keep
-external commands at the established topology, I/O, scheduler, and workflow
-boundaries. Tests should use temporary files and mocked process execution
-unless an integration test explicitly requires installed scientific software.
-Do not claim an external simulation succeeded when only staging was tested.
+## External software
 
-The acetate example is a complete template for BFF-owned stages but has an
-intentional external reference-MD boundary. Do not add substitute trajectories or an
-MLIP implementation. Its reference trajectories must retain the documented
-atom-order-matched, virtual-site-free handoff.
+GROMACS, Colvars/PLUMED, Slurm, and CP2K stay at the edges (`gromacs.py`,
+`slurm.py`, `io/`, the labeling script). Tests use temporary files and mocked
+processes; never claim an external run succeeded when only staging was
+tested. On a shared cluster, follow the site's rules for running test suites
+and builds (for example inside a scheduler job).
 
-## Implementation Style
+## Style
 
-- Prefer linear, readable code over small wrappers that obscure control flow.
-- Reuse established domain models and shared helpers when they represent the
-  same concept; avoid speculative abstractions.
-- Keep CLI entry points thin and put reusable behavior in the appropriate
-  workflow or lower-level module.
-- Use `pathlib.Path` and preserve the repository's existing path-resolution
-  semantics. Never assume the caller's home directory or a cluster layout.
-- Raise errors with enough context to identify the stage, system or sample,
-  and offending path or configuration field.
-- Preserve Python 3.10 compatibility and the Ruff configuration in
-  `pyproject.toml`.
-- Add a regression test for a bug fix and test public behavior rather than
-  private implementation details where practical.
+- Linear, readable code; no wrappers that hide control flow and no
+  speculative abstractions. Reuse the existing domain models.
+- `pathlib.Path`; paths in configs resolve relative to the config file.
+- Errors name the stage, system or sample, and the key or path.
+- Python 3.10 compatible; Ruff settings in `pyproject.toml`.
+- Every bug fix gets a regression test of public behavior.
 
-## Examples and Notebooks
+## Examples and notebooks
 
-Example YAML must load through the same configuration parser as the CLI. Keep
-paths relative to the documented stage directory and clearly mark settings
-that users must adapt, especially Slurm setup, executable paths, CPU/GPU
-selection, atom selections, and simulation lengths.
+- `examples/acetate` is deliberately simple: two systems (`acetate` with an
+  RDF QoI, `calcium-acetate` with a Colvars PMF read by `inputs/pmf.py`), one
+  `config.yaml` per stage. The sampling config runs locally; its Slurm block
+  is commented out and `tests/test_examples.py` uncomments and loads it, so
+  keep it valid.
+- Example YAML must load with the CLI's parser; mark settings users must
+  adapt with `ADAPT`.
+- Committed notebooks are output-free. The data notebooks let BFF choose the
+  device (no `cuda` or `DEVICE` in them). Execute notebooks in a temporary
+  copy so generated files stay out of the repository.
 
-Committed notebooks must be output-free. The arbitrary-data and Neon examples
-select `cuda` only when `torch.cuda.is_available()` and otherwise use `cpu`;
-keep the chosen device visible and consistent. Execute notebook changes in a
-temporary copy so generated datasets, models, plots, and checkpoints do not
-pollute the repository.
-
-## Validation
-
-Use the narrowest relevant tests while iterating, then run the applicable
-repository checks before handoff:
+## Checks
 
 ```bash
-python -m compileall -q bff
-ruff check .
-python -m pytest -q
-mkdocs build --strict
+make check                          # compileall, ruff, pytest, mkdocs --strict
+python -m build && python -m twine check dist/*   # packaging changes
+git diff --check
 ```
 
-For packaging or release changes, also run:
+Report exactly what was and was not validated when a check cannot run.
 
-```bash
-python -m build
-python -m twine check dist/*
-```
+## Releases
 
-Run `git diff --check` after documentation or patch-heavy edits. If an external
-dependency or network restriction prevents a gate, report exactly what was and
-was not validated rather than weakening or silently skipping the check.
-
-## Release-Coordinated Files
-
-Keep the version synchronized in `pyproject.toml`, `bff/__init__.py`, and
-`CITATION.cff`. A release normally also updates `CHANGELOG.md`,
-`docs/changelog.md`, examples, and any migration documentation. Before a
-release commit, inspect untracked files so new workflow packages, configs,
-inputs, documentation, and tests are not omitted.
-
+Keep the version identical in `pyproject.toml`, `bff/__init__.py`, and
+`CITATION.cff`; update `CHANGELOG.md` and `docs/changelog.md`. Before a release
+commit, check untracked files so new packages, configs, docs, and tests are
+included.

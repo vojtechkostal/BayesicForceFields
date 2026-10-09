@@ -134,7 +134,8 @@ def _compile(
                 )
             except Exception as exc:
                 raise ValueError(
-                    f"Invalid MDAnalysis selection {constraint.selection!r}."
+                    f"charge_constraints selection {constraint.selection!r} "
+                    f"failed: {exc}"
                 ) from exc
             for group in groups:
                 coefficients = {

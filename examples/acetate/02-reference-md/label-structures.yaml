@@ -1,34 +1,26 @@
-# Optional: label foundation-model MD frames with CP2K for MLIP fine-tuning.
-# Run from 02-reference-md/ with scripts/label_structures.py (not a bff
-# command):
-#   python /path/to/label_structures.py run label-structures.yaml
+# Optional: label MLIP-driven MD frames with CP2K, to fine-tune the MLIP that
+# then runs the reference MD. Run it from this directory with the standalone
+# script (not a bff command, not installed by pip):
+#   python /path/to/BayesicForceFields/scripts/label_structures.py run label-structures.yaml
 #
-# ADAPT: the trajectories are your own foundation-model MD, started from
-# 01-build/systems/<system_id>/reference/ and written in that atom order.
-# Increase n_snapshots for real fine-tuning data.
+# ADAPT: the trajectories are your own MLIP MD, started from
+# ../01-build/systems/<system_id>/reference/coordinates.gro in that atom order.
+# Use far more snapshots for real fine-tuning data.
 cp2k_cmd: cp2k.psmp  # ADAPT: CP2K executable on the compute nodes
-cell_labels: none
 seed: 2026
-split: {train: 0.8, valid: 0.1, test: 0.1}
 
 systems:
   - id: acetate
     topology: ../01-build/systems/acetate/reference/coordinates.gro
-    trajectory: ./foundation/acetate/trajectory.xtc
+    trajectory: ./mlip/acetate.xtc
     n_snapshots: 5
-    cp2k_input: ./cp2k/sp-0.inp
-  - id: acetate-contact
-    topology: ../01-build/systems/acetate-contact/reference/coordinates.gro
-    trajectory: ./foundation/acetate-contact/trajectory.xtc
+    cp2k_input: ./cp2k/sp-acetate.inp
+  - id: calcium-acetate
+    topology: ../01-build/systems/calcium-acetate/reference/coordinates.gro
+    trajectory: ./mlip/calcium-acetate.xtc
     elements: {CAL: Ca}
     n_snapshots: 5
-    cp2k_input: ./cp2k/sp-1.inp
-  - id: acetate-separated
-    topology: ../01-build/systems/acetate-separated/reference/coordinates.gro
-    trajectory: ./foundation/acetate-separated/trajectory.xtc
-    elements: {CAL: Ca}
-    n_snapshots: 5
-    cp2k_input: ./cp2k/sp-2.inp
+    cp2k_input: ./cp2k/sp-calcium-acetate.inp
 
 single_atom_inputs:
   H: ./cp2k/single-atom-h.inp
@@ -36,14 +28,13 @@ single_atom_inputs:
   O: ./cp2k/single-atom-o.inp
   Ca: ./cp2k/single-atom-ca.inp
 
-# ADAPT: partition, resources, and environment for the target cluster.
-slurm:
+slurm:  # ADAPT: resources and environment for your cluster
   max_parallel_jobs: 50
   sbatch:
     time: "04:00:00"
     mem: 20G
     nodes: 1
-    ntasks-per-node: 8
+    ntasks_per_node: 8
   setup:
     - module load cp2k
     - export OMP_NUM_THREADS=1

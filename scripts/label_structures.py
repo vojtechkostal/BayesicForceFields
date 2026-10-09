@@ -67,6 +67,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import yaml
@@ -613,7 +614,7 @@ def write_array_script(cfg: dict, config_path: Path, pending: list[int]) -> Path
 
 
 def sbatch_commands(n_tasks: int, slurm: dict, script: Path) -> list[list[str]]:
-    """One blocking ``sbatch`` call per array of at most ``max_array_size``."""
+    """One ``sbatch`` call per array of at most ``max_array_size``."""
     max_parallel = int(slurm.get("max_parallel_jobs", 100))
     max_size = int(slurm.get("max_array_size", 1000))
     if max_parallel < 1 or max_size < 1:
@@ -624,12 +625,49 @@ def sbatch_commands(n_tasks: int, slurm: dict, script: Path) -> list[list[str]]:
     for offset in range(0, n_tasks, max_size):
         size = min(max_size, n_tasks - offset)
         commands.append([
-            "sbatch", "--wait", "--parsable",
+            "sbatch", "--parsable",
             f"--array=0-{size - 1}%{max_parallel}",
             f"--export=ALL,TASK_OFFSET={offset}",
             str(script),
         ])
     return commands
+
+
+def jobs_in_queue(job_ids: list[str]) -> bool:
+    if not job_ids:
+        return False
+    result = subprocess.run(
+        ["squeue", "-h", "-j", ",".join(job_ids)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        check=False,
+    )
+    return bool(result.stdout.strip())
+
+
+def submit_and_wait(commands: list[list[str]], poll_seconds: int = 60) -> bool:
+    """Submit every array and poll until all of them leave the queue.
+
+    ``sbatch --wait`` is not used here: with per-task runtimes as different as
+    a single-atom energy and a full snapshot, it has been observed to return
+    once some array elements finish while others are still queued or
+    running. Submitting with ``--parsable`` and polling ``squeue`` for the
+    returned job IDs tracks the whole array instead of just part of it.
+    """
+    job_ids = []
+    ok = True
+    for command in commands:
+        result = subprocess.run(
+            command, stdout=subprocess.PIPE, text=True, check=False
+        )
+        if result.returncode != 0:
+            ok = False
+            continue
+        job_ids.append(result.stdout.strip().split(";")[0])
+    while jobs_in_queue(job_ids):
+        time.sleep(poll_seconds)
+    return ok
 
 
 def run_all(config_path: Path) -> None:
@@ -640,14 +678,10 @@ def run_all(config_path: Path) -> None:
     if pending:
         print(f"Submitting {len(pending)} of {len(tasks)} tasks")
         script = write_array_script(cfg, config_path, pending)
-        # Arrays run concurrently; each sbatch --wait returns when its array ends.
-        processes = [
-            subprocess.Popen(command)
-            for command in sbatch_commands(len(pending), cfg["slurm"], script)
-        ]
-        if any([process.wait() != 0 for process in processes]):
+        commands = sbatch_commands(len(pending), cfg["slurm"], script)
+        if not submit_and_wait(commands):
             print(
-                "Some Slurm tasks failed; collecting the finished ones.",
+                "Some Slurm submissions failed; collecting the finished ones.",
                 file=sys.stderr,
             )
     collect(config_path)

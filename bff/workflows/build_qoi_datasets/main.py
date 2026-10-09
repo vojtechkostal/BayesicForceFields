@@ -67,7 +67,9 @@ def _shared_block_metadata(
 
 
 def _mismatch(reference: QoI, block: QoI) -> str | None:
-    """How a sample's QoI differs in shape from the reference's, if it does."""
+    """How a sample's QoI differs from the reference's, if it does."""
+    if block.settings != reference.settings:
+        return f"settings {block.settings!r} differ from {reference.settings!r}"
     if block.labels != reference.labels:
         return f"labels {block.labels!r} differ from {reference.labels!r}"
     if block.n_values != reference.n_values:

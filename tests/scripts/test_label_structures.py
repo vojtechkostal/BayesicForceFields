@@ -1,4 +1,5 @@
 import importlib.util
+import subprocess
 import sys
 from pathlib import Path
 
@@ -141,18 +142,18 @@ def test_run_submits_only_pending_tasks_in_bounded_arrays(
     )
     submitted: list[list[str]] = []
 
-    class FakePopen:
-        def __init__(self, command):
+    def fake_run(command, **kwargs):
+        if command[0] == "sbatch":
             submitted.append(command)
+            return subprocess.CompletedProcess(command, 0, stdout="1;cluster\n")
+        assert command[0] == "squeue"
+        return subprocess.CompletedProcess(command, 0, stdout="")
 
-        def wait(self):
-            return 0
-
-    monkeypatch.setattr(label.subprocess, "Popen", FakePopen)
+    monkeypatch.setattr(label.subprocess, "run", fake_run)
     label.run_all(fn_config)
 
-    assert [command[3] for command in submitted] == ["--array=0-3%2", "--array=0-1%2"]
-    assert submitted[1][4] == "--export=ALL,TASK_OFFSET=4"
+    assert [command[2] for command in submitted] == ["--array=0-3%2", "--array=0-1%2"]
+    assert submitted[1][3] == "--export=ALL,TASK_OFFSET=4"
     output = tmp_path / "labels"
     assert (output / "pending-tasks.txt").read_text().split() == [
         str(index) for index in range(6)
@@ -161,6 +162,34 @@ def test_run_submits_only_pending_tasks_in_bounded_arrays(
     assert "#SBATCH --ntasks=8" in script
     assert "module load cp2k" in script
     assert script.rstrip().endswith('task {} "$TASK_INDEX"'.format(fn_config))
+
+
+def test_run_waits_until_the_whole_array_leaves_the_queue(
+    label, tmp_path, monkeypatch
+) -> None:
+    """Regression test: some array elements (e.g. the quick single-atom
+    tasks) can finish well before others (e.g. snapshot tasks), and
+    ``sbatch --wait`` has been observed to return as soon as part of the
+    array completes. Completion must be tracked until ``squeue`` reports
+    nothing left for the submitted job IDs, not just once.
+    """
+    fn_config = write_config(tmp_path)
+    squeue_calls = 0
+
+    def fake_run(command, **kwargs):
+        nonlocal squeue_calls
+        if command[0] == "sbatch":
+            return subprocess.CompletedProcess(command, 0, stdout="7;cluster\n")
+        assert command[0] == "squeue" and command[-1] == "7"
+        squeue_calls += 1
+        stdout = "7_0 RUNNING\n" if squeue_calls < 3 else ""
+        return subprocess.CompletedProcess(command, 0, stdout=stdout)
+
+    monkeypatch.setattr(label.subprocess, "run", fake_run)
+    monkeypatch.setattr(label.time, "sleep", lambda seconds: None)
+    label.run_all(fn_config)
+
+    assert squeue_calls == 3
 
 
 @pytest.mark.parametrize(

@@ -10,7 +10,23 @@ from bff.topology import TopologyModifier, prepare_universe
 from bff.workflows.campaign.job import write_sample_topology
 
 ROOT = Path(__file__).parents[1]
-ACE_TOP = ROOT / "examples/acetate/inputs/topol.top"
+ACE_TOP = ROOT / "examples/acetate/inputs/acetate.top"
+
+
+def test_write_sample_topology_overwrites_a_stale_file(tmp_path: Path) -> None:
+    """A restart with no checkpoint yet (stopped before production started,
+    e.g. during minimization) may still have a topology from that earlier,
+    never-checkpointed attempt; writing it again must not fail."""
+    specs = Specs({
+        "bounds": {"dihedraltype9_6_180": [0.0, 10.0]},
+        "charge_constraints": [],
+    })
+    fn_out = tmp_path / "topology.top"
+    fn_out.write_text("stale\n")
+
+    write_sample_topology(ACE_TOP, specs, [4.2], fn_out)
+
+    assert Topology(fn_out).moleculetypes[0].dihedrals
 
 
 def test_prepare_universe_suppresses_expected_topology_only_warnings() -> None:

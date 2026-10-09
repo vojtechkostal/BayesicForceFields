@@ -1,0 +1,39 @@
+# Well-tempered metadynamics on the Ca-C2 distance of calcium acetate.
+# Mirrors the reference PLUMED bias in 02-reference-md/calcium-acetate.pmf, so
+# the PMF that GROMACS writes (production.pmf) is directly comparable to it.
+# GROMACS units: nm and kJ/mol.
+
+colvarsTrajFrequency 500
+colvarsRestartFrequency 50000
+
+colvar {
+  name d
+  # Grid of the bias and of the PMF: 100 bins with centers 0.005 ... 0.995 nm.
+  width 0.01
+  lowerBoundary 0.0
+  upperBoundary 1.0
+  distance {
+    group1 { atomNumbers 2 }  # C2, the carboxyl carbon of acetate
+    group2 { atomNumbers 8 }  # CAL, the calcium ion
+  }
+}
+
+# E = 0.5 * forceConstant * ((d - wall) / width)^2 = 1000 (d - wall)^2 kJ/mol
+harmonicWalls {
+  colvars d
+  lowerWalls 0.20
+  upperWalls 0.70
+  forceConstant 0.2
+}
+
+# Hill sigma = hillWidth * width / 2 = 0.01 nm; bias factor 1 + 2000 / 300.
+metadynamics {
+  name metad
+  colvars d
+  hillWidth 2
+  hillWeight 1.0
+  newHillFrequency 500
+  wellTempered on
+  biasTemperature 2000
+  useGrids on
+}

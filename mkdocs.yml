@@ -61,23 +61,23 @@ plugins:
 nav:
   - Home: index.md
   - Installation: installation.md
-  - Architecture: architecture.md
-  - Reference Trajectories: reference-trajectories.md
-  - Results: results.md
-  - Migration: migration.md
-  - Changelog: changelog.md
-  - CLI: cli.md
-  - Configuration:
-      - Conventions: configuration/index.md
+  - How BFF Works: workflow.md
+  - Reference Data: reference-trajectories.md
+  - Settings:
+      - Overview: configuration/index.md
       - Build: configuration/build.md
       - Sample Parameters: configuration/sample-parameters.md
       - Build QoI Datasets: configuration/build-qoi-datasets.md
       - Fit LGP: configuration/fit-lgp.md
       - Learn: configuration/learn.md
       - Validate: configuration/validate.md
+  - Results: results.md
   - Examples:
       - Overview: examples/index.md
-      - Full MD Workflow: examples/acetate.md
-      - Existing Tabular Data: examples/arbitrary-data.md
+      - Acetate (full MD workflow): examples/acetate.md
+      - Arbitrary Data: examples/arbitrary-data.md
       - Neon RDF Inference: examples/neon-mie-lgpmd.md
+  - CLI: cli.md
   - Development: development.md
+  - Migration: migration.md
+  - Changelog: changelog.md
