@@ -1,0 +1,36 @@
+# Same campaign as config.yaml, run as a Slurm job array.
+campaign_dir: ./
+source: ../01-build
+gmx_cmd: gmx_mpi  # ADAPT
+job_scheduler: slurm
+
+systems:  # ADAPT: simulation length
+  - {system_id: acetate, n_steps: 5000}
+  - {system_id: acetate-contact, n_steps: 5000}
+  - {system_id: acetate-separated, n_steps: 5000}
+
+n_samples: 20  # ADAPT: use hundreds for production
+bounds:
+  charge C1: [-1.0, 0.3]
+  charge C2: [0.0, 1.0]
+  charge H1 H2 H3: [-0.3, 0.3]
+  charge O1 O2: [-0.8, -0.3]
+charge_constraints:
+  - selection: resname ACE
+    target: -0.8
+    scope: residue
+    implicit: C2
+
+cleanup: true
+scratch_dir: $SLURM_TMPDIR  # node-local scratch of the compute node
+slurm:  # ADAPT: partition, resources, and GROMACS setup for your cluster
+  max_parallel_jobs: 100
+  sbatch:
+    job_name: ace-sample
+    nodes: 1
+    ntasks_per_node: 1
+    cpus_per_task: 1
+    mem: 1G
+    time: 00:40:00
+  setup:
+    - module load gromacs

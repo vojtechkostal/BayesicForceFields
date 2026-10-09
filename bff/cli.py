@@ -101,14 +101,6 @@ def build(fn_config: Path = config_argument()) -> None:
     run_workflow(fn_config, build_main, "build")
 
 
-@app.command(name="label-snapshots")
-def label_snapshots(fn_config: Path = config_argument()) -> None:
-    """Extract and label trajectory snapshots with CP2K."""
-    from bff.workflows.label_snapshots.main import main as label_main
-
-    run_workflow(fn_config, label_main, "label-snapshots")
-
-
 @app.command(name="sample-parameters")
 def sample_parameters(fn_config: Path = config_argument()) -> None:
     """Sample force-field parameters and run FFMD training simulations."""
@@ -150,19 +142,14 @@ def validate(fn_config: Path = config_argument()) -> None:
 
 
 @app.command(hidden=True)
-def md(fn_config: Path = config_argument()) -> None:
-    """Run molecular dynamics from a configuration file."""
+def md(
+    fn_config: Path = config_argument(),
+    sample_id: str = typer.Argument(..., help="Sample ID in samples.yaml."),
+) -> None:
+    """Run one campaign sample: ``campaign.yaml`` and the sample ID."""
     from bff.workflows.campaign.job import main as md_main
 
-    run_workflow(fn_config, md_main, "md")
-
-
-@app.command(name="label-snapshot-job", hidden=True)
-def label_snapshot_job(fn_config: Path = config_argument()) -> None:
-    """Run one staged CP2K snapshot job from a configuration file."""
-    from bff.workflows.label_snapshots.job import main as run_job
-
-    run_workflow(fn_config, run_job, "label-snapshot-job")
+    run_workflow(fn_config, lambda fn: md_main(fn, sample_id), "md")
 
 
 if __name__ == "__main__":

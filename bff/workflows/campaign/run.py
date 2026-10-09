@@ -2,11 +2,15 @@
 
 Layout of a campaign directory::
 
-    specs.yaml, samples.yaml, run.sh (Slurm)
+    specs.yaml                       parameter specification
+    samples.yaml                     parameters, status, and outputs per sample
+    campaign.yaml                    job settings shared by every sample
     systems/<system_id>/             staged inputs shared by all samples
-    samples/<sample_id>/             config.yaml, run.out, gmx.log
-    tasks.txt (Slurm)                sample IDs of the current job array
-    samples/<sample_id>/<system_id>/ topology and MD outputs
+    samples/<sample_id>/             run.out and gmx.log of the sample's job
+    samples/<sample_id>/<system_id>/ the sample's topology and MD outputs
+    run.sh, tasks.txt, slurm/        Slurm job script, task list, and output
+
+Each sample runs as ``bff md campaign.yaml <sample_id>``.
 """
 
 from __future__ import annotations
@@ -15,6 +19,9 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -22,32 +29,31 @@ import numpy as np
 from gmxtopology import Topology
 
 from ... import slurm
-from ...domain.samples import write_sample_manifest
+from ...domain.samples import load_sample_manifest, write_sample_manifest
 from ...domain.specs import Specs
 from ...io.logs import Logger
 from ...io.utils import compress_results, load_yaml, save_yaml
 from .config import SimulationCampaignConfig, SimulationSystemConfig
 from .job import write_sample_topology
 
+# Campaign files and directories; overwrite removes exactly these.
+OWNED_PATHS = (
+    "specs.yaml",
+    "samples.yaml",
+    "campaign.yaml",
+    "run.sh",
+    "tasks.txt",
+    "systems",
+    "samples",
+    "slurm",
+)
 
-def _system_record(
-    system: SimulationSystemConfig, campaign_dir: Path
-) -> dict[str, Any]:
-    def relative(path: Path | None) -> str | None:
-        return None if path is None else str(path.relative_to(campaign_dir))
+ParameterDraw = Callable[[], tuple[np.ndarray, dict[str, Any]]]
 
-    return {
-        "system_id": system.system_id,
-        "topology": relative(system.topology_path),
-        "coordinates": relative(system.coordinates_path),
-        "mdp": {
-            "em": relative(system.mdp_em_path),
-            "prod": relative(system.mdp_production_path),
-        },
-        "index": relative(system.index_path),
-        "bias": relative(system.bias.input_file),
-        "n_steps": int(system.n_steps),
-    }
+
+def fresh_seed() -> int:
+    """A new random seed, recorded so that the draw can be repeated."""
+    return int(np.random.SeedSequence().generate_state(1)[0])
 
 
 def stage_systems(
@@ -94,194 +100,335 @@ def stage_systems(
     return staged
 
 
-def log_campaign_summary(
+def prepare_campaign_dir(config: SimulationCampaignConfig) -> None:
+    """Refuse to mix campaigns: an existing one must be resumed or overwritten."""
+    campaign_dir = config.campaign_dir
+    if config.resume:
+        if not (campaign_dir / "samples.yaml").is_file():
+            raise FileNotFoundError(
+                f"resume: {campaign_dir} contains no campaign to resume "
+                "(samples.yaml is missing)."
+            )
+        return
+    existing = [name for name in OWNED_PATHS if (campaign_dir / name).exists()]
+    if not existing:
+        return
+    if not config.overwrite:
+        raise FileExistsError(
+            f"{campaign_dir} already contains a campaign ({', '.join(existing)}). "
+            "Set resume: true to continue it or overwrite: true to replace it."
+        )
+    for name in existing:
+        path = campaign_dir / name
+        if path.is_dir():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+
+
+def check_parameter_samples(specs: Specs, parameter_samples: np.ndarray) -> None:
+    """Reject samples that violate the bounds once implicit charges are set."""
+    names = specs.explicit_names
+    if parameter_samples.ndim != 2 or parameter_samples.shape[1] != len(names):
+        raise ValueError(
+            f"Parameter samples must have one column per explicit parameter "
+            f"({len(names)}), got shape {parameter_samples.shape}."
+        )
+    if len(parameter_samples) == 0:
+        raise ValueError("No parameter samples to simulate.")
+    valid = specs.is_valid(parameter_samples)
+    if not valid.all():
+        invalid = np.flatnonzero(~valid)
+        raise ValueError(
+            f"{len(invalid)} of {len(parameter_samples)} parameter samples "
+            f"(indices {invalid[:10].tolist()}) violate the parameter bounds:\n"
+            + specs.violations(parameter_samples[~valid])
+        )
+
+
+def _read_result(campaign_dir: Path, sample_id: str) -> dict[str, Any]:
+    """The ``result.yaml`` a sample's job left, if it has not been collected."""
+    fn_result = campaign_dir / "samples" / sample_id / "result.yaml"
+    return load_yaml(fn_result) if fn_result.is_file() else {}
+
+
+def _resumed_samples(
+    config: SimulationCampaignConfig, specs: Specs
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    """Samples and provenance of the staged campaign that is resumed."""
+    campaign_dir = config.campaign_dir
+    if Specs(campaign_dir / "specs.yaml").to_dict() != specs.to_dict():
+        raise ValueError(
+            "resume: the parameter specification differs from the staged "
+            f"{campaign_dir / 'specs.yaml'}; set overwrite: true to start a new "
+            "campaign."
+        )
+    manifest = load_sample_manifest(campaign_dir / "samples.yaml")
+    staged = {
+        system_id: record["n_steps"]
+        for system_id, record in manifest["systems"].items()
+    }
+    configured = {system.system_id: system.n_steps for system in config.systems}
+    if staged != configured:
+        raise ValueError(
+            f"resume: systems and n_steps {configured} differ from the staged "
+            f"campaign {staged}; set overwrite: true to start a new campaign."
+        )
+    samples = {
+        sample_id: dict(record) | _read_result(campaign_dir, sample_id)
+        for sample_id, record in manifest["samples"].items()
+    }
+    if not samples:
+        raise ValueError(f"resume: {campaign_dir / 'samples.yaml'} has no samples.")
+    return samples, manifest["provenance"]
+
+
+def _write_manifest(
     config: SimulationCampaignConfig,
-    n_samples: int,
-    logger: Logger,
-    *,
-    title: str,
-) -> None:
-    logger.section(title)
-    logger.kv("Log file", config.log)
-    logger.kv("Campaign directory", config.campaign_dir)
-    logger.kv("Systems", len(config.systems))
-    logger.kv("Samples", n_samples)
-    logger.kv("Scheduler", config.job_scheduler)
-    logger.kv("Dispatch", "yes" if config.dispatch else "no (stage only)")
-    logger.kv("Stored outputs", ", ".join(config.store) if config.store else "none")
-    if not config.dispatch:
-        logger.warn("Jobs will only be staged; no MD will be run.")
-    if not config.store:
-        logger.warn("No simulation outputs are configured to be stored.")
-
-
-def collect_campaign(
-    *,
+    specs: Specs,
     samples: dict[str, dict[str, Any]],
-    systems: list[SimulationSystemConfig],
-    campaign_dir: Path,
-    store: tuple[str, ...] = (),
-    cleanup: bool = False,
-    compress: bool = False,
+    provenance: dict[str, Any],
 ) -> None:
-    """Merge per-sample ``result.yaml`` files into ``samples.yaml``.
-
-    With ``cleanup`` only files whose suffix is listed in ``store`` remain in
-    the per-system sample directories.
-    """
-    records: dict[str, Any] = {}
-    for sample_id, sample in samples.items():
-        fn_result = campaign_dir / "samples" / sample_id / "result.yaml"
-        result = load_yaml(fn_result) if fn_result.is_file() else {}
-        fn_result.unlink(missing_ok=True)
-        records[sample_id] = {
-            "params": sample["params"],
-            "job_id": sample.get("job_id"),
-            "status": result.get("status", sample["status"]),
-            "outputs": result.get("outputs", []),
-        }
     write_sample_manifest(
-        [_system_record(system, campaign_dir) for system in systems],
-        records,
-        campaign_dir / "samples.yaml",
+        config.campaign_dir / "samples.yaml",
+        parameter_names=specs.explicit_names,
+        systems={system.system_id: system.n_steps for system in config.systems},
+        samples={
+            sample_id: {
+                "params": sample["params"],
+                "status": sample["status"],
+                "job_id": sample.get("job_id"),
+                "outputs": sample.get("outputs"),
+            }
+            for sample_id, sample in samples.items()
+        },
+        provenance=provenance,
     )
 
-    if cleanup:
-        keep = {f".{suffix}" for suffix in store}
-        for sample_id in samples:
-            for system in systems:
-                system_dir = campaign_dir / "samples" / sample_id / system.system_id
-                for path in system_dir.glob("*"):
-                    if path.is_dir():
-                        shutil.rmtree(path)
-                    elif path.suffix not in keep:
-                        path.unlink()
-    if compress:
-        compress_results(campaign_dir)
+
+def _cleanup(
+    campaign_dir: Path,
+    samples: dict[str, dict[str, Any]],
+    systems: list[SimulationSystemConfig],
+    store: tuple[str, ...],
+) -> None:
+    """Keep only stored suffixes and each sample's topology."""
+    keep = {f".{suffix}" for suffix in store} | {".top"}
+    for sample_id in samples:
+        for system in systems:
+            system_dir = campaign_dir / "samples" / sample_id / system.system_id
+            for path in system_dir.glob("*"):
+                if path.is_dir():
+                    shutil.rmtree(path)
+                elif path.suffix not in keep:
+                    path.unlink()
 
 
-def _result_status(campaign_dir: Path, sample_id: str) -> str | None:
-    fn_result = campaign_dir / "samples" / sample_id / "result.yaml"
-    return load_yaml(fn_result).get("status") if fn_result.is_file() else None
+def _run_local(
+    fn_campaign: Path,
+    sample_ids: list[str],
+    *,
+    max_parallel_jobs: int,
+    logger: Logger,
+) -> None:
+    """Run samples as ``bff md`` processes, at most ``max_parallel_jobs`` at once."""
+    campaign_dir = fn_campaign.parent
+
+    def run(sample_id: str) -> int:
+        sample_dir = campaign_dir / "samples" / sample_id
+        sample_dir.mkdir(parents=True, exist_ok=True)
+        with open(sample_dir / "run.out", "w", encoding="utf-8") as output:
+            return subprocess.run(
+                [sys.executable, "-m", "bff.cli", "md", str(fn_campaign), sample_id],
+                cwd=campaign_dir,
+                stdout=output,
+                stderr=subprocess.STDOUT,
+                check=False,
+            ).returncode
+
+    n_total = len(sample_ids)
+    width = len(str(n_total))
+    logger.progress_status(
+        f"Running MD: {0:>{width}d}/{n_total}",
+        0,
+        n_total,
+        overwrite=True,
+        write_file=False,
+    )
+    with ThreadPoolExecutor(max_workers=max_parallel_jobs) as pool:
+        futures = {pool.submit(run, sample_id): sample_id for sample_id in sample_ids}
+        for done, future in enumerate(as_completed(futures), start=1):
+            sample_id = futures[future]
+            returncode = future.result()
+            if returncode != 0:
+                logger.warn(
+                    f"Sample {sample_id} failed (exit code {returncode}); see "
+                    f"samples/{sample_id}/run.out."
+                )
+            logger.progress_status(
+                f"Running MD: {done:>{width}d}/{n_total}",
+                done,
+                n_total,
+                overwrite=True,
+                write_file=False,
+            )
+
+
+def _log_summary(
+    config: SimulationCampaignConfig,
+    logger: Logger,
+    *,
+    specs: Specs,
+    n_samples: int,
+    n_pending: int,
+    provenance: dict[str, Any],
+) -> None:
+    logger.kv("Config", config.fn_config)
+    logger.kv("Campaign", config.campaign_dir)
+    logger.kv("Systems", ", ".join(system.system_id for system in config.systems))
+    logger.kv(
+        "Samples",
+        f"{n_samples} ({n_pending} to run)" if config.resume else n_samples,
+    )
+    # Full paths and hashes are in samples.yaml; show the settings briefly.
+    details = [
+        f"{key} {Path(value).name if key in ('parameters', 'posterior') else value}"
+        for key, value in provenance.items()
+        if key not in {"source", "specs"} and not key.endswith("_sha256")
+    ]
+    logger.kv("Parameters", ", ".join([str(provenance.get("source")), *details]))
+    scheduler = config.job_scheduler
+    if scheduler == "local" and config.local_max_parallel_jobs > 1:
+        scheduler += f", {config.local_max_parallel_jobs} at once"
+    if not config.dispatch:
+        scheduler += " (stage only)"
+    logger.kv("Scheduler", scheduler)
+    logger.kv("Stored outputs", ", ".join(config.store) or "none")
+    for name, (lower, upper) in specs.bounds.items():
+        role = "implicit" if name in specs.implicit_names else "sampled"
+        logger.info(f"{name}: [{lower:g}, {upper:g}] {role}", level=2)
+    if not config.dispatch:
+        logger.warn("Samples are only staged; no MD is run.")
+    logger.blank()
 
 
 def run_campaign(
     config: SimulationCampaignConfig,
     *,
-    fn_specs: Path,
-    parameter_samples: np.ndarray,
-    logger: Logger,
+    stage: str,
+    title: str,
+    specs: Specs,
+    draw: ParameterDraw,
 ) -> None:
-    """Stage every sample and run it locally or as one Slurm job array."""
+    """Stage and run a campaign over parameter samples, or resume one.
+
+    ``draw`` returns the explicit parameter samples and their provenance; it
+    is not called when resuming, which reuses the staged samples and runs
+    only those not yet completed.
+    """
+    started = time.perf_counter()
     campaign_dir = config.campaign_dir
-    campaign_dir.mkdir(parents=True, exist_ok=True)
-    systems = stage_systems(config.systems, campaign_dir)
-    write_sample_manifest(
-        [_system_record(system, campaign_dir) for system in systems],
-        {},
-        campaign_dir / "samples.yaml",
+    if config.resume:
+        prepare_campaign_dir(config)
+        samples, provenance = _resumed_samples(config, specs)
+    else:
+        parameter_samples, provenance = draw()
+        parameter_samples = np.asarray(parameter_samples, dtype=float)
+        # Checked before an overwrite deletes the previous campaign.
+        check_parameter_samples(specs, parameter_samples)
+        prepare_campaign_dir(config)
+        campaign_dir.mkdir(parents=True, exist_ok=True)
+        pad = len(str(len(parameter_samples)))
+        samples = {
+            f"{index:0{pad}d}": {"params": params.tolist(), "status": "staged"}
+            for index, params in enumerate(parameter_samples)
+        }
+        specs.write(campaign_dir / "specs.yaml")
+    pending = [
+        sample_id
+        for sample_id, sample in samples.items()
+        if sample["status"] != "completed"
+    ]
+
+    logger = Logger(stage, str(config.log), mode="a" if config.resume else "w")
+    logger.section(title)
+    _log_summary(
+        config,
+        logger,
+        specs=specs,
+        n_samples=len(samples),
+        n_pending=len(pending),
+        provenance=provenance,
     )
 
-    n_total = len(parameter_samples)
-    pad = len(str(max(n_total, 1)))
+    systems = stage_systems(config.systems, campaign_dir)
     max_hours = None
     if config.job_scheduler == "slurm":
         # Leave 10% of the time limit for setup, minimization, and copying.
         limit = slurm.time_limit_hours((config.slurm.sbatch or {}).get("time"))
         max_hours = None if limit is None else 0.9 * limit
-    samples: dict[str, dict[str, Any]] = {}
-    for index, params in enumerate(np.asarray(parameter_samples, dtype=float)):
-        sample_id = f"{index:0{pad}d}"
-        sample_dir = campaign_dir / "samples" / sample_id
-        sample_dir.mkdir(parents=True, exist_ok=True)
-        save_yaml(
-            {
-                "sample_id": sample_id,
-                "params": params.tolist(),
-                "campaign_dir": str(campaign_dir),
-                "fn_specs": str(fn_specs.resolve()),
-                "gmx_cmd": config.gmx_cmd,
-                "store": list(config.store),
-                "cleanup": config.cleanup,
-                "scratch_dir": config.scratch_dir,
-                "max_hours": max_hours,
-                "systems": [system.to_dict() for system in systems],
-            },
-            sample_dir / "config.yaml",
-        )
-        samples[sample_id] = {
-            "params": params.tolist(),
-            "status": "staged" if not config.dispatch else "failed",
-        }
+    fn_campaign = campaign_dir / "campaign.yaml"
+    save_yaml(
+        {
+            "gmx_cmd": config.gmx_cmd,
+            "store": list(config.store),
+            "cleanup": config.cleanup,
+            "scratch_dir": config.scratch_dir,
+            "max_hours": max_hours,
+            "systems": [system.to_dict(campaign_dir) for system in systems],
+        },
+        fn_campaign,
+    )
+    for sample_id in pending:
+        # Until its job reports otherwise, a dispatched sample has failed.
+        samples[sample_id]["status"] = "failed" if config.dispatch else "staged"
+    _write_manifest(config, specs, samples, provenance)
+    logger.done("Staged", detail=f"{len(pending)} sample(s) in {campaign_dir}")
 
     fn_script = campaign_dir / "run.sh"
     fn_tasks = campaign_dir / "tasks.txt"
     if config.job_scheduler == "slurm":
-        samples_dir = shlex.quote(str(campaign_dir / "samples"))
         slurm.write_task_script(
             fn_script,
             config=config.slurm,
             sbatch={"output": campaign_dir / "slurm" / "%A_%a.out"},
             commands=[
                 f'SAMPLE_ID=$(sed -n "$((TASK_ID + 1))p" {shlex.quote(str(fn_tasks))})',
-                f'SAMPLE_DIR={samples_dir}/"$SAMPLE_ID"',
+                f'SAMPLE_DIR={shlex.quote(str(campaign_dir / "samples"))}/"$SAMPLE_ID"',
+                'mkdir -p "$SAMPLE_DIR"',
                 'exec >>"$SAMPLE_DIR/run.out" 2>&1',
-                slurm.bff_command("md", '"$SAMPLE_DIR/config.yaml"'),
+                slurm.bff_command("md", shlex.quote(str(fn_campaign)), '"$SAMPLE_ID"'),
             ],
         )
-        fn_tasks.write_text("".join(f"{sample_id}\n" for sample_id in samples))
+        fn_tasks.write_text("".join(f"{sample_id}\n" for sample_id in pending))
         (campaign_dir / "slurm").mkdir(exist_ok=True)
 
-    action = "Running MD" if config.dispatch else "Staging samples"
-    finished = False
     try:
-        if not config.dispatch:
-            specs = Specs(fn_specs)
-            for sample_id, sample in samples.items():
+        if not pending:
+            logger.info("Every sample is already completed.")
+        elif not config.dispatch:
+            for sample_id in pending:
                 for system in systems:
                     system_dir = campaign_dir / "samples" / sample_id / system.system_id
                     system_dir.mkdir(parents=True, exist_ok=True)
                     write_sample_topology(
                         system.topology_path,
                         specs,
-                        sample["params"],
+                        samples[sample_id]["params"],
                         system_dir / "topology.top",
                     )
             if config.job_scheduler == "slurm":
-                array = slurm.array_option(n_total, config.slurm.max_parallel_jobs)
+                array = slurm.array_option(len(pending), config.slurm.max_parallel_jobs)
                 logger.info(f"Submit with: sbatch --array={array} {fn_script}")
         elif config.job_scheduler == "local":
-            for index, sample_id in enumerate(samples):
-                logger.progress_status(
-                    f"{action}: {index:>{pad}d}/{n_total}",
-                    index,
-                    n_total,
-                    overwrite=True,
-                    write_file=False,
-                )
-                sample_dir = campaign_dir / "samples" / sample_id
-                with open(sample_dir / "run.out", "w", encoding="utf-8") as output:
-                    completed = subprocess.run(
-                        [
-                            sys.executable,
-                            "-m",
-                            "bff.cli",
-                            "md",
-                            str(sample_dir / "config.yaml"),
-                        ],
-                        cwd=campaign_dir,
-                        stdout=output,
-                        stderr=subprocess.STDOUT,
-                        check=False,
-                    )
-                if completed.returncode != 0:
-                    logger.warn(
-                        f"Sample {sample_id} failed with exit code "
-                        f"{completed.returncode}; see {sample_dir / 'run.out'}."
-                    )
+            _run_local(
+                fn_campaign,
+                pending,
+                max_parallel_jobs=config.local_max_parallel_jobs,
+                logger=logger,
+            )
         else:
             # Samples stopped by the time limit continue from their checkpoints.
-            pending = list(samples)
             for restart in range(config.max_restarts + 1):
                 if restart:
                     logger.info(
@@ -297,18 +444,31 @@ def run_campaign(
                 pending = [
                     sample_id
                     for sample_id in pending
-                    if _result_status(campaign_dir, sample_id) == "incomplete"
+                    if _read_result(campaign_dir, sample_id).get("status")
+                    == "incomplete"
                 ]
                 if not pending:
                     break
-        finished = True
-        logger.done(action, detail=f"{n_total}/{n_total}")
     finally:
-        collect_campaign(
-            samples=samples,
-            systems=systems,
-            campaign_dir=campaign_dir,
-            store=config.store,
-            cleanup=config.cleanup and config.dispatch and finished,
-            compress=config.compress and config.dispatch and finished,
-        )
+        # Merge the jobs' result.yaml files into samples.yaml.
+        for sample_id, sample in samples.items():
+            sample.update(_read_result(campaign_dir, sample_id))
+            (campaign_dir / "samples" / sample_id / "result.yaml").unlink(
+                missing_ok=True
+            )
+        _write_manifest(config, specs, samples, provenance)
+    if config.dispatch:
+        if config.cleanup:
+            _cleanup(campaign_dir, samples, systems, config.store)
+        if config.compress:
+            compress_results(campaign_dir)
+
+    counts = {
+        status: sum(sample["status"] == status for sample in samples.values())
+        for status in ("completed", "incomplete", "failed", "staged")
+    }
+    summary = ", ".join(f"{n} {status}" for status, n in counts.items() if n)
+    elapsed = time.perf_counter() - started
+    if counts["failed"] or counts["incomplete"]:
+        logger.warn(f"{summary}; rerun with resume: true to retry the rest.")
+    logger.done(title, detail=f"{summary} | {elapsed:.1f} s | {campaign_dir}")

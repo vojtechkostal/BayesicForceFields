@@ -1,5 +1,6 @@
 """Simulation campaigns shared by sample-parameters and validate."""
 
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -8,8 +9,7 @@ import pytest
 import yaml
 
 from bff.domain.bias import BiasSpec
-from bff.domain.systems import BuildSystemMetadata, write_build_system_metadata
-from bff.io.logs import Logger
+from bff.domain.specs import Specs
 from bff.io.mdp import read_mdp
 from bff.slurm import SlurmConfig
 from bff.workflows.campaign import job as job_module
@@ -19,12 +19,12 @@ from bff.workflows.campaign.config import (
     SimulationSystemConfig,
 )
 from bff.workflows.campaign.job import trajectory_is_complete
-from bff.workflows.campaign.run import collect_campaign, run_campaign
+from bff.workflows.campaign.run import run_campaign
 from bff.workflows.sample_parameters.config import SampleParametersConfig
 from bff.workflows.validate.config import ValidateConfig
 
 ROOT = Path(__file__).parents[2]
-ACE_TOP = ROOT / "examples/acetate/inputs/common/topol.top"
+ACE_TOP = ROOT / "examples/acetate/inputs/topol.top"
 
 
 def _write(path: Path, text: str = "data\n") -> Path:
@@ -64,6 +64,16 @@ def _campaign(tmp_path: Path, **overrides) -> SimulationCampaignConfig:
     return SimulationCampaignConfig(**(options | overrides))
 
 
+def _empty_draw(n_samples: int) -> dict:
+    """run_campaign arguments for samples of a specification without parameters."""
+    return dict(
+        stage="sample-parameters",
+        title="Campaign",
+        specs=Specs({"bounds": {}, "charge_constraints": []}),
+        draw=lambda: (np.zeros((n_samples, 0)), {"source": "test"}),
+    )
+
+
 def _build_stage(root: Path, *, both_biases: bool = False) -> Path:
     system_dir = root / "systems" / "acetate"
     for name in (
@@ -77,18 +87,6 @@ def _build_stage(root: Path, *, both_biases: bool = False) -> Path:
         "production.xtc",
     ):
         _write(system_dir / name)
-    write_build_system_metadata(
-        root,
-        "acetate",
-        BuildSystemMetadata(
-            system_name=None,
-            charge=-1,
-            multiplicity=1,
-            box=(10.0, 10.0, 10.0, 90.0, 90.0, 90.0),
-            maxwarn=0,
-            production_steps=100,
-        ),
-    )
     if both_biases:
         _write(system_dir / "bias.colvars.dat")
         _write(system_dir / "bias.plumed.dat")
@@ -179,19 +177,13 @@ def _md_job(
         systems=[system],
     )
     config = job_module.MDJobConfig(**(options | overrides))
-    monkeypatch.setattr(job_module.MDJobConfig, "load", lambda _: config)
+    monkeypatch.setattr(job_module.MDJobConfig, "load", lambda *_: config)
     monkeypatch.setattr(job_module, "check_gmx_available", lambda _: None)
     monkeypatch.setattr(job_module, "Specs", lambda _: None)
     monkeypatch.setattr(
         job_module,
         "write_sample_topology",
         lambda fn_topol, specs, params, fn_out: Path(fn_out).write_text("top\n"),
-    )
-    # A trajectory is complete once a fake mdrun without -maxh has written it.
-    monkeypatch.setattr(
-        job_module,
-        "trajectory_is_complete",
-        lambda xtc, *_: xtc.is_file() and xtc.read_text() == "complete\n",
     )
     commands = []
 
@@ -202,15 +194,18 @@ def _md_job(
             deffnm.with_suffix(".gro").write_text("gro\n")
             if deffnm.name != "production":
                 return
-            stopped = "-maxh" in command
-            deffnm.with_suffix(".xtc").write_text(
-                "partial\n" if stopped else "complete\n"
-            )
+            # Like mdrun: a final checkpoint at step 10 (nsteps), or earlier
+            # when -maxh stops the run.
+            step = 4 if "-maxh" in command else 10
+            with deffnm.with_suffix(".log").open("a") as log:
+                log.write(f"Writing checkpoint, step {step} at Mon Jan  1\n\n")
+            if "xtc" in config.store:
+                deffnm.with_suffix(".xtc").write_text("frames\n")
             deffnm.with_suffix(".cpt").write_text("checkpoint\n")
             Path(kwargs["cwd"], "production.pmf").write_text("profile\n")
 
     monkeypatch.setattr("bff.gromacs.subprocess.run", fake_run)
-    job_module.main(tmp_path / "config.yaml")
+    job_module.main(tmp_path / "campaign.yaml", "000")
     return campaign_dir / "samples" / "000", commands
 
 
@@ -232,9 +227,10 @@ def test_md_job_runs_gromacs_inside_the_sample_system_directory(
     assert (sample_dir / "gmx.log").is_file()
     result = yaml.safe_load((sample_dir / "result.yaml").read_text())
     assert result["status"] == "completed"
-    assert result["outputs"][0]["trajectory"] == "samples/000/acetate/production.xtc"
-    assert result["outputs"][0]["inputs"] == {
-        "pmf": "samples/000/acetate/production.pmf"
+    assert result["outputs"]["acetate"] == {
+        "topology": "samples/000/acetate/topology.top",
+        "trajectory": "samples/000/acetate/production.xtc",
+        "pmf": "samples/000/acetate/production.pmf",
     }
 
 
@@ -249,8 +245,10 @@ def test_md_job_in_scratch_copies_back_only_stored_files(
     assert all(command[-1].startswith(str(scratch)) for command in commands)
     assert list(scratch.iterdir()) == []
     assert sorted(path.name for path in (sample_dir / "acetate").iterdir()) == [
+        "production.done",
         "production.pmf",
         "production.xtc",
+        "topology.top",
     ]
     assert (sample_dir / "gmx.log").is_file()
     result = yaml.safe_load((sample_dir / "result.yaml").read_text())
@@ -296,6 +294,30 @@ def test_md_job_stopped_by_time_limit_is_incomplete_and_restartable(
     assert commands == []
 
 
+def test_md_job_completes_without_a_stored_trajectory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    scratch = tmp_path / "scratch"
+    sample_dir, _ = _md_job(
+        tmp_path, monkeypatch, scratch_dir=str(scratch), cleanup=True, store=("pmf",)
+    )
+
+    result = yaml.safe_load((sample_dir / "result.yaml").read_text())
+    assert result["status"] == "completed"
+    assert "trajectory" not in result["outputs"]["acetate"]
+    assert sorted(path.name for path in (sample_dir / "acetate").iterdir()) == [
+        "production.done",
+        "production.pmf",
+        "topology.top",
+    ]
+
+    # Rerunning the sample skips the finished system despite the pruned files.
+    _, commands = _md_job(
+        tmp_path, monkeypatch, scratch_dir=str(scratch), cleanup=True, store=("pmf",)
+    )
+    assert commands == []
+
+
 @pytest.mark.parametrize(("n_frames", "complete"), [(101, True), (100, False)])
 def test_trajectory_is_complete_counts_saved_frames(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, n_frames: int, complete: bool
@@ -322,75 +344,46 @@ def test_trajectory_without_compressed_output_is_incomplete(tmp_path: Path) -> N
     assert trajectory_is_complete(trajectory, mdp, 1000) is False
 
 
-def _sample_files(campaign_dir: Path, system_ids: tuple[str, ...]) -> None:
-    sample_dir = campaign_dir / "samples" / "0"
-    for name in ("config.yaml", "run.out", "gmx.log"):
-        _write(sample_dir / name)
-    outputs = []
-    for system_id in system_ids:
-        for name in ("production.xtc", "production.log", "topology.top"):
-            _write(sample_dir / system_id / name)
-        outputs.append(
-            {
-                "system_id": system_id,
-                "trajectory": f"samples/0/{system_id}/production.xtc",
-                "inputs": {},
-            }
-        )
-    _write(
-        sample_dir / "result.yaml",
-        yaml.safe_dump({"sample_id": "0", "status": "completed", "outputs": outputs}),
-    )
-
-
 @pytest.mark.parametrize("cleanup", [False, True])
-def test_collect_campaign_merges_results_and_cleans_up(
-    tmp_path: Path, cleanup: bool
+def test_campaign_merges_job_results_and_cleans_up(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cleanup: bool
 ) -> None:
-    campaign_dir = tmp_path / "campaign"
-    systems = [
-        _system(campaign_dir / "systems" / system_id, system_id)
-        for system_id in ("acetate", "calcium")
-    ]
-    systems = [
-        SimulationSystemConfig(
-            **(
-                vars(system)
-                | {
-                    "topology_path": _write(
-                        campaign_dir / "systems" / system.system_id / "topology.top"
-                    )
+    config = _campaign(tmp_path, cleanup=cleanup, store=("xtc",))
+
+    def fake_md(command, **kwargs):
+        fn_campaign, sample_id = Path(command[-2]), command[-1]
+        system_dir = fn_campaign.parent / "samples" / sample_id / "acetate"
+        for name in ("production.xtc", "production.log", "topology.top"):
+            _write(system_dir / name)
+        _write(
+            system_dir.parent / "result.yaml",
+            yaml.safe_dump(
+                {
+                    "status": "completed",
+                    "outputs": {
+                        "acetate": {
+                            "topology": f"samples/{sample_id}/acetate/topology.top",
+                            "trajectory": f"samples/{sample_id}/acetate/production.xtc",
+                        }
+                    },
                 }
-            )
+            ),
         )
-        for system in systems
-    ]
-    _sample_files(campaign_dir, ("acetate", "calcium"))
+        return SimpleNamespace(returncode=0)
 
-    collect_campaign(
-        samples={"0": {"params": [0.5], "status": "failed"}},
-        systems=systems,
-        campaign_dir=campaign_dir,
-        store=("xtc",),
-        cleanup=cleanup,
-    )
+    monkeypatch.setattr(run_module.subprocess, "run", fake_md)
+    run_campaign(config, **_empty_draw(1))
 
+    campaign_dir = config.campaign_dir
     manifest = yaml.safe_load((campaign_dir / "samples.yaml").read_text())
-    assert manifest["samples"]["0"]["status"] == "completed"
-    sample_dir = campaign_dir / "samples" / "0"
-    assert {path.name for path in sample_dir.iterdir()} == {
-        "acetate",
-        "calcium",
-        "config.yaml",
-        "run.out",
-        "gmx.log",
-    }
-    expected = (
-        {"production.xtc"}
-        if cleanup
-        else {"production.xtc", "production.log", "topology.top"}
-    )
-    assert {path.name for path in (sample_dir / "acetate").iterdir()} == expected
+    record = manifest["samples"]["0"]
+    assert record["status"] == "completed"
+    assert record["outputs"]["acetate"]["trajectory"].endswith("production.xtc")
+    assert not (campaign_dir / "samples" / "0" / "result.yaml").exists()
+    expected = {"production.xtc", "topology.top"}
+    if not cleanup:
+        expected.add("production.log")
+    assert {p.name for p in (campaign_dir / "samples/0/acetate").iterdir()} == expected
 
 
 def test_local_campaign_records_failures_and_continues(
@@ -400,25 +393,18 @@ def test_local_campaign_records_failures_and_continues(
     calls = []
 
     def fake_run(command, **kwargs):
-        sample_dir = Path(command[-1]).parent
-        calls.append(sample_dir.name)
-        if sample_dir.name == "0":
+        sample_id = command[-1]
+        calls.append(sample_id)
+        if sample_id == "0":
             return SimpleNamespace(returncode=1)
         _write(
-            sample_dir / "result.yaml",
-            yaml.safe_dump({"sample_id": "1", "status": "completed", "outputs": []}),
+            config.campaign_dir / "samples" / sample_id / "result.yaml",
+            yaml.safe_dump({"status": "completed", "outputs": {}}),
         )
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(run_module.subprocess, "run", fake_run)
-    logger = Logger("sample-parameters", fn_log=config.log, mode="w", color=False)
-
-    run_campaign(
-        config,
-        fn_specs=tmp_path / "specs.yaml",
-        parameter_samples=np.zeros((2, 0)),
-        logger=logger,
-    )
+    run_campaign(config, **_empty_draw(2))
 
     assert calls == ["0", "1"]
     samples = yaml.safe_load((config.campaign_dir / "samples.yaml").read_text())
@@ -426,10 +412,10 @@ def test_local_campaign_records_failures_and_continues(
     assert samples["samples"]["1"]["status"] == "completed"
     console = capsys.readouterr().out
     assert "Running MD: 0/2" in console
-    assert "Sample 0 failed with exit code 1" in console
+    assert "Sample 0 failed (exit code 1)" in console
     log = config.log.read_text()
     assert "Running MD: 0/2" not in log
-    assert "Running MD: Done. | 2/2" in log
+    assert "Campaign: Done. | 1 completed, 1 failed" in log
 
 
 def test_slurm_campaign_runs_samples_as_job_arrays(
@@ -451,12 +437,7 @@ def test_slurm_campaign_runs_samples_as_job_arrays(
     monkeypatch.setattr(run_module.slurm, "submit", fake_submit)
     monkeypatch.setattr(run_module.slurm, "wait_for_array", lambda *a, **k: None)
 
-    run_campaign(
-        config,
-        fn_specs=tmp_path / "specs.yaml",
-        parameter_samples=np.zeros((12, 0)),
-        logger=Logger("validate", verbose=False),
-    )
+    run_campaign(config, **_empty_draw(12))
 
     assert submitted == [("0-4%2", 0), ("0-4%2", 5), ("0-1%2", 10)]
     script = (config.campaign_dir / "run.sh").read_text()
@@ -467,8 +448,8 @@ def test_slurm_campaign_runs_samples_as_job_arrays(
     assert 'exec >>"$SAMPLE_DIR/run.out" 2>&1' in script
     tasks = (config.campaign_dir / "tasks.txt").read_text().split()
     assert tasks == [f"{index:02d}" for index in range(12)]
-    assert ' -m bff.cli md "$SAMPLE_DIR/config.yaml"' in script
-    assert (config.campaign_dir / "samples" / "11" / "config.yaml").is_file()
+    assert script.rstrip().endswith('campaign.yaml "$SAMPLE_ID"')
+    assert (config.campaign_dir / "campaign.yaml").is_file()
     manifest = yaml.safe_load((config.campaign_dir / "samples.yaml").read_text())
     assert manifest["samples"]["03"]["job_id"] == "101_3"
     assert manifest["samples"]["11"]["job_id"] == "103_1"
@@ -495,29 +476,21 @@ def test_slurm_campaign_resubmits_samples_stopped_by_the_time_limit(
             )
             _write(
                 script.parent / "samples" / sample_id / "result.yaml",
-                yaml.safe_dump({"status": status, "outputs": []}),
+                yaml.safe_dump({"status": status, "outputs": {}}),
             )
         return [f"{len(rounds)}_{index}" for index in range(n_tasks)]
 
     monkeypatch.setattr(run_module.slurm, "run_tasks", fake_run_tasks)
-    run_campaign(
-        config,
-        fn_specs=tmp_path / "specs.yaml",
-        parameter_samples=np.zeros((4, 0)),
-        logger=Logger("sample-parameters", verbose=False),
-    )
+    run_campaign(config, **_empty_draw(4))
 
     assert rounds == [["0", "1", "2", "3"], ["2"], ["2"]]
-    job = yaml.safe_load(
-        (config.campaign_dir / "samples" / "2" / "config.yaml").read_text()
-    )
+    job = yaml.safe_load((config.campaign_dir / "campaign.yaml").read_text())
     assert job["max_hours"] == pytest.approx(3.6)
     manifest = yaml.safe_load((config.campaign_dir / "samples.yaml").read_text())
-    assert manifest["samples"]["2"] | {"params": None} == {
-        "params": None,
+    assert manifest["samples"]["2"] == {
+        "params": [],
         "job_id": "3_0",
         "status": "completed",
-        "outputs": [],
     }
 
 
@@ -529,12 +502,7 @@ def test_staged_campaign_writes_sample_topologies_without_running(
         run_module.subprocess, "run", lambda *a, **k: pytest.fail("MD was run")
     )
 
-    run_campaign(
-        config,
-        fn_specs=tmp_path / "specs.yaml",
-        parameter_samples=np.zeros((2, 0)),
-        logger=Logger("sample-parameters", verbose=False),
-    )
+    run_campaign(config, **_empty_draw(2))
 
     for sample_id in ("0", "1"):
         assert (
@@ -542,3 +510,43 @@ def test_staged_campaign_writes_sample_topologies_without_running(
         ).is_file()
     manifest = yaml.safe_load((config.campaign_dir / "samples.yaml").read_text())
     assert manifest["samples"]["0"]["status"] == "staged"
+
+
+def test_local_campaign_runs_samples_in_parallel(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = _campaign(tmp_path, local_max_parallel_jobs=2)
+    # Both samples must be running at once to pass the barrier.
+    barrier = threading.Barrier(2, timeout=10)
+
+    def fake_run(command, **kwargs):
+        barrier.wait()
+        _write(
+            config.campaign_dir / "samples" / command[-1] / "result.yaml",
+            yaml.safe_dump({"status": "completed", "outputs": {}}),
+        )
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(run_module.subprocess, "run", fake_run)
+    run_campaign(config, **_empty_draw(2))
+
+    manifest = yaml.safe_load((config.campaign_dir / "samples.yaml").read_text())
+    assert {record["status"] for record in manifest["samples"].values()} == {
+        "completed"
+    }
+
+
+def test_overwrite_replaces_only_campaign_files(tmp_path: Path) -> None:
+    config = _campaign(tmp_path, dispatch=False)
+    run_campaign(config, **_empty_draw(3))
+    notes = _write(config.campaign_dir / "config.yaml", "kept\n")
+
+    with pytest.raises(FileExistsError, match="already contains a campaign"):
+        run_campaign(config, **_empty_draw(1))
+    overwrite = _campaign(tmp_path, dispatch=False, overwrite=True)
+    run_campaign(overwrite, **_empty_draw(1))
+
+    assert notes.read_text() == "kept\n"
+    assert sorted(p.name for p in (config.campaign_dir / "samples").iterdir()) == [
+        "0"
+    ]

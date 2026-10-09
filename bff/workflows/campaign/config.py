@@ -7,15 +7,9 @@ from pathlib import Path
 from typing import Any, Literal
 
 from ...domain.bias import BiasSpec
-from ...domain.systems import (
-    load_build_system_metadata,
-    resolve_explicit_inputs,
-    validate_system_id,
-    validate_unique_system_ids,
-)
-from ...io.utils import load_yaml
-from ...slurm import SlurmConfig, load_slurm_config
-from ..config import PathLike, check_keys, resolve_path, strict_bool
+from ...domain.systems import validate_system_id, validate_unique_system_ids
+from ...slurm import SlurmConfig
+from ..config import ConfigSection, PathLike, load_config
 
 SchedulerName = Literal["local", "slurm"]
 CAMPAIGN_KEYS = {
@@ -31,6 +25,9 @@ CAMPAIGN_KEYS = {
     "store",
     "scratch_dir",
     "max_restarts",
+    "overwrite",
+    "resume",
+    "local",
     "slurm",
 }
 INPUT_ROLES = {"topology", "coordinates", "index", "mdp_em", "mdp_production", "bias"}
@@ -47,19 +44,21 @@ class SimulationSystemConfig:
     bias: BiasSpec
     n_steps: int
 
-    def to_dict(self) -> dict[str, Any]:
-        """Serialize for the per-sample job configuration."""
+    def to_dict(self, base_dir: Path) -> dict[str, Any]:
+        """Serialize for ``campaign.yaml``, with paths relative to ``base_dir``."""
+
+        def relative(path: Path | None) -> str | None:
+            return None if path is None else str(path.relative_to(base_dir))
+
         return {
             "system_id": self.system_id,
             "inputs": {
-                "topology": str(self.topology_path),
-                "coordinates": str(self.coordinates_path),
-                "mdp_em": None if self.mdp_em_path is None else str(self.mdp_em_path),
-                "mdp_production": str(self.mdp_production_path),
-                "index": str(self.index_path),
-                "bias": None
-                if self.bias.input_file is None
-                else str(self.bias.input_file),
+                "topology": relative(self.topology_path),
+                "coordinates": relative(self.coordinates_path),
+                "mdp_em": relative(self.mdp_em_path),
+                "mdp_production": relative(self.mdp_production_path),
+                "index": relative(self.index_path),
+                "bias": relative(self.bias.input_file),
             },
             "n_steps": int(self.n_steps),
         }
@@ -79,29 +78,21 @@ class SimulationCampaignConfig:
     store: tuple[str, ...] = ()
     scratch_dir: str | None = None
     max_restarts: int = 0
+    overwrite: bool = False
+    resume: bool = False
+    # Samples run at once with ``job_scheduler: local``.
+    local_max_parallel_jobs: int = 1
     slurm: SlurmConfig | None = None
-
-
-def normalize_store(value: Any) -> tuple[str, ...]:
-    """File suffixes kept per system after a sample finishes (default: xtc)."""
-    if value in (None, True):
-        return ("xtc",)
-    if value is False:
-        return ()
-    if isinstance(value, str):
-        value = [value]
-    if not isinstance(value, (list, tuple)) or not all(
-        isinstance(item, str) for item in value
-    ):
-        raise ValueError("'store' must be a bool, string, or list of strings.")
-    return tuple(item.lstrip(".") for item in value)
 
 
 def _build_stage_system(
     source: Path, system_id: str, n_steps: int
 ) -> SimulationSystemConfig:
-    """Read one system from the fixed file names of a ``bff build`` directory."""
-    load_build_system_metadata(source, system_id)
+    """Read one system from the fixed file names of a ``bff build`` directory.
+
+    Only the files a campaign uses are required; the build's own trajectory,
+    NpT input, and metadata are not.
+    """
     system_dir = source / "systems" / system_id
 
     def required(name: str) -> Path:
@@ -126,8 +117,6 @@ def _build_stage_system(
         bias = BiasSpec(kind="plumed", plumed_file=plumed)
     else:
         bias = BiasSpec()
-    required("npt.mdp")
-    required("production.xtc")
     return SimulationSystemConfig(
         system_id=system_id,
         topology_path=required("topology.top"),
@@ -141,59 +130,35 @@ def _build_stage_system(
 
 
 def load_simulation_systems(
-    systems_raw: Any,
-    *,
-    base_dir: Path,
-    source: Path | None = None,
+    config: ConfigSection, *, source: Path | None = None
 ) -> list[SimulationSystemConfig]:
-    """Load systems either from a build directory or from explicit inputs."""
-    if not isinstance(systems_raw, list) or not systems_raw:
-        raise ValueError("'systems' must be a non-empty list.")
-
+    """Load ``systems`` from a build directory or from explicit inputs."""
     systems: list[SimulationSystemConfig] = []
-    for i, raw in enumerate(systems_raw):
-        where = f"systems[{i}]"
-        allowed = (
-            {"system_id", "n_steps"}
-            if source is not None
-            else {
-                "system_id",
-                "n_steps",
-                "inputs",
-            }
+    keys = ("system_id", "n_steps") if source else ("system_id", "n_steps", "inputs")
+    for raw in config.sections("systems", allowed=keys, required=keys):
+        system_id = validate_system_id(
+            raw.get("system_id"), field=raw.field("system_id")
         )
-        check_keys(raw, where=where, allowed=allowed, required=allowed)
-        system_id = validate_system_id(raw["system_id"], field=f"{where}.system_id")
-        n_steps = int(raw["n_steps"])
-        if n_steps <= 0:
-            raise ValueError(f"{where}.n_steps must be a positive integer.")
+        n_steps = raw.integer("n_steps", minimum=1)
         if source is not None:
             systems.append(_build_stage_system(source, system_id, n_steps))
             continue
 
-        if not isinstance(raw["inputs"], dict):
-            raise ValueError(f"{where}.inputs must be a mapping of named file roles.")
-        inputs = resolve_explicit_inputs(
-            raw["inputs"],
-            base_dir=base_dir,
-            system_id=system_id,
-            field=f"{where}.inputs",
+        inputs = raw.section(
+            "inputs",
+            allowed=INPUT_ROLES,
+            required=("topology", "coordinates", "index", "mdp_production"),
         )
-        unsupported = set(inputs.inputs) - INPUT_ROLES
-        if unsupported:
-            raise ValueError(
-                f"{where}.inputs contains unsupported role(s): "
-                + ", ".join(sorted(unsupported))
-            )
+        bias = inputs.path("bias", None)
         systems.append(
             SimulationSystemConfig(
                 system_id=system_id,
-                topology_path=inputs.require_path("topology"),
-                coordinates_path=inputs.require_path("coordinates"),
-                mdp_em_path=inputs.optional_path("mdp_em"),
-                mdp_production_path=inputs.require_path("mdp_production"),
-                index_path=inputs.require_path("index"),
-                bias=BiasSpec.from_any(inputs.optional_path("bias")),
+                topology_path=inputs.path("topology"),
+                coordinates_path=inputs.path("coordinates"),
+                mdp_em_path=inputs.path("mdp_em", None),
+                mdp_production_path=inputs.path("mdp_production"),
+                index_path=inputs.path("index"),
+                bias=BiasSpec() if bias is None else BiasSpec.load(bias),
                 n_steps=n_steps,
             )
         )
@@ -203,74 +168,80 @@ def load_simulation_systems(
     return systems
 
 
+def load_slurm_config(config: ConfigSection) -> SlurmConfig:
+    slurm = config.section(
+        "slurm",
+        allowed=("max_parallel_jobs", "max_array_size", "sbatch", "setup", "teardown"),
+        required=("sbatch",),
+    )
+    sbatch = slurm.mapping("sbatch")
+    if "array" in sbatch:
+        raise ValueError(
+            "slurm.sbatch.array is set by BFF; use slurm.max_parallel_jobs to "
+            "limit concurrently running tasks."
+        )
+    return SlurmConfig(
+        max_parallel_jobs=slurm.integer(
+            "max_parallel_jobs", 1, minimum=1, special=(-1,)
+        ),
+        max_array_size=slurm.integer("max_array_size", 1000, minimum=1),
+        sbatch=sbatch,
+        setup=slurm.strings("setup", ()),
+        teardown=slurm.strings("teardown", ()),
+    )
+
+
 def load_campaign_config(
     fn_config: PathLike,
     *,
     stage: str,
     stage_keys: set[str],
     stage_required: tuple[str, ...] = (),
-) -> tuple[Path, dict[str, Any], dict[str, Any]]:
+) -> tuple[ConfigSection, dict[str, Any]]:
     """Load the campaign part of a stage configuration.
 
-    Returns the configuration directory, the raw mapping, and keyword
-    arguments for :class:`SimulationCampaignConfig`.
+    Returns the configuration and keyword arguments for
+    :class:`SimulationCampaignConfig`.
     """
-    fn_config = Path(fn_config).resolve()
-    base_dir = fn_config.parent
-    config = check_keys(
-        load_yaml(fn_config),
-        where=f"{stage} configuration",
+    config = load_config(
+        fn_config,
+        stage=stage,
         allowed=CAMPAIGN_KEYS | stage_keys,
         required=(
-            "campaign_dir",
-            "systems",
-            "job_scheduler",
-            "gmx_cmd",
-            *stage_required,
+            "campaign_dir", "systems", "job_scheduler", "gmx_cmd", *stage_required
         ),
     )
-    scheduler = config["job_scheduler"]
-    if scheduler not in {"local", "slurm"}:
+    scheduler = config.string("job_scheduler", choices=("local", "slurm"))
+    campaign_dir = config.path("campaign_dir", must_exist=False)
+    store = config.strings("store", ("xtc",))
+    overwrite = config.boolean("overwrite", False)
+    resume = config.boolean("resume", False)
+    if overwrite and resume:
+        raise ValueError("overwrite and resume cannot both be true.")
+    max_restarts = config.integer("max_restarts", 0, minimum=0)
+    if max_restarts and scheduler == "local":
         raise ValueError(
-            f"Unsupported scheduler {scheduler!r}. Supported values are "
-            "'local' and 'slurm'."
+            "max_restarts applies only to job_scheduler: slurm; local runs have "
+            "no time limit."
         )
-    scratch_dir = config.get("scratch_dir")
-    if scratch_dir is not None and not isinstance(scratch_dir, str):
-        raise ValueError("'scratch_dir' must be a path; it may use $VARIABLES.")
-    max_restarts = config.get("max_restarts", 0)
-    if (
-        not isinstance(max_restarts, int)
-        or isinstance(max_restarts, bool)
-        or (max_restarts < 0)
-    ):
-        raise ValueError("'max_restarts' must be a non-negative integer.")
-    source = config.get("source")
-    if source is not None:
-        source = resolve_path(base_dir, source, kind="build stage root")
-    campaign_dir = resolve_path(
-        base_dir, config["campaign_dir"], must_exist=False, kind="campaign directory"
-    )
+    local = config.section("local", allowed=("max_parallel_jobs",))
     common = dict(
-        fn_config=fn_config,
+        fn_config=Path(fn_config).resolve(),
         campaign_dir=campaign_dir,
-        log=resolve_path(
-            base_dir,
-            config.get("log", campaign_dir / f"{stage}.log"),
-            must_exist=False,
-            kind="log file",
-        ),
-        gmx_cmd=str(config["gmx_cmd"]),
+        log=config.path("log", campaign_dir / f"{stage}.log", must_exist=False),
+        gmx_cmd=config.string("gmx_cmd"),
         job_scheduler=scheduler,
-        systems=load_simulation_systems(
-            config["systems"], base_dir=base_dir, source=source
-        ),
-        dispatch=strict_bool(config.get("dispatch", True), field="dispatch"),
-        compress=strict_bool(config.get("compress", False), field="compress"),
-        cleanup=strict_bool(config.get("cleanup", False), field="cleanup"),
-        store=normalize_store(config.get("store")),
-        scratch_dir=scratch_dir,
+        systems=load_simulation_systems(config, source=config.path("source", None)),
+        dispatch=config.boolean("dispatch", True),
+        compress=config.boolean("compress", False),
+        cleanup=config.boolean("cleanup", False),
+        store=tuple(suffix.lstrip(".") for suffix in store),
+        # Expanded on the compute node, so it may contain $VARIABLES.
+        scratch_dir=config.string("scratch_dir", None),
         max_restarts=max_restarts,
-        slurm=load_slurm_config(config.get("slurm")) if scheduler == "slurm" else None,
+        overwrite=overwrite,
+        resume=resume,
+        local_max_parallel_jobs=local.integer("max_parallel_jobs", 1, minimum=1),
+        slurm=load_slurm_config(config) if scheduler == "slurm" else None,
     )
-    return base_dir, dict(config), common
+    return config, common

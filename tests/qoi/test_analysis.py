@@ -28,6 +28,7 @@ class _Trajectory:
 class _Universe:
     def __init__(self, frame_count: int, unreadable: set[int]) -> None:
         self.dimensions = None
+        self.atoms = SimpleNamespace(n_atoms=10)
         self.trajectory = _Trajectory(frame_count, unreadable)
         self.transfer_arguments: tuple[int, int | None, int] | None = None
 
@@ -84,19 +85,17 @@ def test_analysis_uses_all_readable_frames_for_each_trajectory(
             analysis.analyze_sample(
                 task,
                 routines_by_system={"acetate": (routine,)},
-                start=0,
-                stop=None,
-                step=1,
+                frames=slice(0, None, 1),
                 in_memory=True,
+                memory_limit=None,
             )
     else:
         analysis.analyze_sample(
             task,
             routines_by_system={"acetate": (routine,)},
-            start=0,
-            stop=None,
-            step=1,
+            frames=slice(0, None, 1),
             in_memory=True,
+            memory_limit=None,
         )
 
     assert universe.transfer_arguments == (0, expected_stop, 1)
@@ -135,10 +134,9 @@ def test_streamed_analysis_uses_the_readable_trajectory_end(
                 },
             ),
             routines_by_system={"acetate": (routine,)},
-            start=2,
-            stop=None,
-            step=1,
+            frames=slice(2, None, 1),
             in_memory=False,
+            memory_limit=None,
         )
 
     assert received["stop"] == 9
@@ -176,10 +174,9 @@ def test_analysis_does_not_warn_when_last_frame_is_outside_stride(
                 },
             ),
             routines_by_system={"acetate": (routine,)},
-            start=2,
-            stop=None,
-            step=5,
+            frames=slice(2, None, 5),
             in_memory=True,
+            memory_limit=None,
         )
 
     assert universe.transfer_arguments == (2, 13, 5)
@@ -223,10 +220,9 @@ def test_sample_reuses_one_universe_for_all_trajectory_routines(
             },
         ),
         routines_by_system={"acetate": routines},
-        start=0,
-        stop=None,
-        step=1,
+        frames=slice(0, None, 1),
         in_memory=True,
+        memory_limit=None,
     )
 
     assert sample_id == "sample-0"
@@ -262,10 +258,9 @@ def test_file_only_system_does_not_open_a_universe(
             {"acetate-calcium": {"pmf": Path("profile.pmf")}},
         ),
         routines_by_system={"acetate-calcium": (routine,)},
-        start=0,
-        stop=None,
-        step=1,
+        frames=slice(0, None, 1),
         in_memory=True,
+        memory_limit=None,
     )
 
     assert sample_id == "reference"
@@ -303,6 +298,9 @@ def test_parallel_analysis_respects_available_cpus(
         def info(self, *args, **kwargs) -> None:
             pass
 
+        def done(self, *args, **kwargs) -> None:
+            pass
+
     monkeypatch.setattr(analysis.os, "sched_getaffinity", lambda pid: {0, 1})
     monkeypatch.setattr(
         analysis.mp,
@@ -329,15 +327,72 @@ def test_parallel_analysis_respects_available_cpus(
             ("sample-2", {"acetate": {"pmf": Path("two.pmf")}}),
         ],
         routines_by_system={"acetate": (routine,)},
-        start=0,
-        stop=None,
-        step=1,
+        frames=slice(0, None, 1),
         workers=-1,
-        progress_stride=1,
-        progress_label="Training QoI",
         logger=Logger(),
         in_memory=True,
+        label="Samples",
     )
 
     assert pool_sizes == [2]
-    assert list(results) == ["sample-0", "sample-1", "sample-2"]
+    assert list(results[0]) == ["sample-0", "sample-1", "sample-2"]
+
+
+def test_a_failing_sample_is_reported_without_stopping_the_others(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def run_routine(*args, inputs, **kwargs):
+        if inputs["pmf"].name == "broken.pmf":
+            raise ValueError("cannot parse profile")
+        return QoI(name="pmf", values=[1.0])
+
+    monkeypatch.setattr(analysis, "run_routine", run_routine)
+    routine = AnalysisRoutineConfig(
+        name="pmf", systems=("acetate",), callable="pmf:load", inputs=("pmf",)
+    )
+    logger = SimpleNamespace(
+        progress_status=lambda *a, **k: None, done=lambda *a, **k: None
+    )
+
+    results, failures = analysis.analyze_samples(
+        [
+            ("0", {"acetate": {"pmf": Path("good.pmf")}}),
+            ("1", {"acetate": {"pmf": Path("broken.pmf")}}),
+        ],
+        routines_by_system={"acetate": (routine,)},
+        frames=slice(0, None, 1),
+        workers=1,
+        in_memory=True,
+        logger=logger,
+        label="Samples",
+    )
+
+    assert list(results) == ["0"]
+    assert failures == {"1": "ValueError: cannot parse profile"}
+
+
+def test_trajectory_too_large_for_memory_is_streamed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    universe = _Universe(10, set())
+    universe.atoms.n_atoms = 1000
+    monkeypatch.setattr(
+        trajectory, "prepare_universe", lambda *args, **kwargs: universe
+    )
+
+    _, frames = trajectory.open_trajectory(
+        {
+            "topology": Path("topology.top"),
+            "coordinates": Path("coordinates.gro"),
+            "trajectory": Path("trajectory.xtc"),
+        },
+        start=0,
+        stop=None,
+        step=1,
+        in_memory=True,
+        memory_limit=1000,
+        context="test",
+    )
+
+    assert universe.transfer_arguments is None
+    assert frames == slice(0, 10, 1)

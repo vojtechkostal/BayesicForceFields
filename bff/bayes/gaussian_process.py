@@ -1,326 +1,302 @@
+"""Local Gaussian processes and committees of them.
+
+Notation follows common Gaussian-process usage (e.g. scikit-learn): ``X`` are
+inputs (force-field parameter vectors, one per row), ``y`` outputs (QoI values,
+one row per input), and ``y_ref`` the reference outputs the surrogate is
+compared with during learning.
+"""
+
 from pathlib import Path
-from typing import Callable, TypeVar, Union
+from typing import Sequence, TypeVar, Union
 
 import numpy as np
 import torch
 
+from .effective_observations import effective_observations
 from .kernels import gaussian_kernel
-from .utils import check_tensor, nearest_positive_definite, smape
+from .means import Mean, evaluate_mean
+from .utils import smape
 
 PathLike = Union[str, Path]
-MeanFunction = Union[
-    torch.Tensor,
-    np.ndarray,
-    float,
-    Callable[[torch.Tensor], torch.Tensor],
-]
 LGPCommitteeT = TypeVar("LGPCommitteeT", bound="LGPCommittee")
 
 
-def evaluate_mean(
-    mean: MeanFunction,
-    X: torch.Tensor,
-    device: str,
-) -> torch.Tensor:
-    """Evaluate a static or parameter-dependent GP mean."""
-    values = mean(X) if callable(mean) else mean
-    return check_tensor(values, device=device)
-
-
 class LocalGaussianProcess:
-    """
-    Local Gaussian Process Regression model.
+    """Gaussian-process regression of all outputs with shared hyperparameters.
+
+    The covariance is ``amplitude**2 * exp(-|x - x'|**2 / (2 lengthscales**2))``
+    plus ``noise_variance`` on the diagonal; predictions are
+    ``mean(X) + K(X, X_train) @ alpha`` with
+    ``alpha = (K_train + noise_variance I)^-1 (y_train - mean(X_train))``.
+
+    ``alpha`` is solved once in float64 on the CPU. :meth:`to` then moves the
+    model to its working device and precision; do that once, before
+    predicting many times.
 
     Parameters
     ----------
     X_train : torch.Tensor
-        Training input features.
+        Training inputs, shape ``(n_train, n_inputs)``.
     y_train : torch.Tensor
-        Training output values.
-    y_mean : torch.Tensor or callable
-        Static output mean or a callable mean evaluated at the input parameters.
-    lengths : torch.Tensor
-        Length scales for the Gaussian kernel.
-    width : float
-        Width (amplitude) of the Gaussian kernel.
-    sigma : float
-        Observation noise standard deviation.
-    device : str
-        Device on which tensors are stored (e.g., "cpu" or "cuda").
-
-    Attributes
-    ----------
-    alpha : torch.Tensor
-        ``K_dd^-1 (y_train - mean(X_train))``, so a prediction is
-        ``mean(Xi) + K(Xi, X_train) @ alpha``.
-
-    Methods
-    -------
-    predict(Xi: torch.Tensor) -> torch.Tensor
-        Predict outputs for given input points.
-
-    Properties
-    ----------
-    n_params : int
-        Number of input parameters (features).
-    y_size : int
-        Dimensionality of the output values.
-    hyperparameters : Dict[str, Union[np.ndarray, float]]
-        Dictionary of hyperparameters used in the model.
-
+        Training outputs, shape ``(n_train, n_outputs)``.
+    mean : torch.Tensor or callable
+        Prior mean: values of shape ``(n_outputs,)`` or a function of ``X``;
+        see :mod:`bff.bayes.means`.
+    lengthscales : torch.Tensor
+        One kernel length scale per input, in input units.
+    amplitude : float
+        Kernel amplitude (signal standard deviation), in output units.
+    noise_variance : float
+        Variance added to the diagonal of the training covariance.
     """
 
     def __init__(
         self,
-        X_train: torch.Tensor, y_train: torch.Tensor, y_mean: MeanFunction,
-        lengths: torch.Tensor, width: float, sigma: float,
-        device: str
+        X_train: torch.Tensor,
+        y_train: torch.Tensor,
+        mean: Mean,
+        lengthscales: torch.Tensor,
+        amplitude: float,
+        noise_variance: float,
     ) -> None:
+        def tensor(x):
+            return torch.as_tensor(x, dtype=torch.float64, device="cpu")
 
-        self.X_train = check_tensor(X_train, device=device)
-        self.y_train = check_tensor(y_train, device=device)
-        self.y_mean = (
-            y_mean if callable(y_mean) else check_tensor(y_mean, device=device)
+        self.X_train = tensor(X_train)
+        self.y_train = tensor(y_train)
+        self.mean = mean if callable(mean) else tensor(mean)
+        self.lengthscales = tensor(lengthscales)
+        self.amplitude = tensor(amplitude)
+        self.noise_variance = tensor(noise_variance)
+
+        n_train = len(self.X_train)
+        K = gaussian_kernel(
+            self.X_train, self.X_train, self.lengthscales, self.amplitude
         )
-        self.y_train_mean = evaluate_mean(self.y_mean, self.X_train, device)
-        self.lengths = check_tensor(lengths, device=device)
-        self.width = check_tensor(width, device=device)
-        self.sigma = check_tensor(sigma, device=device)
-        self.device = device
-
-        n_samples = len(self.X_train)
-
-        noise = torch.eye(n_samples, device=device) * self.sigma
-        Kdd = gaussian_kernel(self.X_train, self.X_train, self.lengths, width) + noise
-        Kdd = nearest_positive_definite(Kdd)
-        L = torch.linalg.cholesky(Kdd)
-        self.alpha = torch.cholesky_solve(self.y_train - self.y_train_mean, L)
+        K = K + self.noise_variance * torch.eye(n_train, dtype=K.dtype)
+        L, info = torch.linalg.cholesky_ex(0.5 * (K + K.T))
+        if info:
+            raise ValueError(
+                "The GP covariance matrix is not positive definite; the "
+                "hyperparameters or training inputs are degenerate."
+            )
+        residuals = self.y_train - evaluate_mean(self.mean, self.X_train)
+        self.alpha = torch.cholesky_solve(residuals, L)
 
     @property
-    def n_params(self) -> int:
+    def device(self) -> torch.device:
+        """Device of the model tensors."""
+        return self.X_train.device
+
+    @property
+    def n_inputs(self) -> int:
+        """Number of input parameters."""
         return self.X_train.shape[1]
 
     @property
-    def y_size(self) -> int:
+    def n_outputs(self) -> int:
+        """Number of output values."""
         return self.y_train.shape[1]
 
     @property
     def hyperparameters(self) -> dict[str, Union[np.ndarray, float]]:
+        """``lengthscales`` (array), ``amplitude``, and ``noise_variance``."""
         return {
-            'lengths': self.lengths.cpu().numpy(),
-            'width': self.width.cpu().numpy().item(),
-            'sigma': self.sigma.cpu().numpy().item()
+            "lengthscales": self.lengthscales.cpu().numpy(),
+            "amplitude": self.amplitude.cpu().numpy().item(),
+            "noise_variance": self.noise_variance.cpu().numpy().item(),
         }
 
+    def to(
+        self, device: str | torch.device, dtype: torch.dtype | None = None
+    ) -> "LocalGaussianProcess":
+        """Move the model, in place, to ``device`` and optionally ``dtype``."""
+        names = ["X_train", "y_train", "lengthscales", "amplitude"]
+        names += ["noise_variance", "alpha"]
+        if not callable(self.mean):
+            names.append("mean")
+        for name in names:
+            setattr(self, name, getattr(self, name).to(device, dtype))
+        return self
+
     @torch.no_grad()
-    def predict(self, Xi: torch.Tensor) -> torch.Tensor:
-        """
-        Predict outputs for given input points.
-
-        Parameters
-        ----------
-        Xi : torch.Tensor
-            Input tensor of shape (n_samples, n_features).
-
-        Returns
-        -------
-        torch.Tensor
-            Predicted outputs of shape (n_samples, output_dim).
-        """
-        Xi = check_tensor(Xi, device=self.device)
-        Kid = gaussian_kernel(Xi, self.X_train, self.lengths, self.width)
-        mean = evaluate_mean(self.y_mean, Xi, self.device)
-        return mean + Kid @ self.alpha
+    def predict(self, X: torch.Tensor) -> torch.Tensor:
+        """Predicted outputs at ``X``, shape ``(n_samples, n_outputs)``, in the
+        precision of ``X`` and on the device of the model."""
+        X_model = X.to(self.X_train)
+        K = gaussian_kernel(X_model, self.X_train, self.lengthscales, self.amplitude)
+        return (evaluate_mean(self.mean, X_model) + K @ self.alpha).to(X.dtype)
 
     def state_dict(self) -> dict:
+        """Constructor arguments (on the CPU), as saved in a committee file."""
         return {
-            "X_train": self.X_train,
-            "y_train": self.y_train,
-            "y_mean": self.y_mean,
-            "lengths": self.lengths,
-            "width": self.width,
-            "sigma": self.sigma,
-            "device": self.device,
+            "X_train": self.X_train.cpu(),
+            "y_train": self.y_train.cpu(),
+            "mean": self.mean if callable(self.mean) else self.mean.cpu(),
+            "lengthscales": self.lengthscales.cpu(),
+            "amplitude": self.amplitude.cpu(),
+            "noise_variance": self.noise_variance.cpu(),
         }
 
     def __repr__(self) -> str:
-        hp = self.hyperparameters
         return (
-            f"{self.__class__.__name__}(\n"
-            f"  n_train={self.X_train.shape[0]},\n"
-            f"  n_params={self.n_params},\n"
-            f"  lengths={hp['lengths'].tolist()},\n"
-            f"  width={hp['width']:.4f},\n"
-            f"  noise={hp['sigma']:.4f},\n"
-            f"  device='{self.device}'\n"
-            f")"
+            f"LocalGaussianProcess(n_train={len(self.X_train)}, "
+            f"n_inputs={self.n_inputs}, n_outputs={self.n_outputs})"
         )
 
 
 class LGPCommittee:
-    """
-    Committee of Local Gaussian Process (LGP) models.
+    """Committee of local Gaussian processes that predicts one QoI.
 
     Parameters
     ----------
-    lgps : list of LocalGaussianProcess
-        List of LGP models.
-    reference_values : np.ndarray
-        Reference observation vector matched by the surrogate outputs.
+    members : list of LocalGaussianProcess
+        The committee members, fitted with different hyperparameters.
+    y_ref : np.ndarray
+        Reference outputs the predictions are compared with in learning.
     n_curves : int
-        Number of curves represented by the flattened reference vector.
+        Number of curves in ``y_ref``, which concatenates equally long curves.
     nuisance : float, optional
-        Nuisance parameter for model selection (default is None).
-    stochastic : bool, optional
-        If True, randomly select one model for prediction instead of averaging
-        (default is False).
-
-    Properties
-    ----------
-    size : int
-        Number of LGP models in the committee.
-    n_params : int
-        Number of input parameters (features) used by the LGP models.
-
-    Methods
-    -------
-    predict(X: torch.Tensor) -> torch.Tensor
-        Predict outputs by averaging predictions from all LGP models
-        or randomly selecting one if stochastic is True.
-    validate(X_test: torch.Tensor, y_test: torch.Tensor) -> float
-        Validate the committee by computing the
-        mean squared error of predictions against test data.
+        Fixed standard deviation of the learning likelihood; ``None`` lets
+        learning sample it.
+    stochastic : bool
+        Predict with one randomly chosen member instead of the average.
+    dataset_fingerprint : str, optional
+        Fingerprint of the QoI dataset the committee was fitted to.
+    parameter_names : sequence of str, optional
+        Names of the input columns.
+    mean_spec : str, optional
+        The mean specification it was fitted with (``None`` for a Python
+        callable); see :mod:`bff.bayes.means`.
     """
+
     def __init__(
         self,
-        lgps: list[LocalGaussianProcess],
-        reference_values: np.ndarray,
+        members: list[LocalGaussianProcess],
+        y_ref: np.ndarray,
         n_curves: int,
         nuisance: float | None = None,
         stochastic: bool = False,
         dataset_fingerprint: str | None = None,
+        parameter_names: Sequence[str] | None = None,
+        mean_spec: str | None = None,
     ) -> None:
-        self.lgps = lgps
-        self.error: float | None = None
-        self.reference_values = np.asarray(reference_values, dtype=float).reshape(-1)
+        self.members = members
+        self.mean_spec = mean_spec
+        self.y_ref = np.asarray(y_ref, dtype=float).reshape(-1)
         self.n_curves = int(n_curves)
-        self.n_eff = float(self.reference_values.size)
+        # Used in learning: the accepted deviation from y_ref, in output units.
+        self.tolerance = 0.0
         self.nuisance = nuisance
         self.stochastic = stochastic
         self.dataset_fingerprint = dataset_fingerprint
+        self.parameter_names = (
+            None if parameter_names is None else tuple(parameter_names)
+        )
+        # Symmetric mean absolute percentage error on held-out samples.
+        self.test_error: float | None = None
 
-        if self.reference_values.size != self.lgps[0].y_size:
+        if self.y_ref.size != self.members[0].n_outputs:
+            raise ValueError("y_ref size does not match the surrogate output size.")
+        if self.n_curves <= 0 or self.y_ref.size % self.n_curves != 0:
             raise ValueError(
-                "Reference observation size does not match surrogate output size."
+                "'n_curves' must be a positive divisor of the y_ref size."
             )
-        if self.n_curves <= 0:
-            raise ValueError("'n_curves' must be a positive integer.")
-        if self.reference_values.size % self.n_curves != 0:
-            raise ValueError(
-                "Reference observation size must be divisible by 'n_curves'."
-            )
+        # Effective number of observations in y_ref, from its correlation length.
+        self.n_eff = effective_observations(self.y_ref, self.n_curves)
 
     @property
-    def size(self) -> int:
-        return len(self.lgps)
+    def n_members(self) -> int:
+        """Number of committee members."""
+        return len(self.members)
 
     @property
-    def n_params(self) -> int:
-        return self.lgps[0].n_params
+    def n_inputs(self) -> int:
+        """Number of input parameters."""
+        return self.members[0].n_inputs
 
     @property
-    def y_size(self) -> int:
-        return self.lgps[0].y_size
+    def n_outputs(self) -> int:
+        """Number of output values (``n_curves`` curves of ``curve_length``)."""
+        return self.members[0].n_outputs
 
     @property
     def curve_length(self) -> int:
-        return int(self.reference_values.size // self.n_curves)
+        """Number of values per curve."""
+        return int(self.y_ref.size // self.n_curves)
+
+    def to(
+        self, device: str | torch.device, dtype: torch.dtype | None = None
+    ) -> "LGPCommittee":
+        """Move all members, in place, to ``device`` and optionally ``dtype``."""
+        for member in self.members:
+            member.to(device, dtype)
+        return self
 
     def predict(self, X: torch.Tensor) -> torch.Tensor:
-        """
-        Predict outputs by averaging predictions from all LGP models.
-
-        Parameters
-        ----------
-        X : torch.Tensor
-            Input tensor of shape (n_samples, n_features).
-
-        Returns
-        -------
-        torch.Tensor
-            Averaged predicted outputs of shape (n_samples, output_dim).
-        """
-
-        if self.size > 1 and self.stochastic:
-            # Select a random model and return its prediction
-            idx = torch.randint(self.size, (1,)).item()
-            return self.lgps[idx].predict(X)
-
-        # Otherwise, return the mean prediction across all models
-        predictions = torch.stack([lgp.predict(X) for lgp in self.lgps])
-        return predictions.mean(dim=0)
+        """Average prediction of the members (one member if ``stochastic``)."""
+        if self.n_members > 1 and self.stochastic:
+            index = torch.randint(self.n_members, (1,)).item()
+            return self.members[index].predict(X)
+        return torch.stack([member.predict(X) for member in self.members]).mean(0)
 
     def validate(self, X_test: torch.Tensor, y_test: torch.Tensor) -> float:
-        """
-        Validate the committee by computing the mean squared error.
-
-        Parameters
-        ----------
-        X_test : torch.Tensor
-            Test input tensor of shape (n_samples, n_features).
-        y_test : torch.Tensor
-            Test output tensor of shape (n_samples, output_dim).
-
-        Returns
-        -------
-        float
-            Mean squared error of the predictions.
-        """
-
-        y_pred = self.predict(X_test)
-        self.error = 100.0 * smape(y_test, y_pred)
-        return self.error
+        """Store and return the test error (sMAPE, in percent)."""
+        self.test_error = 100.0 * smape(y_test, self.predict(X_test))
+        return self.test_error
 
     @classmethod
     def load(cls: type[LGPCommitteeT], fn: PathLike) -> LGPCommitteeT:
-        state = torch.load(fn, weights_only=False)
-        if "n_curves" not in state:
+        """Read a ``.lgp`` file written by :meth:`write`."""
+        state = torch.load(fn, weights_only=False, map_location="cpu")
+        if "members" not in state:
             raise ValueError(
-                "This surrogate model predates BFF 0.3.0 and does not contain "
-                "reference-curve metadata. Refit the model before learning."
+                f"{fn} was written by an older BFF version; refit it with "
+                "bff fit-lgp."
             )
-        lgps = [LocalGaussianProcess(**lgp_state) for lgp_state in state["lgps"]]
-        reference_values = np.asarray(state["reference_values"], dtype=float)
         committee = cls(
-            lgps=lgps,
-            reference_values=reference_values,
+            members=[
+                # Files of earlier versions also record a ``device``.
+                LocalGaussianProcess(
+                    **{k: v for k, v in member.items() if k != "device"}
+                )
+                for member in state["members"]
+            ],
+            y_ref=np.asarray(state["y_ref"], dtype=float),
             n_curves=int(state["n_curves"]),
             nuisance=state["nuisance"],
             stochastic=state["stochastic"],
-            dataset_fingerprint=state.get("dataset_fingerprint"),
+            dataset_fingerprint=state["dataset_fingerprint"],
+            parameter_names=state["parameter_names"],
+            mean_spec=state["mean_spec"],
         )
-        committee.error = state["error"]
+        committee.test_error = state["test_error"]
         return committee
 
     def write(self, fn_out: PathLike) -> None:
-
-        state = {
-            "reference_values": self.reference_values.tolist(),
-            "n_curves": self.n_curves,
-            "nuisance": self.nuisance,
-            "stochastic": self.stochastic,
-            "error": self.error,
-            "dataset_fingerprint": self.dataset_fingerprint,
-            "lgps": [lgp.state_dict() for lgp in self.lgps],
-        }
-
-        torch.save(state, fn_out)
+        """Write the committee, with its members and reference, to one file."""
+        torch.save(
+            {
+                "y_ref": self.y_ref.tolist(),
+                "n_curves": self.n_curves,
+                "nuisance": self.nuisance,
+                "stochastic": self.stochastic,
+                "test_error": self.test_error,
+                "dataset_fingerprint": self.dataset_fingerprint,
+                "parameter_names": (
+                    None
+                    if self.parameter_names is None
+                    else list(self.parameter_names)
+                ),
+                "mean_spec": self.mean_spec,
+                "members": [member.state_dict() for member in self.members],
+            },
+            fn_out,
+        )
 
     def __repr__(self) -> str:
         return (
-            f"{self.__class__.__name__}(\n"
-            f"  committee_size={self.size},\n"
-            f"  n_params={self.n_params},\n"
-            f"  testset error={self.error},\n"
-            f")"
+            f"{self.__class__.__name__}(n_members={self.n_members}, "
+            f"n_inputs={self.n_inputs}, n_outputs={self.n_outputs}, "
+            f"test_error={self.test_error})"
         )

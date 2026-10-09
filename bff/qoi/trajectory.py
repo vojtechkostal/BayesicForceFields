@@ -62,13 +62,15 @@ def open_trajectory(
     step: int,
     in_memory: bool,
     context: str,
+    memory_limit: int | None = None,
 ) -> tuple[mda.Universe, slice]:
     """Load topology, coordinates, and trajectory; return the frames to analyze.
 
     A trailing frame that cannot be read (for example from an interrupted MD
     run) is skipped with a warning. With ``in_memory`` the selected frames are
     copied into memory once, so every routine reads them without decompressing
-    the trajectory again.
+    the trajectory again, unless they need more than ``memory_limit`` bytes;
+    then they are read from disk.
     """
     for role in ("topology", "coordinates", "trajectory"):
         if not isinstance(inputs.get(role), Path):
@@ -120,6 +122,11 @@ def open_trajectory(
         stop = last + 1
 
     if in_memory:
-        universe.transfer_to_memory(start=start, stop=stop, step=step)
-        return universe, slice(None)
+        n_bytes = len(range(start, stop, step)) * universe.atoms.n_atoms * 12
+        if memory_limit is None or n_bytes <= memory_limit:
+            try:
+                universe.transfer_to_memory(start=start, stop=stop, step=step)
+                return universe, slice(None)
+            except MemoryError:
+                pass
     return universe, slice(start, stop, step)

@@ -1,0 +1,18 @@
+# Simulate the posterior mean, the MAP, and 10 posterior draws.
+campaign_dir: ./
+source: ../01-build
+gmx_cmd: gmx  # ADAPT
+job_scheduler: local
+
+systems:  # ADAPT: simulation length
+  - {system_id: acetate, n_steps: 1000}
+  - {system_id: acetate-contact, n_steps: 1000}
+  - {system_id: acetate-separated, n_steps: 1000}
+
+posterior:
+  file: ../06-learn/outputs/results.pt
+  n_samples: 10
+  include_mean: true
+  include_map: true
+
+cleanup: true

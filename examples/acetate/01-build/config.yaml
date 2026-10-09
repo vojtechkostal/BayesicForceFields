@@ -1,0 +1,45 @@
+# Equilibrate the three systems and run one biased production trajectory each.
+# Use config-plumed.yaml with a GROMACS build that supports PLUMED instead of
+# Colvars.
+project:
+  directory: ./
+
+gromacs:
+  command: gmx  # ADAPT: your GROMACS executable
+
+systems:
+  - system_id: acetate
+    system_name: Aqueous acetate
+    topology: ../inputs/topol.top
+    templates:
+      ACE: ../inputs/ace.gro
+    mdp: &mdp
+      em: ../inputs/mdp/em.mdp
+      npt: ../inputs/mdp/npt.mdp
+      prod: ../inputs/mdp/nvt.mdp
+    nsteps: &nsteps
+      npt: 0
+      prod: 10000  # ADAPT: production length
+    box: [15.7107, 15.7107, 15.7107]
+
+  - system_id: acetate-contact
+    system_name: Acetate-calcium contact pair
+    topology: ../inputs/topol-ions.top
+    templates:
+      ACE: ../inputs/ace.gro
+    mdp: *mdp
+    nsteps: *nsteps
+    box: [15.7480, 15.7480, 15.7480]
+    bias:
+      colvars_file: ../inputs/biases/colvars-001.dat
+
+  - system_id: acetate-separated
+    system_name: Acetate-calcium separated pair
+    topology: ../inputs/topol-ions.top
+    templates:
+      ACE: ../inputs/ace.gro
+    mdp: *mdp
+    nsteps: *nsteps
+    box: [15.7480, 15.7480, 15.7480]
+    bias:
+      colvars_file: ../inputs/biases/colvars-002.dat

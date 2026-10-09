@@ -23,54 +23,14 @@ PENDING_STATES = {"PD", "CF", "CONFIGURING"}
 
 @dataclass(frozen=True)
 class SlurmConfig:
+    """Job-array limits, extra ``sbatch`` options, and shell lines run before
+    (``setup``) and after (``teardown``) each job."""
+
     max_parallel_jobs: int = 1
     max_array_size: int = 1000
     sbatch: dict[str, Any] | None = None
     setup: tuple[str, ...] = ()
     teardown: tuple[str, ...] = ()
-
-
-def load_slurm_config(raw: Any) -> SlurmConfig:
-    """Parse the ``slurm`` section of a stage configuration."""
-    if not isinstance(raw, dict):
-        raise ValueError("Missing 'slurm' configuration for slurm scheduler.")
-    unknown = set(raw) - {
-        "max_parallel_jobs",
-        "max_array_size",
-        "sbatch",
-        "setup",
-        "teardown",
-    }
-    if unknown:
-        raise ValueError(
-            "slurm contains unsupported key(s): " + ", ".join(sorted(unknown))
-        )
-    if not isinstance(raw.get("sbatch"), dict):
-        raise ValueError("Scheduler 'slurm' must define the 'sbatch' mapping.")
-    if "array" in raw["sbatch"]:
-        raise ValueError(
-            "slurm.sbatch.array is set by BFF; use slurm.max_parallel_jobs to "
-            "limit concurrently running tasks."
-        )
-    for key in ("setup", "teardown"):
-        commands = raw.get(key, [])
-        if not isinstance(commands, list) or not all(
-            isinstance(command, str) for command in commands
-        ):
-            raise ValueError(f"slurm.{key} must be a list of shell commands.")
-    max_parallel_jobs = int(raw.get("max_parallel_jobs", 1))
-    if max_parallel_jobs == 0 or max_parallel_jobs < -1:
-        raise ValueError("'slurm.max_parallel_jobs' must be positive or -1.")
-    max_array_size = int(raw.get("max_array_size", 1000))
-    if max_array_size <= 0:
-        raise ValueError("'slurm.max_array_size' must be positive.")
-    return SlurmConfig(
-        max_parallel_jobs=max_parallel_jobs,
-        max_array_size=max_array_size,
-        sbatch=dict(raw["sbatch"]),
-        setup=tuple(raw.get("setup", [])),
-        teardown=tuple(raw.get("teardown", [])),
-    )
 
 
 def time_limit_hours(value: Any) -> float | None:

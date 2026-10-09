@@ -3,386 +3,268 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
+import yaml
 
 from bff.bayes.priors import Prior, Priors
-from bff.bayes.results import PosteriorResults
+from bff.bayes.results import Results, marginal_mode
 from bff.domain.specs import Specs
 
+SPECS = {
+    "bounds": {
+        "charge A": [-1.0, 1.0],
+        "charge B": [-0.5, 0.5],
+        "sigma C": [0.1, 2.0],
+    },
+    "charge_constraints": [
+        {
+            "selection": "name A B",
+            "target": 0.0,
+            "scope": "residue",
+            "implicit": "charge B",
+            "coefficients": {"charge A": 1.0, "charge B": 1.0},
+        }
+    ],
+}
 
-def test_posterior_results_requires_raw_chain_shape(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="shape"):
-        PosteriorResults(np.zeros((4, 2)))
 
-    bad = tmp_path / "bad.pt"
-    torch.save({"chain": torch.zeros((2, 2, 1))}, bad)
-    with pytest.raises(KeyError, match="posterior"):
-        PosteriorResults.load(bad)
-
-
-def test_posterior_results_loads_pt_and_prepares_samples(tmp_path: Path) -> None:
-    path = tmp_path / "posterior.pt"
-    posterior = torch.arange(24, dtype=torch.float32).reshape(4, 3, 2)
-    torch.save({
-        "posterior": posterior,
-        "metadata": {"bff_version": "test"},
-    }, path)
-    priors = Priors(
+def make_results(n_saved: int = 400, n_walkers: int = 4, seed: int = 0) -> Results:
+    """Posterior of charge A ~ N(0.2, 0.05) and sigma C ~ N(1, 0.1), with the
+    noise of one QoI at about exp(-3); the MAP is the most probable state."""
+    rng = np.random.default_rng(seed)
+    chain = np.stack(
         [
-            Prior("normal", 0.0, 1.0, name="x"),
-            Prior("normal", 0.0, 1.0, name="log_sigma_rdf"),
+            rng.normal(0.2, 0.05, (n_saved, n_walkers)),
+            rng.normal(1.0, 0.1, (n_saved, n_walkers)),
+            rng.normal(-3.0, 0.1, (n_saved, n_walkers)),
+        ],
+        axis=-1,
+    )
+    log_prob = -(
+        ((chain[..., 0] - 0.2) / 0.05) ** 2 + ((chain[..., 1] - 1.0) / 0.1) ** 2
+    )
+    prior = Priors(
+        [
+            Prior("normal", 0.0, 0.5, "charge A"),
+            Prior("normal", 1.0, 0.5, "sigma C"),
+            Prior("normal", -2.0, 2.0, "log noise rdf"),
         ]
     )
-
-    results = PosteriorResults.load(path, priors=priors)
-    results.prepare_samples(discard=1, thin=2, strip_outliers=False)
-
-    assert results.has_prepared_samples
-    assert results.prepared_samples.shape == (6, 2)
-    assert results.labels == ["x", "$\\sigma_{\\mathrm{rdf}}$"]
-    assert np.all(results.prepared_samples[:, 1] > 0)
-    assert results.metadata["bff_version"] == "test"
-    assert results.preparation_info["discard"] == 1
-    assert results.preparation_info["thin"] == 2
-
-
-def test_posterior_results_loads_enriched_payload(tmp_path: Path) -> None:
-    path = tmp_path / "posterior.pt"
-    specs = Specs(
-        {
-            "bounds": {"charge A": [-1.0, 1.0], "charge B": [-1.0, 1.0]},
-            "charge_constraints": [
-                {
-                    "selection": "name A B",
-                    "target": 0.0,
-                    "scope": "residue",
-                    "implicit": "charge B",
-                    "coefficients": {"charge A": 1.0, "charge B": 1.0},
-                }
-            ],
-        }
-    )
-    torch.save(
-        {
-            "posterior": torch.zeros((3, 2, 1)),
-            "priors": [Prior("normal", 0.0, 1.0, name="charge A").to_dict()],
-            "specs": specs.to_dict(),
-            "sample_labels": ["charge A"],
-        },
-        path,
+    return Results(
+        chain,
+        log_prob,
+        Specs(SPECS),
+        prior=prior,
+        nuisances=["rdf"],
+        qoi={"rdf": {"n_eff": 5.0, "tolerance": 0.1, "nuisance": None}},
+        info={"mcmc": {"converged": True}},
     )
 
-    results = PosteriorResults.load(path)
 
-    assert results.specs == specs
-    assert results.sample_labels == ["charge A"]
-    assert results.priors.names == ["charge A"]
+def test_results_validates_shapes() -> None:
+    results = make_results()
+    with pytest.raises(ValueError, match="chain must have shape"):
+        Results(results.chain[..., :1], results.log_prob, Specs(SPECS))
+    with pytest.raises(ValueError, match="log_prob must have shape"):
+        Results(results.chain, results.log_prob[:-1], Specs(SPECS), nuisances=["rdf"])
+    with pytest.raises(ValueError, match="prior has 1 entries"):
+        Results(
+            results.chain,
+            results.log_prob,
+            Specs(SPECS),
+            prior=Priors([Prior("normal", 0, 1)]),
+            nuisances=["rdf"],
+        )
 
 
-def test_posterior_results_rejects_empty_prepared_samples() -> None:
-    results = PosteriorResults(np.zeros((2, 2, 1)))
+def test_samples_are_in_physical_units_with_implicit_charges() -> None:
+    results = make_results()
 
-    with pytest.raises(ValueError, match="No posterior samples"):
-        results.prepare_samples(discard=10, thin=1)
+    assert results.names == ("charge A", "charge B", "sigma C", "noise rdf")
+    assert results.explicit_names == ("charge A", "sigma C")
+    assert results.implicit_names == ("charge B",)
+    assert results.nuisance_names == ("noise rdf",)
+    assert results.samples.shape == (1600, 4)
+    np.testing.assert_allclose(results["charge B"], -results["charge A"])
+    np.testing.assert_allclose(
+        results["noise rdf"], np.exp(results.chain[..., 2]).ravel()
+    )
+    with pytest.raises(KeyError, match="not one of"):
+        results["charge Z"]
 
 
-def test_posterior_results_summary_uses_prepared_samples() -> None:
-    posterior = np.ones((4, 3, 1))
-    results = PosteriorResults(posterior, sample_labels=["theta"])
-    results.prepare_samples(discard=0, thin=1, strip_outliers=False)
+def test_map_is_the_state_of_highest_log_probability() -> None:
+    results = make_results()
+    flat = results.log_prob.reshape(-1)
+
+    best = results.samples[int(np.argmax(flat))]
+
+    assert results.map == dict(zip(results.names, best))
+    assert results.map["charge B"] == pytest.approx(-results.map["charge A"])
+    assert abs(results.map["charge A"] - 0.2) < 0.02
+    assert abs(results.map["sigma C"] - 1.0) < 0.05
+
+
+def test_summary_reports_mean_quantiles_mode_and_map() -> None:
+    results = make_results()
 
     summary = results.summary()
 
-    assert set(summary) == {"theta", "autocorr_time"}
-    assert summary["theta"]["mean"] == 1.0
+    assert list(summary) == list(results.names)
+    entry = summary["charge A"]
+    assert set(entry) == {"mean", "std", "median", "q16", "q84", "mode", "map"}
+    assert entry["mean"] == pytest.approx(0.2, abs=0.01)
+    assert entry["std"] == pytest.approx(0.05, abs=0.01)
+    assert entry["q16"] < entry["median"] < entry["q84"]
+    assert entry["mode"] == pytest.approx(0.2, abs=0.03)
+    assert entry["map"] == results.map["charge A"]
+    assert summary["noise rdf"]["mean"] == pytest.approx(np.exp(-3.0), rel=0.1)
 
 
-def test_posterior_results_expands_multiple_implicit_charges() -> None:
-    specs = Specs(
-        {
-            "bounds": {
-                "charge A": [-1.0, 1.0],
-                "charge B": [-1.0, 1.0],
-                "charge C": [0.0, 2.0],
-            },
-            "charge_constraints": [
-                {
-                    "selection": "name A B C",
-                    "target": 1.0,
-                    "scope": "residue",
-                    "implicit": "charge C",
-                    "coefficients": {
-                        "charge A": 1.0,
-                        "charge B": 1.0,
-                        "charge C": 1.0,
-                    },
-                },
-                {
-                    "selection": "name A B",
-                    "target": 0.0,
-                    "scope": "residue",
-                    "implicit": "charge B",
-                    "coefficients": {"charge A": 1.0, "charge B": 1.0},
-                },
-            ],
-        }
+def test_write_summary_round_trips_through_yaml(tmp_path: Path) -> None:
+    results = make_results()
+    results.write_summary(tmp_path / "summary.yaml")
+
+    loaded = yaml.safe_load((tmp_path / "summary.yaml").read_text())
+
+    assert loaded["charge A"]["map"] == pytest.approx(results.map["charge A"])
+
+
+def test_marginal_mode_handles_bounds_and_constant_samples() -> None:
+    samples = np.random.default_rng(0).normal(0.9, 0.3, 2000)
+    assert marginal_mode(samples, 0.0, 1.0) <= 1.0
+    assert marginal_mode(np.full(100, 0.7), 0.0, 1.0) == pytest.approx(0.7)
+
+
+def test_diagnostics_cover_every_chain_column() -> None:
+    diagnostics = make_results().diagnostics()
+
+    assert list(diagnostics) == ["charge A", "sigma C", "log noise rdf", "log_prob"]
+    assert all(
+        entry["rhat"] == pytest.approx(1.0, abs=0.05)
+        for entry in diagnostics.values()
     )
-    results = PosteriorResults(
-        np.full((3, 2, 1), 0.2),
-        sample_labels=["charge A"],
-        specs=specs,
-        include_implicit_charge=True,
-    )
-
-    results.prepare_samples(discard=0, thin=1, strip_outliers=False)
-
-    assert results.labels == ["charge A", "charge B", "charge C"]
-    np.testing.assert_allclose(results.prepared_samples[0], [0.2, -0.2, 1.0])
+    assert all(entry["ess_bulk"] > 100 for entry in diagnostics.values())
+    assert all(entry["ess_tail"] > 100 for entry in diagnostics.values())
 
 
-def test_sample_posterior_kde_draws_arbitrary_number() -> None:
-    rng = np.random.default_rng(1)
-    posterior = rng.normal(size=(20, 4, 2))
-    results = PosteriorResults(posterior, sample_labels=["x", "y"])
-    results.prepare_samples(discard=0, thin=1, strip_outliers=False)
+def test_prior_density_of_sampled_parameters_only() -> None:
+    results = make_results()
+    grid = np.linspace(-1, 1, 5)
 
-    draws = results.sample_posterior(
-        n_samples=250,
-        distribution="kde",
-        random_state=2,
-    )
+    density = results.prior_density("charge A", grid)
 
-    assert draws.shape == (250, 2)
-    assert np.all(np.isfinite(draws))
+    assert density.shape == (5,)
+    assert density.argmax() == 2
+    assert results.prior_density("charge B", grid) is None
+    assert Results(
+        results.chain, results.log_prob, Specs(SPECS), nuisances=["rdf"]
+    ).prior_density("charge A", grid) is None
 
 
-def test_sample_posterior_empirical_resamples_prepared_rows() -> None:
-    posterior = np.arange(12, dtype=float).reshape(6, 2, 1)
-    results = PosteriorResults(posterior, sample_labels=["x"])
-    results.prepare_samples(discard=0, thin=1, strip_outliers=False)
+@pytest.mark.parametrize("distribution", ["empirical", "kde", "normal", "uniform"])
+def test_draw_returns_named_valid_parameter_sets(distribution: str) -> None:
+    results = make_results()
 
-    draws = results.sample_posterior(
-        n_samples=20,
-        distribution="empirical",
-        random_state=2,
+    draws = results.draw(25, distribution=distribution, seed=3)
+
+    assert list(draws) == ["charge A", "sigma C"]
+    assert all(len(values) == 25 for values in draws.values())
+    assert results.specs.is_valid(np.column_stack(list(draws.values()))).all()
+    again = results.draw(25, distribution=distribution, seed=3)
+    np.testing.assert_allclose(draws["charge A"], again["charge A"])
+
+
+def test_draw_prepends_mean_and_map_and_adds_implicit_charges() -> None:
+    results = make_results()
+
+    draws = results.draw(
+        3, seed=1, include_mean=True, include_map=True, implicit=True
     )
 
-    assert draws.shape == (20, 1)
-    assert set(draws.ravel()) <= set(results.prepared_samples.ravel())
+    assert list(draws) == ["charge A", "charge B", "sigma C"]
+    assert draws["charge A"].shape == (5,)
+    assert draws["charge A"][0] == pytest.approx(results["charge A"].mean())
+    assert draws["charge A"][1] == pytest.approx(results.map["charge A"])
+    np.testing.assert_allclose(draws["charge B"], -draws["charge A"])
+    only_special = results.draw(0, include_map=True)
+    assert only_special["sigma C"].tolist() == [results.map["sigma C"]]
 
 
-def test_sample_posterior_normal_preserves_multidimensional_correlation() -> None:
-    rng = np.random.default_rng(3)
-    cov = np.array([[1.0, 0.85], [0.85, 1.0]])
-    posterior = rng.multivariate_normal([0.0, 0.0], cov, size=3000).reshape(1000, 3, 2)
-    results = PosteriorResults(posterior, sample_labels=["x", "y"])
-    results.prepare_samples(discard=0, thin=1, strip_outliers=False)
+def test_draw_rejects_empty_requests_and_bad_settings() -> None:
+    results = make_results()
+    with pytest.raises(ValueError, match="Nothing to draw"):
+        results.draw(0)
+    with pytest.raises(ValueError, match="confidence"):
+        results.draw(1, confidence=1.0)
+    with pytest.raises(ValueError, match="distribution"):
+        results.draw(1, distribution="beta")
 
-    draws = results.sample_posterior(
-        n_samples=3000,
-        distribution="normal",
-        random_state=4,
+
+def test_draw_redraws_values_outside_the_bounds() -> None:
+    # charge B = -charge A must stay within +-0.5, so |charge A| <= 0.5.
+    results = make_results()
+    chain = results.chain.copy()
+    chain[..., 0] += 0.3
+    wide = Results(chain, results.log_prob, Specs(SPECS), nuisances=["rdf"])
+
+    draws = wide.draw(200, distribution="normal", seed=0)
+
+    assert np.abs(draws["charge A"]).max() <= 0.5
+
+
+def test_draw_rejects_a_mean_outside_the_bounds() -> None:
+    results = make_results()
+    chain = results.chain.copy()
+    chain[..., 0] = 0.95
+    outside = Results(chain, results.log_prob, Specs(SPECS), nuisances=["rdf"])
+    with pytest.raises(ValueError, match="mean violates"):
+        outside.draw(0, include_mean=True)
+
+
+def test_draw_exports_yaml_readable_by_explicit_validation(tmp_path: Path) -> None:
+    results = make_results()
+    fn_out = tmp_path / "draws.yaml"
+
+    draws = results.draw(4, seed=2, fn_out=fn_out)
+
+    loaded = yaml.safe_load(fn_out.read_text())
+    assert loaded["charge A"] == pytest.approx(draws["charge A"].tolist())
+    with pytest.raises(FileExistsError):
+        results.draw(4, fn_out=fn_out)
+    results.draw(4, fn_out=fn_out, overwrite=True)
+
+
+def test_results_file_round_trip_keeps_everything(tmp_path: Path) -> None:
+    results = make_results()
+    results = Results(
+        results.chain,
+        results.log_prob,
+        results.specs,
+        prior=results.prior,
+        nuisances=results.nuisances,
+        qoi=results.qoi,
+        qoi_index=np.array([0, 10, 20]),
+        qoi_log_likelihood={"rdf": np.array([-1.0, -2.0, -3.0])},
+        info=results.info,
     )
+    fn_results = tmp_path / "results.pt"
+    results.save(fn_results)
 
-    assert draws.shape == (3000, 2)
-    assert np.corrcoef(draws, rowvar=False)[0, 1] > 0.75
+    loaded = Results.load(fn_results)
 
-
-def test_sample_posterior_uses_positional_specs_and_exports_yaml(
-    tmp_path: Path,
-) -> None:
-    specs = Specs(
-        {
-            "bounds": {
-                "charge A": [-1.0, 1.0],
-                "charge B": [-1.0, 1.0],
-            },
-            "charge_constraints": [
-                {
-                    "selection": "name A B",
-                    "target": 0.0,
-                    "scope": "residue",
-                    "implicit": "charge B",
-                    "coefficients": {"charge A": 1.0, "charge B": 1.0},
-                },
-            ],
-        }
-    )
-    specs_path = tmp_path / "specs.yaml"
-    specs.write(specs_path)
-    priors = Priors(
-        [
-            Prior("normal", 0.0, 0.2, name="charge A"),
-            Prior("normal", -2.0, 0.1, name="log_sigma_rdf"),
-        ]
-    )
-    charge = np.linspace(-0.5, 0.5, 20)
-    log_sigma = np.full_like(charge, -2.0)
-    posterior = np.column_stack([charge, log_sigma]).reshape(10, 2, 2)
-    results = PosteriorResults(posterior, priors, specs_path)
-    results.prepare_samples(discard=0, thin=1, strip_outliers=False)
-    out = tmp_path / "draws.yaml"
-
-    draws = results.sample_posterior(
-        n_samples=25,
-        distribution="uniform",
-        fn_out=out,
-        random_state=5,
-    )
-
-    assert draws.shape == (25, 1)
-    assert results.specs == specs
-    assert results.sample_labels == ["charge A", "$\\sigma_{\\mathrm{rdf}}$"]
-    assert out.read_text().startswith("charge A:")
+    np.testing.assert_allclose(loaded.samples, results.samples, rtol=1e-5)
+    assert loaded.map == pytest.approx(results.map, rel=1e-5)
+    assert loaded.specs == results.specs
+    assert loaded.prior.to_dicts() == results.prior.to_dicts()
+    assert loaded.nuisances == ("rdf",)
+    assert loaded.qoi == results.qoi
+    assert loaded.qoi_index.tolist() == [0, 10, 20]
+    assert loaded.qoi_log_likelihood["rdf"].tolist() == [-1.0, -2.0, -3.0]
+    assert loaded.info == {"mcmc": {"converged": True}}
 
 
-def test_sample_posterior_can_return_implicit_charges_satisfying_specs() -> None:
-    specs = Specs(
-        {
-            "bounds": {
-                "charge A": [-1.0, 1.0],
-                "charge B": [-1.0, 1.0],
-                "charge C": [0.0, 2.0],
-            },
-            "charge_constraints": [
-                {
-                    "selection": "name A B C",
-                    "target": 1.0,
-                    "scope": "residue",
-                    "implicit": "charge C",
-                    "coefficients": {
-                        "charge A": 1.0,
-                        "charge B": 1.0,
-                        "charge C": 1.0,
-                    },
-                },
-                {
-                    "selection": "name A B",
-                    "target": 0.0,
-                    "scope": "residue",
-                    "implicit": "charge B",
-                    "coefficients": {"charge A": 1.0, "charge B": 1.0},
-                },
-            ],
-        }
-    )
-    priors = Priors(
-        [
-            Prior("normal", 0.0, 0.2, name="charge A"),
-            Prior("normal", -2.0, 0.1, name="log_sigma_rdf"),
-        ]
-    )
-    charge = np.linspace(-0.5, 0.5, 30)
-    log_sigma = np.full_like(charge, -2.0)
-    posterior = np.column_stack([charge, log_sigma]).reshape(10, 3, 2)
-    results = PosteriorResults(posterior, priors=priors, specs=specs)
-    results.prepare_samples(discard=0, thin=1, strip_outliers=False)
+def test_results_rejects_files_of_other_formats(tmp_path: Path) -> None:
+    torch.save({"posterior": torch.zeros(3, 2, 1)}, tmp_path / "posterior.pt")
 
-    draws = results.sample_posterior(
-        n_samples=40,
-        distribution="uniform",
-        random_state=8,
-        include_implicit_charge=True,
-    )
-
-    assert draws.shape == (40, 3)
-    np.testing.assert_allclose(
-        draws @ specs.constraint_matrix.T,
-        np.tile(specs.constraint_targets, (len(draws), 1)),
-    )
-    lower, upper = specs.bounds.array.T
-    assert np.logical_and(draws >= lower, draws <= upper).all()
-
-
-def test_sample_posterior_prepends_mean_and_excludes_nuisance() -> None:
-    specs = Specs(
-        {
-            "bounds": {
-                "charge A": [-1.0, 1.0],
-                "charge B": [-1.0, 1.0],
-            },
-            "charge_constraints": [
-                {
-                    "selection": "name A B",
-                    "target": 0.0,
-                    "scope": "residue",
-                    "implicit": "charge B",
-                    "coefficients": {"charge A": 1.0, "charge B": 1.0},
-                }
-            ],
-        }
-    )
-    priors = Priors(
-        [
-            Prior("normal", 0.0, 0.2, name="charge A"),
-            Prior("normal", -2.0, 0.1, name="log_sigma_rdf"),
-        ]
-    )
-    charge = np.linspace(-0.6, 0.4, 20)
-    nuisance = np.linspace(-2.2, -1.8, 20)
-    posterior = np.column_stack([charge, nuisance]).reshape(10, 2, 2)
-    results = PosteriorResults(posterior, priors=priors, specs=specs)
-    results.prepare_samples(discard=0, thin=1, strip_outliers=False)
-
-    draws = results.sample_posterior(
-        n_samples=3,
-        distribution="empirical",
-        random_state=12,
-        include_mean=True,
-    )
-
-    assert draws.shape == (4, 1)
-    np.testing.assert_allclose(draws[0], [np.mean(charge)])
-
-
-def test_sample_posterior_supports_validated_mean_only_with_implicit_charge() -> None:
-    specs = Specs(
-        {
-            "bounds": {
-                "charge A": [-1.0, 1.0],
-                "charge B": [-1.0, 1.0],
-            },
-            "charge_constraints": [
-                {
-                    "selection": "name A B",
-                    "target": 0.0,
-                    "scope": "residue",
-                    "implicit": "charge B",
-                    "coefficients": {"charge A": 1.0, "charge B": 1.0},
-                }
-            ],
-        }
-    )
-    posterior = np.linspace(-0.4, 0.2, 20).reshape(10, 2, 1)
-    results = PosteriorResults(
-        posterior,
-        sample_labels=["charge A"],
-        specs=specs,
-    )
-    results.prepare_samples(discard=0, thin=1, strip_outliers=False)
-
-    samples = results.sample_posterior(
-        n_samples=0,
-        include_mean=True,
-        include_implicit_charge=True,
-    )
-
-    assert samples.shape == (1, 2)
-    np.testing.assert_allclose(samples[0, 0] + samples[0, 1], 0.0)
-
-
-def test_sample_posterior_rejects_mean_outside_embedded_bounds() -> None:
-    specs = Specs(
-        {
-            "bounds": {"x": [-1.0, 1.0]},
-            "charge_constraints": [],
-        }
-    )
-    results = PosteriorResults(
-        np.full((5, 2, 1), 2.0),
-        sample_labels=["x"],
-        specs=specs,
-    )
-    results.prepare_samples(discard=0, thin=1, strip_outliers=False)
-
-    with pytest.raises(ValueError, match="mean.*bounds"):
-        results.sample_posterior(n_samples=0, include_mean=True)
+    with pytest.raises(ValueError, match="not a BFF results file"):
+        Results.load(tmp_path / "posterior.pt")

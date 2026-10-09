@@ -1,11 +1,11 @@
 """One campaign sample: apply its parameters and run MD for every system.
 
-Run by the hidden ``bff md <samples/ID/config.yaml>`` command, locally or as
-one Slurm array task. Results end up in ``samples/<ID>/``. With a scratch
+Run by the hidden ``bff md <campaign.yaml> <sample_id>`` command, locally or
+as one Slurm array task. Results end up in ``samples/<ID>/``. With a scratch
 directory, GROMACS runs there and only the results are copied back.
 
-The job can be rerun: systems with a complete trajectory are skipped and an
-interrupted production run continues from its checkpoint. With ``max_hours``
+The job can be rerun: systems whose production run is complete are skipped
+and an interrupted production run continues from its checkpoint. With ``max_hours``
 the production run stops cleanly before that wall time and the sample is
 reported as ``incomplete``.
 """
@@ -13,6 +13,7 @@ reported as ``incomplete``.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import tempfile
 import time
@@ -22,17 +23,20 @@ from pathlib import Path
 import numpy as np
 from MDAnalysis.coordinates.XTC import XTCReader
 
-from ...domain.specs import ChargeConstraint, Specs
-from ...domain.systems import validate_system_id
+from ...domain.samples import load_sample_manifest
+from ...domain.specs import Specs
 from ...gromacs import check_gmx_available, run_md
 from ...io.mdp import read_mdp
-from ...io.utils import load_yaml, save_yaml
+from ...io.utils import save_yaml
 from ...topology import TopologyModifier
-from ..config import PathLike, check_keys, resolve_path, strict_bool
-from .config import SimulationSystemConfig, load_simulation_systems, normalize_store
+from ..config import PathLike, load_config
+from .config import SimulationSystemConfig, load_simulation_systems
 
 # grompp warnings accepted for every sample (e.g. a net-charged system).
 MAXWARN = 2
+# Written into a system's result directory once its production run is complete.
+DONE_MARKER = "production.done"
+CHECKPOINT_RE = re.compile(r"Writing checkpoint, step (\d+)")
 
 
 @dataclass(frozen=True)
@@ -49,31 +53,29 @@ class MDJobConfig:
     max_hours: float | None = None
 
     @classmethod
-    def load(cls, fn_config: PathLike) -> MDJobConfig:
-        fn_config = Path(fn_config).resolve()
-        keys = ("sample_id", "params", "campaign_dir", "fn_specs", "gmx_cmd", "systems")
-        config = check_keys(
-            load_yaml(fn_config),
-            where="MD job configuration",
-            allowed=(*keys, "store", "cleanup", "scratch_dir", "max_hours"),
-            required=keys,
+    def load(cls, fn_campaign: PathLike, sample_id: str) -> MDJobConfig:
+        """Job settings from ``campaign.yaml`` and parameters from ``samples.yaml``."""
+        keys = ("gmx_cmd", "store", "cleanup", "scratch_dir", "max_hours", "systems")
+        config = load_config(
+            fn_campaign, stage="campaign", allowed=keys, required=("gmx_cmd", "systems")
         )
-        if not isinstance(config["params"], list):
-            raise ValueError("params must be a list of numeric values.")
-        base_dir = fn_config.parent
+        campaign_dir = config.base_dir
+        samples = load_sample_manifest(campaign_dir / "samples.yaml")["samples"]
+        if sample_id not in samples:
+            raise ValueError(
+                f"Sample {sample_id!r} is not in {campaign_dir / 'samples.yaml'}."
+            )
         return cls(
-            sample_id=validate_system_id(config["sample_id"], field="sample_id"),
-            params=[float(value) for value in config["params"]],
-            campaign_dir=resolve_path(base_dir, config["campaign_dir"]),
-            fn_specs=resolve_path(base_dir, config["fn_specs"], kind="specs file"),
-            gmx_cmd=str(config["gmx_cmd"]),
-            store=normalize_store(config.get("store")),
-            cleanup=strict_bool(config.get("cleanup", False), field="cleanup"),
-            systems=load_simulation_systems(config["systems"], base_dir=base_dir),
-            scratch_dir=config.get("scratch_dir"),
-            max_hours=(
-                None if config.get("max_hours") is None else float(config["max_hours"])
-            ),
+            sample_id=sample_id,
+            params=[float(value) for value in samples[sample_id]["params"]],
+            campaign_dir=campaign_dir,
+            fn_specs=campaign_dir / "specs.yaml",
+            gmx_cmd=config.string("gmx_cmd"),
+            store=config.strings("store", ("xtc",)),
+            cleanup=config.boolean("cleanup", False),
+            systems=load_simulation_systems(config),
+            scratch_dir=config.string("scratch_dir", None),
+            max_hours=config.number("max_hours", None, minimum=0),
         )
 
 
@@ -84,15 +86,13 @@ def write_sample_topology(
     fn_out: PathLike,
 ) -> None:
     """Write a topology with explicit parameters and reconstructed charges."""
-    constraint = ChargeConstraint(specs)
-    if not constraint(params).all():
+    if not specs.is_valid(params).all():
         raise ValueError(
             "Explicit parameter values or reconstructed implicit charges violate "
-            "the configured bounds: " + constraint.describe_violations(params)
+            "the configured bounds: " + specs.violations(params)
         )
-    values = specs.with_implicit_charges(params).reshape(-1)
     topology = TopologyModifier(fn_topol)
-    topology.apply_parameters(specs.parameter_dict(values))
+    topology.apply_parameters(specs.as_dict(specs.complete(params)[0]))
     for charge_constraint in specs.charge_constraints:
         for group in topology.selected_groups(
             charge_constraint.selection, charge_constraint.scope
@@ -104,6 +104,34 @@ def write_sample_topology(
                     f"charge {actual}, expected {charge_constraint.target}."
                 )
     topology.write(fn_out)
+
+
+def last_checkpoint_step(fn_log: Path) -> int | None:
+    """Step of the last checkpoint recorded in an ``mdrun`` log.
+
+    ``mdrun`` writes a checkpoint at its final step, whether the run reached
+    ``nsteps`` or was stopped early by ``-maxh``.
+    """
+    if not fn_log.is_file():
+        return None
+    steps = CHECKPOINT_RE.findall(fn_log.read_text(errors="ignore"))
+    return int(steps[-1]) if steps else None
+
+
+def production_is_complete(directory: Path, fn_mdp: Path, n_steps: int) -> bool:
+    """Whether the production run in ``directory`` reached ``n_steps``.
+
+    A run is complete when its marker exists, when its log records a final
+    checkpoint at ``n_steps``, or when its trajectory holds every frame, so
+    the check works without a stored trajectory and after ``cleanup``.
+    """
+    marker = directory / DONE_MARKER
+    if marker.is_file() and marker.read_text().strip() == str(n_steps):
+        return True
+    step = last_checkpoint_step(directory / "production.log")
+    if step is not None and step >= n_steps:
+        return True
+    return trajectory_is_complete(directory / "production.xtc", fn_mdp, n_steps)
 
 
 def trajectory_is_complete(fn_xtc: Path, fn_mdp: Path, n_steps: int) -> bool:
@@ -120,9 +148,9 @@ def trajectory_is_complete(fn_xtc: Path, fn_mdp: Path, n_steps: int) -> bool:
     return n_frames >= n_steps // stride + 1
 
 
-def main(fn_config: PathLike) -> None:
+def main(fn_campaign: PathLike, sample_id: str) -> None:
     started = time.monotonic()
-    job = MDJobConfig.load(fn_config)
+    job = MDJobConfig.load(fn_campaign, sample_id)
     specs = Specs(job.fn_specs)
     check_gmx_available(job.gmx_cmd)
     sample_dir = job.campaign_dir / "samples" / job.sample_id
@@ -153,7 +181,8 @@ def main(fn_config: PathLike) -> None:
             if path.is_file() and (suffixes is None or path.suffix[1:] in suffixes):
                 shutil.copy2(path, system_dir / path.name)
 
-    outputs: list[dict[str, object]] = []
+    # Per system: role -> path relative to the campaign directory.
+    outputs: dict[str, dict[str, str | list[str]]] = {}
     status = "failed"
     run_dir = system_dir = sample_dir
     try:
@@ -163,7 +192,7 @@ def main(fn_config: PathLike) -> None:
             run_dir = work_dir / system.system_id
             trajectory = system_dir / "production.xtc"
             mdp = system.mdp_production_path
-            done = trajectory_is_complete(trajectory, mdp, system.n_steps)
+            done = production_is_complete(system_dir, mdp, system.n_steps)
             if not done:
                 if run_dir != system_dir and system_dir.is_dir():
                     shutil.copytree(system_dir, run_dir, dirs_exist_ok=True)
@@ -208,14 +237,23 @@ def main(fn_config: PathLike) -> None:
                     restart=restart,
                     log=fn_log,
                 )
-                done = trajectory_is_complete(
-                    run_dir / "production.xtc", mdp, system.n_steps
-                )
+                done = production_is_complete(run_dir, mdp, system.n_steps)
+                # The sample's topology is always kept: QoI routines read it.
                 copy_back(
-                    run_dir, system_dir, job.store if done and job.cleanup else None
+                    run_dir,
+                    system_dir,
+                    (*job.store, "top") if done and job.cleanup else None,
                 )
+                if done:
+                    (system_dir / DONE_MARKER).write_text(f"{system.n_steps}\n")
 
-            stored: dict[str, str | list[str]] = {}
+            stored: dict[str, str | list[str]] = {
+                "topology": str(
+                    (system_dir / "topology.top").relative_to(job.campaign_dir)
+                )
+            }
+            if "xtc" in job.store and trajectory.is_file():
+                stored["trajectory"] = str(trajectory.relative_to(job.campaign_dir))
             for suffix in job.store:
                 if suffix == "xtc":
                     continue
@@ -226,17 +264,7 @@ def main(fn_config: PathLike) -> None:
                 ]
                 if paths:
                     stored[suffix] = paths[0] if len(paths) == 1 else paths
-            outputs.append(
-                {
-                    "system_id": system.system_id,
-                    "trajectory": (
-                        str(trajectory.relative_to(job.campaign_dir))
-                        if "xtc" in job.store
-                        else None
-                    ),
-                    "inputs": stored,
-                }
-            )
+            outputs[system.system_id] = stored
             if not done:
                 complete = False
                 break
@@ -249,7 +277,4 @@ def main(fn_config: PathLike) -> None:
                 with open(sample_dir / "gmx.log", "a", encoding="utf-8") as handle:
                     handle.write(fn_log.read_text(encoding="utf-8"))
             shutil.rmtree(work_dir, ignore_errors=True)
-        save_yaml(
-            {"sample_id": job.sample_id, "status": status, "outputs": outputs},
-            sample_dir / "result.yaml",
-        )
+        save_yaml({"status": status, "outputs": outputs}, sample_dir / "result.yaml")

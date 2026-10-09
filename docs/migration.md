@@ -25,6 +25,75 @@
 7. Replace `cd "$WORKDIR"`-style `slurm.setup`/`teardown` lines with
    `scratch_dir`; GROMACS runs in its sample (or scratch) directory regardless
    of the shell's working directory.
+8. `bff label-snapshots` is gone. Produce the reference trajectory outside
+   BFF (see [Reference trajectories](reference-trajectories.md)). To label
+   frames with CP2K, use `scripts/label_structures.py` on Slurm: rename
+   `system_id` to `id`, replace `md_input`/`sp_input` with one single-point
+   `cp2k_input` that reads `structure.xyz` and includes `cell.inc`, move
+   `single_atom_inputs` to the top level, replace `train_fraction` with
+   `split`, and drop `job_scheduler`, `single_atoms`, `cleanup_snapshots`, and
+   `collection_wait_seconds`. The short CP2K MD before each single point is no
+   longer run; label frames from foundation-model MD instead.
+9. Delete `charge` and `multiplicity` from build configs. Existing build
+   outputs, including their `system.yaml`, work unchanged.
+10. Configuration files are checked more strictly; see the
+    [conventions](configuration/index.md). In build configs, write
+    `project: {directory: <path>}` instead of `project: <path>`, move a
+    top-level `fn_log` to `project.log`, and drop `kind` from `bias`. Write
+    `store` as a list (`store: [xtc]`). Replace
+    `plots.max_marginal_samples: null` with `-1`. Values that were silently
+    truncated or accepted before, such as `n_steps: 1.5`, equal parameter
+    bounds, `rhat_tol: 1`, or an unknown `priors_disttype`, are now errors.
+11. Rerunning `sample-parameters` or `validate` on an existing campaign
+    directory now fails. Add `resume: true` to continue it or
+    `overwrite: true` to replace it. Remove `max_restarts` from local
+    campaigns. Python code importing `compile_specs` from
+    `bff.workflows.sample_parameters.main` imports it from
+    `bff.domain.charge_constraints` and passes bounds, constraints, and
+    topology paths.
+12. In `charge_constraints`, set `implicit` to the atom name or type instead of
+    the parameter label: `implicit: C2` instead of `implicit: "charge C2"`.
+    Constraints no longer need to be disjoint or nested.
+13. Campaigns and QoI datasets written by earlier versions cannot be read:
+    `samples.yaml` has a new layout and jobs read `campaign.yaml`. Rerun
+    `sample-parameters`/`validate` (or `build-qoi-datasets` on a new campaign),
+    then `fit-lgp` and `learn`. Remove `training_samples.progress_stride` and
+    `output.write_raw` from build-qoi-datasets configs; `qoi/raw.json` is no
+    longer written. Delete any `systems/<id>/system.yaml` you no longer need.
+14. Rebuild QoI datasets and refit `.lgp` models: both use the new names.
+    In Python code, use `QoIDataset(X=..., y=..., y_ref=...)`,
+    `committee.members`, `committee.y_ref`, `committee.test_error`, and
+    `fit_surrogates(means=...)`. In fit-lgp configs, the default `mean` is now
+    `data`; write `mean: 0` to keep the old zero mean.
+15. In learn configs, remove `n_eff` and `independent_observations`; BFF
+    infers the effective observations. Keep or set `tolerance` as the
+    deviation you accept in the QoI's units (for example `0.1` for an RDF);
+    it now widens the likelihood instead of counting curve features, so
+    posteriors change where the tolerance exceeds the learned noise.
+16. Rerun `bff learn`: it now writes `outputs/results.pt` and old
+    `posterior.pt`/`prior.pt`/checkpoints cannot be read. Point
+    `validate.posterior.file` at `results.pt` (optionally `include_map: true`),
+    and remove `mcmc.include_implicit_charge`. In Python, use
+    `bff.Results.load(...)`, `results.draw(...)`, `results.map`, and
+    `LearningProblem.from_models(models, specs=specs)` with `fn_results=`;
+    plot functions take the `Results` and return figures.
+17. `mcmc.ess_min` defaults to `400` and counts the smaller of the bulk and
+    tail effective sample sizes; set `ess_min: 100` to keep the old looseness.
+    `Results.diagnostics()` returns `rhat`, `ess_bulk`, and `ess_tail`
+    (previously `ess` and `autocorr_time`). Restart runs with `mcmc.resume`
+    only from checkpoints written by this version.
+18. In fit-lgp configs remove `fit.device` and `fit.lr`; fitting always runs on
+    the CPU. Optionally tune `fit.max_iter` and `fit.tol_grad` (new default
+    `1e-4`). In learn configs, `mcmc.device` now defaults to `auto`. In Python
+    code, drop `device=` from `fit_surrogates` and `LocalGaussianProcess`,
+    use `model.to(device)` if you predict on a GPU yourself, and call
+    `log_posterior(theta, priors, log_likelihood_fn)` without `device`.
+    `find_map` takes `bounds` and returns a `MapResult`.
+19. The acetate example moved to one directory per stage with its config inside
+    (`cd 06-learn && bff learn config.yaml`); copy your own configs next to
+    the stage they belong to. The `data/` directory of templates is removed;
+    `LGPCommittee.n_eff` is inferred at creation, so Python code no longer
+    needs `effective_observations` to set it.
 
 # Pipeline Directory-Contract Migration
 

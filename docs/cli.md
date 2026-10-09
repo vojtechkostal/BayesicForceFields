@@ -6,8 +6,6 @@ The CLI entry point is implemented in `bff/cli.py`.
 
 - `bff build CONFIG.yaml`
   Build equilibrated systems and seeded production trajectories.
-- `bff label-snapshots CONFIG.yaml`
-  Extract trajectory snapshots and label them with CP2K.
 - `bff sample-parameters CONFIG.yaml`
   Sample force-field parameters and run FFMD campaigns.
 - `bff build-qoi-datasets CONFIG.yaml`
@@ -26,14 +24,12 @@ The CLI entry point is implemented in `bff/cli.py`.
 Hidden internal commands also exist for scheduled jobs:
 
 - `bff md CONFIG.yaml`
-- `bff label-snapshot-job CONFIG.yaml`
 
 ## Config Philosophy
 
 Each top-level workflow uses one focused config file:
 
 - build config: how to equilibrate and seed production trajectories
-- label-snapshots config: how to extract and label trajectory snapshots
 - sample-parameters config: how to turn build systems into a sampled FFMD campaign
 - build-qoi-datasets config: how to compute observables from trajectories
 - fit-lgp config: how to train surrogates
@@ -61,7 +57,6 @@ Add the matching line to `~/.bashrc` or `~/.zshrc` if you want completion in
 future shells. After completion is loaded, `bff <TAB>` should offer:
 
 - `build`
-- `label-snapshots`
 - `sample-parameters`
 - `build-qoi-datasets`
 - `fit-lgp`

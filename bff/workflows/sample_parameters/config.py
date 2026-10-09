@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Literal
 
 from ..campaign.config import SimulationCampaignConfig, load_campaign_config
-from ..config import PathLike, check_keys
+from ..config import ConfigSection, PathLike
 
 
 @dataclass(frozen=True)
@@ -15,25 +16,28 @@ class ChargeConstraintConfig:
     implicit: str
 
 
-def _load_bounds(bounds: Any) -> dict[str, tuple[float, float]]:
-    if not isinstance(bounds, dict):
-        raise ValueError("'bounds' must be a mapping of parameter names to bounds.")
-    loaded: dict[str, tuple[float, float]] = {}
-    for name, value in bounds.items():
+def _load_bounds(config: ConfigSection) -> dict[str, tuple[float, float]]:
+    bounds: dict[str, tuple[float, float]] = {}
+    for name, value in config.mapping("bounds").items():
+        field = f"bounds.{name}"
         if not (
-            isinstance(value, (list, tuple))
+            isinstance(value, list)
             and len(value) == 2
-            and all(isinstance(x, (int, float)) for x in value)
-        ):
-            raise ValueError(f"Invalid bounds for {name!r}: {value}")
-        lower, upper = float(value[0]), float(value[1])
-        if lower > upper:
-            raise ValueError(
-                f"Lower bound {lower} is greater than upper bound {upper} "
-                f"for parameter {name!r}."
+            and all(
+                isinstance(x, (int, float)) and not isinstance(x, bool)
+                and math.isfinite(x)
+                for x in value
             )
-        loaded[name] = (lower, upper)
-    return loaded
+            and value[0] < value[1]
+        ):
+            raise ValueError(
+                f"{field} must be [lower, upper] with finite lower < upper, "
+                f"got {value!r}."
+            )
+        bounds[str(name)] = (float(value[0]), float(value[1]))
+    if not bounds:
+        raise ValueError("bounds must define at least one parameter.")
+    return bounds
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -41,57 +45,57 @@ class SampleParametersConfig(SimulationCampaignConfig):
     bounds: dict[str, tuple[float, float]]
     charge_constraints: tuple[ChargeConstraintConfig, ...]
     n_samples: int
+    seed: int | None = None
 
     @classmethod
     def load(cls, fn_config: PathLike) -> SampleParametersConfig:
-        _, config, common = load_campaign_config(
+        config, common = load_campaign_config(
             fn_config,
             stage="sample-parameters",
-            stage_keys={"bounds", "charge_constraints", "n_samples"},
-            stage_required=("bounds", "charge_constraints", "n_samples"),
+            stage_keys={"bounds", "charge_constraints", "n_samples", "seed"},
+            stage_required=("bounds", "n_samples"),
         )
-        bounds = _load_bounds(config["bounds"])
-        if not isinstance(config["charge_constraints"], list):
-            raise ValueError("'charge_constraints' must be a list.")
+        bounds = _load_bounds(config)
         constraints: list[ChargeConstraintConfig] = []
-        for index, raw in enumerate(config["charge_constraints"]):
-            where = f"charge_constraints[{index}]"
-            keys = ("selection", "target", "scope", "implicit")
-            check_keys(raw, where=where, allowed=keys, required=keys)
-            scope = str(raw["scope"])
-            if scope not in {"system", "residue"}:
+        keys = ("selection", "target", "scope", "implicit")
+        raw_constraints = (
+            config.sections("charge_constraints", allowed=keys, required=keys)
+            if config.get("charge_constraints")
+            else []
+        )
+        for raw in raw_constraints:
+            # The implicit atom (name or type) selects the charge parameter
+            # that is solved from the constraint instead of being sampled.
+            atom = raw.string("implicit")
+            labels = [
+                label
+                for label in bounds
+                if label.startswith("charge ") and atom in label.split()[1:]
+            ]
+            if len(labels) != 1:
                 raise ValueError(
-                    f"{where}.scope must be 'system' or 'residue', got {scope!r}."
+                    f"{raw.field('implicit')} must be an atom name or type of "
+                    f"exactly one 'charge ...' parameter in bounds, got {atom!r}."
                 )
-            implicit = str(raw["implicit"])
-            if implicit not in bounds:
-                raise ValueError(
-                    f"{where}.implicit ({implicit!r}) must match a parameter "
-                    "defined in 'bounds'."
-                )
-            if not implicit.startswith("charge "):
-                raise ValueError(
-                    f"{where}.implicit must be a charge parameter, got {implicit!r}."
-                )
+            implicit = labels[0]
             constraints.append(
                 ChargeConstraintConfig(
-                    selection=str(raw["selection"]),
-                    target=float(raw["target"]),
-                    scope=scope,
+                    selection=raw.string("selection"),
+                    target=raw.number("target"),
+                    scope=raw.string("scope", choices=("system", "residue")),
                     implicit=implicit,
                 )
             )
         implicit_params = [constraint.implicit for constraint in constraints]
         if len(implicit_params) != len(set(implicit_params)):
             raise ValueError(
-                "Each charge constraint must define a distinct implicit parameter."
+                "charge_constraints must each solve a different charge parameter; "
+                f"implicit atoms resolve to {implicit_params}."
             )
-        n_samples = int(config["n_samples"])
-        if n_samples <= 0:
-            raise ValueError("'n_samples' must be a positive integer.")
         return cls(
             **common,
             bounds=bounds,
             charge_constraints=tuple(constraints),
-            n_samples=n_samples,
+            n_samples=config.integer("n_samples", minimum=1),
+            seed=config.integer("seed", None, minimum=0),
         )

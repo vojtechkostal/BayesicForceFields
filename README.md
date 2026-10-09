@@ -24,15 +24,17 @@ Full documentation:
 ## Workflow
 
 ```text
-build -> label-snapshots -> external MLIP workflow
-      -> sample-parameters -> build-qoi-datasets -> fit-lgp -> learn -> validate
+build -> [external reference MD] -> sample-parameters -> build-qoi-datasets
+      -> fit-lgp -> learn -> validate
 ```
 
 The command-line interface guides a force-field model from prepared molecular
 systems to sampled trajectories, quantities of interest, surrogate models, and
 validated posterior samples. See the [CLI reference](https://vojtechkostal.github.io/BayesicForceFields/cli/)
 for the
-individual commands.
+individual commands. BFF does not run the reference simulation; see
+[Reference trajectories](https://vojtechkostal.github.io/BayesicForceFields/reference-trajectories/)
+for recommended routes and the standalone CP2K labeling script in `scripts/`.
 
 ## Installation
 
@@ -56,8 +58,8 @@ pip install "bfflearn[notebook]"
 > to choose the command matching your CUDA version before running fitting,
 > learning, or the posterior notebooks.
 
-Full MD workflows also require GROMACS. CP2K and PLUMED are needed only for the
-stages that use them. See the [installation guide](https://vojtechkostal.github.io/BayesicForceFields/installation/)
+Full MD workflows also require GROMACS. PLUMED is needed only for
+PLUMED-biased systems. See the [installation guide](https://vojtechkostal.github.io/BayesicForceFields/installation/)
 for
 details, CUDA guidance, and the repository-development setup.
 
@@ -71,7 +73,7 @@ cd examples/acetate
 ```
 
 - [Acetate](https://github.com/vojtechkostal/BayesicForceFields/tree/main/examples/acetate):
-  complete BFF stage template with an explicit external MLIP handoff.
+  complete BFF stage template with an explicit external reference-MD handoff.
 - [Arbitrary data](https://github.com/vojtechkostal/BayesicForceFields/tree/main/examples/arbitrary-data):
   notebook using existing tabular
   simulation results and targets.

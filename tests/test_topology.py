@@ -10,7 +10,7 @@ from bff.topology import TopologyModifier, prepare_universe
 from bff.workflows.campaign.job import write_sample_topology
 
 ROOT = Path(__file__).parents[1]
-ACE_TOP = ROOT / "examples/acetate/inputs/common/topol.top"
+ACE_TOP = ROOT / "examples/acetate/inputs/topol.top"
 
 
 def test_prepare_universe_suppresses_expected_topology_only_warnings() -> None:

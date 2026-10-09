@@ -278,7 +278,7 @@ def fill_universe(topol: Topology) -> mda.Universe:
     )
 
     universe.add_TopologyAttr("name", [a.name for a in atoms])
-    universe.add_TopologyAttr("type", [a.type.name for a in atoms])
+    universe.add_TopologyAttr("type", [a.type for a in atoms])
     universe.add_TopologyAttr("resname", [r.name for r in residues])
     universe.add_TopologyAttr("resid", list(range(1, len(residues) + 1)))
 

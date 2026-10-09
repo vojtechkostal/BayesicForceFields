@@ -4,39 +4,44 @@ Hyperparameters are found by MAP optimization of a leave-one-out likelihood;
 committees draw further hyperparameter sets from a Laplace approximation.
 """
 
+from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from typing import Callable, Mapping, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import torch
+from scipy.optimize import minimize
 from torch.autograd.functional import hessian
 
 from ..io.logs import Logger
 from ..qoi.dataset import QoIDataset
-from .gaussian_process import (
-    LGPCommittee,
-    LocalGaussianProcess,
-    MeanFunction,
-    evaluate_mean,
-)
+from .gaussian_process import LGPCommittee, LocalGaussianProcess
 from .likelihoods import loo_log_likelihood
-from .means import rdf_sigmoid_mean
+from .means import (
+    MeanSpec,
+    build_mean,
+    describe_spec,
+    evaluate_mean,
+    resolve_spec,
+)
 from .posterior import log_posterior
 from .priors import Prior, Priors
-from .utils import check_device, check_tensor, enable_manual_dist
 
 PathLike = Union[str, Path]
+
+_BAD_VALUE = 1e10  # objective at points where the log posterior is not finite
+# Log hyperparameters are searched within this many prior standard deviations.
+_SEARCH_WIDTH = 6.0
+_N_RESTARTS = 2
 
 
 def train_test_split(
     X: torch.Tensor, y: torch.Tensor, test_fraction: float = 0.2
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Split the dataset into training and testing sets."""
-
-    device = X.device if isinstance(X, torch.Tensor) else "cpu"
-    X = check_tensor(X, device=device)
-    y = check_tensor(y, device=device)
+    """Randomly split the dataset into training and testing sets."""
+    X = torch.as_tensor(X)
+    y = torch.as_tensor(y)
     n = len(X)
     if n != len(y):
         raise ValueError("X and y must have the same length.")
@@ -45,234 +50,155 @@ def train_test_split(
     if n < 2:
         raise ValueError("X and y must have at least 2 samples.")
 
-    indices = torch.randperm(n, device=X.device)
+    indices = torch.randperm(n)
     test_size = min(max(int(n * test_fraction), 1), n - 1)
     idx_train = indices[test_size:]
     idx_test = indices[:test_size]
     return X[idx_train], X[idx_test], y[idx_train], y[idx_test]
 
 
-def find_max_stable_lr(
-    fn: Callable,
-    p0: torch.Tensor,
-    learning_rates: (
-        Sequence[Union[float, torch.Tensor]] | float | torch.Tensor | None
-    ) = None,
-    max_iter: int = 100,
-    param_bounds: Tuple[float, float] = (-7, 7),
-) -> Union[float, None]:
-    """Find the largest stable learning rate for gradient-based optimization.
+@dataclass(frozen=True)
+class MapResult:
+    """Outcome of :func:`find_map`: the maximizer and what it took."""
 
-    Parameters
-    ----------
-    fn : Callable
-        Objective function returning a scalar tensor.
-    p0 : torch.Tensor
-        Initial parameter vector.
-    learning_rates : iterable of float, optional
-        Learning rates to test. Defaults to log-spaced values.
-    max_iter : int
-        Number of steps to test for each learning rate.
-    param_bounds : tuple of float
-        Bounds beyond which parameters are considered unstable.
-
-    Returns
-    -------
-    float or None
-        The largest stable learning rate found, or None if none were stable.
-    """
-    if learning_rates is None:
-        learning_rates = 10 ** torch.linspace(-1, -6, 6)
-    elif isinstance(learning_rates, torch.Tensor) and learning_rates.ndim == 0:
-        learning_rates = [float(learning_rates.item())]
-    elif isinstance(learning_rates, (int, float)):
-        learning_rates = [float(learning_rates)]
-    else:
-        learning_rates = list(learning_rates)
-    lower, upper = param_bounds
-    # Log-scale hyperparameters can legitimately start outside the generic
-    # stability window when the underlying data are very small or very large.
-    # Preserve the explosion guard while always admitting the supplied start.
-    lower = min(lower, float(p0.min()) - 1.0)
-    upper = max(upper, float(p0.max()) + 1.0)
-    for lr in learning_rates:
-        x = p0.clone().detach().requires_grad_(True)
-        opt = torch.optim.SGD([x], lr=lr)
-
-        for i in range(max_iter):
-            diverged = not torch.isfinite(x).all()
-            if diverged or torch.any(x < lower) or torch.any(x > upper):
-                break
-            opt.zero_grad()
-            loss = -fn(x)
-            loss.backward()
-            opt.step()
-        else:
-            # Only gets executed if inner loop did not break (i.e., stable)
-            return lr
+    theta: torch.Tensor
+    value: float  # log posterior at ``theta``
+    iterations: int
+    evaluations: int  # objective and gradient evaluations
+    converged: bool
 
 
 def find_map(
     fn: Callable,
     x0: torch.Tensor,
-    lr: Union[float, torch.Tensor] = None,
-    max_iter: int = 10000,
-    tol_grad: float = 1e-2,
-    device: str = 'cpu',
-    logger: Callable = None
-) -> torch.Tensor:
+    bounds: Tuple[np.ndarray, np.ndarray],
+    max_iter: int = 500,
+    tol_grad: float = 1e-4,
+    starts: Optional[Sequence[torch.Tensor]] = None,
+    logger: Optional[Logger] = None,
+) -> MapResult:
+    """Maximize a log posterior with L-BFGS-B.
 
-    """Find the maximum a posteriori (MAP) estimate
-    using gradient-based optimization.
+    The gradient comes from autograd; ``fn`` maps a parameter vector to a
+    scalar. The search starts at ``x0`` and, if that does not converge to an
+    interior point, at each of ``starts``; the best result is kept. Points
+    where ``fn`` is not finite (for example a covariance that is not positive
+    definite) are treated as very bad, so the line search backs off.
 
     Parameters
     ----------
     fn : Callable
-        Objective function to maximize (log-posterior).
+        Log posterior of one parameter vector, as a scalar tensor.
     x0 : torch.Tensor
-        Initial parameter vector.
-    lr : float or torch.Tensor, optional
-        Learning rate for optimization. If None, it will be determined by a search.
+        First starting point.
+    bounds : tuple of arrays
+        Lower and upper limits of every parameter.
     max_iter : int
-        Maximum number of optimization iterations.
+        Maximum iterations of each search.
     tol_grad : float
-        Gradient norm threshold for convergence.
-    device : str
-        Device to perform computations on.
-    logger : Callable, optional
-        Logger for progress updates. Should accept a string and a level argument.
-
-    Returns
-    -------
-    torch.Tensor
-        The MAP estimate found by optimization.
+        Convergence: largest component of the (projected) gradient.
+    starts : sequence of torch.Tensor, optional
+        Further starting points, used only if needed.
     """
+    lower, upper = (np.asarray(b, dtype=float) for b in bounds)
+    scipy_bounds = list(zip(lower, upper))
+    evaluations = 0
 
-    if logger is not None:
-        logger.status(
-            "Learning-rate search",
-            "in progress...",
-            level=2,
-            overwrite=True,
-        )
+    def objective(x: np.ndarray) -> Tuple[float, np.ndarray]:
+        nonlocal evaluations
+        evaluations += 1
+        theta = torch.tensor(x, dtype=torch.float64, requires_grad=True)
+        value = fn(theta)
+        if not torch.isfinite(value):
+            return _BAD_VALUE, np.zeros_like(x)
+        (-value).backward()
+        return -value.item(), theta.grad.numpy().copy()
 
-    lr_opt = find_max_stable_lr(fn, x0, learning_rates=lr)
-    if lr_opt is not None:
-        lr_opt = 0.5 * lr_opt
-        if logger is not None:
-            logger.done(
-                "Learning-rate search",
-                detail=f"lr = {lr_opt:.1e}",
-                level=2,
-            )
-    else:
-        raise ValueError("No stable learning rate found.")
-
-    x0 = x0.clone().detach().to(device).requires_grad_(True)
-    optimizer = torch.optim.SGD([x0], lr=lr_opt)
-    iter_width = len(str(max_iter))
-    tol_grad_text = f"{tol_grad:g}"
-    best_value = -torch.inf
-    best_x = x0.detach().clone()
-
-    for i in range(max_iter):
-        optimizer.zero_grad()
-        loss = -fn(x0)
-        value = -loss.detach()
-        if torch.isfinite(value) and value > best_value:
-            best_value = value
-            best_x = x0.detach().clone()
-        loss.backward()
-        grad_norm = x0.grad.norm().item()
-        if i % 100 == 0 and logger is not None:
+    def report(x: np.ndarray) -> None:
+        if logger is not None and n_iter[0] % 10 == 0:
             logger.status(
                 "MAP search",
-                (
-                    f"it. {i:>{iter_width}d}/{max_iter:<{iter_width}d} | "
-                    f"loss: {loss.item():>10.3f} | "
-                    f"grad: {grad_norm:>8.3f}/{tol_grad_text}"
-                ),
+                f"it. {n_iter[0]}/{max_iter} | evaluations: {evaluations}",
                 level=2,
                 overwrite=True,
             )
-        optimizer.step()
-        if grad_norm < tol_grad:
-            if logger is not None:
-                logger.done("MAP search", level=2)
+        n_iter[0] += 1
+
+    best: Optional[MapResult] = None
+    total_iterations = 0
+    for start in [x0, *(starts or [])]:
+        n_iter = [0]
+        result = minimize(
+            objective,
+            start.detach().cpu().numpy().astype(float),
+            jac=True,
+            method="L-BFGS-B",
+            bounds=scipy_bounds,
+            callback=report,
+            options={
+                "maxiter": max_iter,
+                "maxfun": 4 * max_iter,
+                "gtol": tol_grad,
+                "ftol": 1e-13,
+            },
+        )
+        total_iterations += int(result.nit)
+        interior = np.all(
+            (result.x > lower + 1e-6) & (result.x < upper - 1e-6)
+        )
+        candidate = MapResult(
+            theta=torch.tensor(result.x, dtype=torch.float64),
+            value=-float(result.fun),
+            iterations=total_iterations,
+            evaluations=evaluations,
+            converged=bool(result.success and interior),
+        )
+        if best is None or (
+            (candidate.converged, candidate.value) > (best.converged, best.value)
+        ):
+            best = candidate
+        if best.converged and start is x0:
             break
-
-    else:
-        if logger is not None:
-            logger.warn(
-                "MAP search reached the maximum iterations without convergence.",
-                level=2,
-            )
-
-    return best_x
+    best = MapResult(
+        best.theta, best.value, total_iterations, evaluations, best.converged
+    )
+    if logger is not None:
+        detail = (
+            f"{best.iterations} iterations | {best.evaluations} evaluations | "
+            f"log posterior {best.value:.4f}"
+        )
+        if best.converged:
+            logger.done("MAP search", detail=detail, level=2)
+        else:
+            logger.warn(f"MAP search did not converge | {detail}", level=2)
+    return best
 
 
 def laplace_approximation(
     fn: Callable,
     map_theta: torch.Tensor,
-    device: str = 'cpu'
+    min_curvature: float = 1e-3,
 ) -> torch.Tensor:
-    """
-    Perform Laplace approximation around MAP estimate.
+    """Covariance of the Laplace approximation around the MAP estimate.
+
+    It is the inverse of the negative Hessian of ``fn``. Curvatures below
+    ``min_curvature`` (flat or non-maximal directions) are raised to it, so
+    the covariance stays finite and positive definite.
 
     Parameters
     ----------
     fn : Callable
-        Objective function to approximate (log-posterior).
+        Log posterior of one parameter vector, as a scalar tensor.
     map_theta : torch.Tensor
-        MAP estimate around which to perform the approximation.
-    device : str
-        Device to perform computations on.
-
-    Returns
-    -------
-    cov : torch.Tensor
-        The approximate posterior covariance (inverse Hessian).
+        MAP estimate around which to approximate.
+    min_curvature : float
+        Smallest curvature (inverse variance) allowed.
     """
-
-    map_theta = check_tensor(map_theta, device=device)
-    with enable_manual_dist():
-        H = -hessian(lambda th: fn(th).sum(), map_theta)
-
-    reg_eye = 1e-6 * torch.eye(H.shape[0], device=H.device)
-    cov = torch.linalg.inv(H + reg_eye)
-
-    # symmerize covariance matrix
-    cov = (cov + cov.T) / 2
-
-    return cov
-
-
-def _resolve_mean(
-    dataset: QoIDataset,
-    mean: MeanFunction | str,
-) -> MeanFunction:
-    """Resolve a configured surrogate mean specification."""
-    if isinstance(mean, str):
-        if mean == "sigmoid":
-            bins = dataset.settings.get("bins")
-            distance_range = dataset.settings.get("range")
-            if bins is None or distance_range is None:
-                raise ValueError(
-                    "RDF sigmoid mean requires shared RDF settings in the dataset. "
-                    "Build the dataset with one consistent RDF routine definition "
-                    "per QoI."
-                )
-            if bins != dataset.curve_length:
-                raise ValueError(
-                    "RDF dataset settings declare "
-                    f"bins={bins!r}, but each RDF curve contains "
-                    f"{dataset.curve_length} values."
-                )
-            return rdf_sigmoid_mean(bins, distance_range, dataset.outputs_ref)
-        else:
-            raise NotImplementedError(
-                "Other than 'sigmoid' or single-value mean is not implemented")
-    return mean
+    H = -hessian(lambda theta: fn(theta).sum(), map_theta)
+    H = 0.5 * (H + H.T)
+    curvature, directions = torch.linalg.eigh(H)
+    curvature = curvature.clamp(min=min_curvature)
+    return (directions / curvature) @ directions.T
 
 
 def _default_lgp_hyperpriors(
@@ -293,20 +219,22 @@ def _default_lgp_hyperpriors(
     if not torch.isfinite(target_scale) or target_scale <= 0:
         target_scale = torch.ones((), dtype=residuals.dtype)
 
-    # LocalGaussianProcess adds ``sigma`` directly to the covariance diagonal,
-    # so its natural scale is a fraction of the target variance.
+    # ``noise_variance`` is a variance, so its natural scale is a fraction of
+    # the residual variance.
     noise_scale = 0.1 * target_scale.square()
     tiny = torch.finfo(noise_scale.dtype).tiny
     noise_scale = torch.clamp(noise_scale, min=tiny)
 
     return Priors(
         [
-            Prior("normal", float(torch.log(scale)), 2.0, name=f"length_{i}")
+            Prior("normal", float(torch.log(scale)), 2.0, name=f"lengthscale_{i}")
             for i, scale in enumerate(input_scales)
         ]
         + [
-            Prior("normal", float(torch.log(target_scale)), 2.0, name="width"),
-            Prior("normal", float(torch.log(noise_scale)), 3.0, name="noise"),
+            Prior("normal", float(torch.log(target_scale)), 2.0, name="amplitude"),
+            Prior(
+                "normal", float(torch.log(noise_scale)), 3.0, name="noise_variance"
+            ),
         ]
     )
 
@@ -314,101 +242,110 @@ def _default_lgp_hyperpriors(
 def fit_lgp_committee(
     X: torch.Tensor,
     y: torch.Tensor,
-    y_mean: MeanFunction,
+    mean: MeanSpec,
     test_fraction: float,
     n_hyper: int,
     committee: int,
-    reference_values: np.ndarray,
+    y_ref: np.ndarray,
     n_curves: int,
     nuisance: float | None,
     fn_out: PathLike | None,
-    device: str,
     logger: Optional[Logger] = None,
-    opt_kwargs: Optional[dict[str, Union[int, float, str]]] = None,
-    hyperpriors: Optional[Priors | Sequence] = None,
+    opt_kwargs: Optional[dict[str, Union[int, float]]] = None,
+    hyperpriors: Optional[Priors | Sequence[Prior]] = None,
     dataset_fingerprint: str | None = None,
+    parameter_names: Sequence[str] | None = None,
 ) -> LGPCommittee:
-    """Fit a committee of local Gaussian-process surrogates."""
-    check_device(device)
+    """Fit a committee of local Gaussian-process surrogates.
+
+    The fit is small (a few hundred points) and runs on the CPU in float64.
+    The returned committee lives there; ``bff learn`` moves it to its device.
+    """
     logger = logger or Logger("fit-lgp")
     opt_kwargs = dict(opt_kwargs or {})
 
+    X = torch.as_tensor(X, dtype=torch.float64)
+    y = torch.as_tensor(y, dtype=torch.float64)
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_fraction)
     n_hyper = min(n_hyper, len(X_train))
+    # The mean comes from the training split only, never the test samples.
+    mean = build_mean(mean, X_train, y_train)
 
-    X_hyper = check_tensor(X_train[:n_hyper], device="cpu")
-    y_hyper = check_tensor(y_train[:n_hyper], device="cpu")
-    y_hyper_mean = evaluate_mean(y_mean, X_hyper, device="cpu")
+    X_hyper = X_train[:n_hyper]
+    y_hyper = y_train[:n_hyper]
+    y_hyper_mean = evaluate_mean(mean, X_hyper)
 
     n_params = X.shape[1]
     if hyperpriors is None:
         priors = _default_lgp_hyperpriors(X_hyper, y_hyper - y_hyper_mean)
     else:
-        priors = Priors.from_any(hyperpriors)
+        priors = Priors(list(hyperpriors))
     if len(priors) != n_params + 2:
         raise ValueError(
-            "LGP hyperpriors must define one length scale per input parameter, "
-            "followed by width and noise."
+            "LGP hyperpriors must define one length scale per input, followed "
+            "by the amplitude and the noise variance."
         )
-    p0 = torch.tensor(priors.means, dtype=torch.float32)
+    centers = torch.tensor(priors.means, dtype=torch.float64)
+    widths = _SEARCH_WIDTH * torch.tensor(priors.scales, dtype=torch.float64)
 
-    log_likelihood = partial(
-        loo_log_likelihood,
-        X=X_hyper,
-        y=y_hyper - y_hyper_mean,
-    )
     log_probability = partial(
         log_posterior,
         priors=priors,
-        log_likelihood_fn=log_likelihood,
-        device="cpu",
+        log_likelihood_fn=partial(
+            loo_log_likelihood, X=X_hyper, y=y_hyper - y_hyper_mean
+        ),
     )
-
-    map_theta = find_map(log_probability, p0, logger=logger, **opt_kwargs)
+    starts = [
+        torch.stack([prior.distribution.sample() for prior in priors]).double()
+        for _ in range(_N_RESTARTS)
+    ]
+    search = find_map(
+        log_probability,
+        centers,
+        bounds=(centers - widths, centers + widths),
+        starts=starts,
+        logger=logger,
+        **opt_kwargs,
+    )
+    map_theta = search.theta
 
     if committee > 1:
-        cov = laplace_approximation(log_probability, map_theta, device="cpu")
+        cov = laplace_approximation(log_probability, map_theta)
         hyper_dist = torch.distributions.MultivariateNormal(map_theta, cov)
         hyper_samples = hyper_dist.sample((committee,))
     else:
         hyper_samples = map_theta.unsqueeze(0)
 
     hyper_samples = hyper_samples.exp()
-    lengths = hyper_samples[:, :-2]
-    widths = hyper_samples[:, -2]
-    sigmas = hyper_samples[:, -1]
-
     logger.status("Committee", f"0/{committee}", level=2, overwrite=True)
-    lgps = []
-    for i, (length, width, sigma) in enumerate(
-        zip(lengths, widths, sigmas),
-        start=1,
-    ):
-        lgps.append(
+    members = []
+    for i, sample in enumerate(hyper_samples, start=1):
+        members.append(
             LocalGaussianProcess(
                 X_train,
                 y_train,
-                y_mean,
-                length,
-                width,
-                sigma,
-                device,
+                mean,
+                lengthscales=sample[:-2],
+                amplitude=sample[-2],
+                noise_variance=sample[-1],
             )
         )
         if i < committee:
             logger.status("Committee", f"{i}/{committee}", level=2, overwrite=True)
 
     lgp_committee = LGPCommittee(
-        lgps=lgps,
-        reference_values=reference_values,
+        members=members,
+        y_ref=y_ref,
         n_curves=n_curves,
         nuisance=nuisance,
         dataset_fingerprint=dataset_fingerprint,
+        parameter_names=parameter_names,
     )
     lgp_committee.validate(X_test, y_test)
     logger.done(
         "Committee",
-        detail=f"{committee}/{committee} (100%) | MAPE = {lgp_committee.error:.2f}%",
+        detail=f"{committee} member(s) | test sMAPE "
+        f"{lgp_committee.test_error:.2f}%",
         level=2,
     )
 
@@ -421,26 +358,30 @@ def fit_lgp_committee(
 def fit_surrogates(
     datasets: Sequence[QoIDataset],
     *,
-    y_means: Optional[Mapping[str, MeanFunction | str]] = None,
-    hyperpriors: Optional[Mapping[str, Priors | Sequence]] = None,
+    means: Optional[Mapping[str, MeanSpec]] = None,
+    hyperpriors: Optional[Mapping[str, Priors | Sequence[Prior]]] = None,
     model_paths: Optional[Mapping[str, PathLike | None]] = None,
     reuse_models: bool = True,
     n_hyper_max: int = 200,
     committee_size: int = 1,
     test_fraction: float = 0.2,
-    device: str = "cuda",
     logger: Optional[Logger] = None,
     **opt_kwargs,
 ) -> dict[str, LGPCommittee]:
-    """Fit or load QoI surrogate models."""
+    """Fit one committee per QoI dataset, or reuse a saved one.
+
+    ``means`` maps QoI names to mean specifications (default ``"data"``;
+    see :mod:`bff.bayes.means`). A saved model is reused only if it was
+    fitted to the same dataset with the same mean.
+    """
     owns_logger = logger is None
     logger = logger or Logger("fit-lgp")
-    y_means = dict(y_means or {})
+    means = dict(means or {})
     hyperpriors = dict(hyperpriors or {})
     model_paths = dict(model_paths or {})
 
     if owns_logger:
-        logger.section("Surrogate Fitting")
+        logger.section("Fit LGP")
         logger.blank()
 
     models: dict[str, LGPCommittee] = {}
@@ -451,58 +392,54 @@ def fit_surrogates(
             )
 
         qoi = dataset.name
-        logger.info(f"QoI {qoi}", level=1)
+        spec = means.get(qoi, "data")
+        logger.info(f"{qoi}: mean {describe_spec(spec) or 'custom'}", level=1)
 
-        fn_model_raw = model_paths.get(qoi)
-        fn_model = None if fn_model_raw is None else Path(fn_model_raw).resolve()
+        fn_model = None if model_paths.get(qoi) is None else Path(model_paths[qoi])
         if fn_model is not None:
+            fn_model = fn_model.resolve()
             fn_model.parent.mkdir(parents=True, exist_ok=True)
 
         if reuse_models and fn_model is not None and fn_model.exists():
-            models[qoi] = LGPCommittee.load(fn_model)
-            fingerprint = dataset.fingerprint()
-            if models[qoi].dataset_fingerprint != fingerprint:
-                raise ValueError(
-                    f"Cached surrogate for {qoi!r} at {fn_model} was fitted "
-                    "from different QoI data. Set fit.reuse_models: false "
-                    "or remove the stale model."
+            cached = LGPCommittee.load(fn_model)
+            if (
+                cached.dataset_fingerprint == dataset.fingerprint()
+                and describe_spec(spec) is not None
+                and cached.mean_spec == describe_spec(spec)
+            ):
+                models[qoi] = cached
+                logger.done(
+                    "Reused",
+                    detail=f"{fn_model} | test sMAPE {cached.test_error:.2f}%",
+                    level=2,
                 )
-            models[qoi].reference_values = np.asarray(
-                dataset.outputs_ref,
-                dtype=float,
-            ).reshape(-1)
-            models[qoi].n_eff = float(models[qoi].reference_values.size)
-            models[qoi].n_curves = dataset.n_curves
-            if models[qoi].reference_values.size != models[qoi].y_size:
-                raise ValueError(
-                    f"Cached surrogate for {qoi!r} is incompatible with the "
-                    "current reference observation size."
-                )
-            models[qoi].write(fn_model)
+                logger.blank()
+                continue
             logger.info(
-                f"Using cached surrogate model. | MAPE = {models[qoi].error:.2f}",
+                f"{fn_model} was fitted to other data or another mean; refitting.",
                 level=2,
             )
-            logger.blank()
-            continue
 
         models[qoi] = fit_lgp_committee(
-            X=dataset.inputs,
-            y=dataset.outputs,
-            y_mean=_resolve_mean(dataset, y_means.get(qoi, 0)),
+            X=dataset.X,
+            y=dataset.y,
+            mean=resolve_spec(spec, dataset),
             test_fraction=test_fraction,
             n_hyper=n_hyper_max,
             committee=committee_size,
-            reference_values=dataset.outputs_ref,
+            y_ref=dataset.y_ref,
             n_curves=dataset.n_curves,
             nuisance=dataset.nuisance,
-            fn_out=fn_model,
-            device=device,
+            fn_out=None,
             logger=logger,
             opt_kwargs=opt_kwargs,
             hyperpriors=hyperpriors.get(qoi),
             dataset_fingerprint=dataset.fingerprint(),
+            parameter_names=dataset.parameter_names,
         )
+        models[qoi].mean_spec = describe_spec(spec)
+        if fn_model is not None:
+            models[qoi].write(fn_model)
         logger.blank()
 
     return models

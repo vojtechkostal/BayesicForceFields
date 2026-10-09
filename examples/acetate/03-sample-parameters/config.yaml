@@ -1,0 +1,26 @@
+# Sample charge sets and run a short biased MD of every system for each.
+# Use config-slurm.yaml to run the samples as a Slurm job array.
+campaign_dir: ./
+source: ../01-build
+gmx_cmd: gmx  # ADAPT
+job_scheduler: local
+
+systems:  # ADAPT: simulation length
+  - {system_id: acetate, n_steps: 20000}
+  - {system_id: acetate-contact, n_steps: 20000}
+  - {system_id: acetate-separated, n_steps: 20000}
+
+n_samples: 20  # ADAPT: use hundreds for production
+bounds:
+  charge C1: [-1.0, 0.3]
+  charge C2: [0.0, 1.0]
+  charge H1 H2 H3: [-0.3, 0.3]
+  charge O1 O2: [-0.8, -0.3]
+# Every acetate keeps the total charge -0.8; C2 is solved from the others.
+charge_constraints:
+  - selection: resname ACE
+    target: -0.8
+    scope: residue
+    implicit: C2
+
+cleanup: true

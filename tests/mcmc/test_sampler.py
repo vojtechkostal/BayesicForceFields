@@ -67,7 +67,8 @@ def test_sampler_run_reports_expected_chain_shape() -> None:
     )
 
     assert checkpoints[-1].step == 8
-    assert checkpoints[-1].posterior.shape == (3, 4, 2)
+    assert checkpoints[-1].chain.shape == (3, 4, 2)
+    assert checkpoints[-1].chain_logp.shape == (3, 4)
     assert sampler.chain.shape == (3, 4, 2)
     assert checkpoints[-1].acceptance_rate is not None
 
@@ -90,7 +91,7 @@ def test_checkpoint_round_trip_and_restore(tmp_path: Path) -> None:
     assert torch.allclose(p, checkpoint.p)
     assert torch.allclose(logp, checkpoint.logp)
     assert torch.equal(accepted.cpu(), checkpoint.accepted)
-    assert torch.allclose(restored_sampler.chain.cpu(), checkpoint.posterior)
+    assert torch.allclose(restored_sampler.chain.cpu(), checkpoint.chain)
 
 
 def test_restart_rejects_mismatched_checkpoint_settings(tmp_path: Path) -> None:
@@ -117,3 +118,48 @@ def test_restart_rejects_mismatched_checkpoint_settings(tmp_path: Path) -> None:
                 fn_checkpoint=tmp_path / "checkpoint.pt",
             )
         )
+
+
+def test_sampler_stops_early_once_converged_and_checkpoints_the_diagnostics(
+    tmp_path: Path,
+) -> None:
+    sampler = _sampler()
+    p0 = torch.randn((8, 2), generator=torch.Generator().manual_seed(3))
+    fn = tmp_path / "ckpt.pt"
+
+    states = list(
+        sampler.run(
+            p0,
+            total_steps=5000,
+            warmup=100,
+            progress_stride=50,
+            fn_checkpoint=fn,
+            rhat_tol=1.05,
+            ess_min=50,
+        )
+    )
+
+    assert sampler.converged
+    assert states[-1].step < 5000
+    assert states[-1].n_passed >= 2
+    assert states[-1].converged
+    loaded = Checkpoint.load(fn)
+    assert loaded.convergence.max_rhat < 1.05
+    assert loaded.n_passed == states[-1].n_passed
+
+
+def test_sampler_does_not_stop_when_the_ess_target_is_out_of_reach() -> None:
+    sampler = _sampler()
+
+    list(
+        sampler.run(
+            torch.zeros((4, 2)),
+            total_steps=300,
+            warmup=50,
+            progress_stride=50,
+            ess_min=10**9,
+        )
+    )
+
+    assert not sampler.converged
+    assert sampler.diagnostics is not None

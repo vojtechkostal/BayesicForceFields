@@ -1,0 +1,15 @@
+# Learn the charge posterior from the surrogates and the reference QoIs.
+specs: ../03-sample-parameters/specs.yaml
+
+# tolerance: the deviation from the reference you accept, in QoI units.
+models:
+  rdf: {model_path: ../05-fit-lgp/models/rdf.lgp, tolerance: 0.1}
+  hb: {model_path: ../05-fit-lgp/models/hb.lgp}
+  contact-distance: {model_path: ../05-fit-lgp/models/contact-distance.lgp, tolerance: 0.01}
+  separated-distance: {model_path: ../05-fit-lgp/models/separated-distance.lgp, tolerance: 0.01}
+
+mcmc:
+  total_steps: 10000  # ADAPT: sampling stops early once converged
+  warmup: 2000
+  rhat_tol: 1.05
+  device: auto  # cuda when available, otherwise cpu

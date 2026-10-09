@@ -1,21 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from math import isfinite
 from pathlib import Path
-from typing import Mapping
 
 from ...domain.systems import validate_system_id
-from ...io.utils import load_yaml
-from ..config import PathLike, check_keys, resolve_path, strict_bool
+from ..config import ConfigSection, PathLike, load_config
 
 
 @dataclass(frozen=True, slots=True)
 class LearnModelConfig:
     model_path: Path
-    independent_observations: bool = False
-    n_eff: float | None = None
-    tolerance: float | None = None
+    # Accepted deviation from the reference, in the QoI's units.
+    tolerance: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,10 +23,9 @@ class LearnMCMCConfig:
     progress_stride: int = 100
     n_walkers: int | None = None
     resume: bool = False
-    device: str = "cuda"
+    device: str = "auto"
     rhat_tol: float = 1.01
-    ess_min: int = 100
-    include_implicit_charge: bool = False
+    ess_min: int = 400
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,8 +44,7 @@ class LearnOutputConfig:
     log: Path
     plots_dir: Path
     outputs_dir: Path
-    prior: Path
-    posterior: Path
+    results: Path
     checkpoint: Path
     specs: Path
     marginals: Path
@@ -61,8 +55,7 @@ class LearnOutputConfig:
     def stage_owned_files(self) -> tuple[Path, ...]:
         return (
             self.log,
-            self.prior,
-            self.posterior,
+            self.results,
             self.checkpoint,
             self.specs,
             self.marginals,
@@ -81,17 +74,47 @@ class LearnConfig:
     output: LearnOutputConfig
 
     @classmethod
-    def load(cls, fn_config: PathLike) -> "LearnConfig":
-        fn_config = Path(fn_config).resolve()
-        base_dir = fn_config.parent
-        config = check_keys(
-            load_yaml(fn_config),
-            where="Learn configuration",
-            allowed={"specs", "models", "mcmc", "plots", "output"},
-            required=("specs", "models", "mcmc"),
+    def load(cls, fn_config: PathLike) -> LearnConfig:
+        config = load_config(
+            fn_config,
+            stage="learn",
+            allowed=("specs", "models", "mcmc", "plots", "output"),
+            required=("specs", "models"),
+        )
+        mcmc = _load_mcmc(config)
+        output = config.section("output", allowed=("directory", "overwrite"))
+        overwrite = output.boolean("overwrite", False)
+        if mcmc.resume and overwrite:
+            raise ValueError("mcmc.resume and output.overwrite cannot both be true.")
+        output_dir = output.path("directory", "./", must_exist=False)
+        plots_dir = output_dir / "plots"
+        outputs_dir = output_dir / "outputs"
+        return cls(
+            fn_config=Path(fn_config).resolve(),
+            specs=config.path("specs"),
+            models=_load_models(config),
+            mcmc=mcmc,
+            plots=_load_plots(config),
+            output=LearnOutputConfig(
+                directory=output_dir,
+                overwrite=overwrite,
+                log=output_dir / "learn.log",
+                plots_dir=plots_dir,
+                outputs_dir=outputs_dir,
+                results=outputs_dir / "results.pt",
+                checkpoint=outputs_dir / "mcmc.ckpt",
+                specs=outputs_dir / "specs.yaml",
+                marginals=plots_dir / "marginals.pdf",
+                qoi_marginals=plots_dir / "qoi-marginals.pdf",
+                corner=plots_dir / "corner.pdf",
+            ),
         )
 
-        allowed_mcmc = {
+
+def _load_mcmc(config: ConfigSection) -> LearnMCMCConfig:
+    mcmc = config.section(
+        "mcmc",
+        allowed=(
             "priors_disttype",
             "total_steps",
             "warmup",
@@ -102,190 +125,74 @@ class LearnConfig:
             "device",
             "rhat_tol",
             "ess_min",
-            "include_implicit_charge",
-        }
-        mcmc_raw = check_keys(config["mcmc"], where="mcmc", allowed=allowed_mcmc)
-        total_steps = int(mcmc_raw.get("total_steps", 1500))
-        warmup = int(mcmc_raw.get("warmup", 500))
-        thin = int(mcmc_raw.get("thin", 1))
-        progress_stride = int(mcmc_raw.get("progress_stride", 100))
-        if total_steps < 1:
-            raise ValueError("mcmc.total_steps must be positive.")
-        if warmup < 0 or warmup >= total_steps:
-            raise ValueError("mcmc.warmup must satisfy 0 <= warmup < total_steps.")
-        if thin < 1 or progress_stride < 1:
-            raise ValueError("mcmc.thin and progress_stride must be positive.")
-        n_walkers = mcmc_raw.get("n_walkers")
-        if n_walkers is not None and int(n_walkers) < 2:
-            raise ValueError("mcmc.n_walkers must be at least 2.")
-        mcmc = LearnMCMCConfig(
-            priors_disttype=str(mcmc_raw.get("priors_disttype", "normal")),
-            total_steps=total_steps,
-            warmup=warmup,
-            thin=thin,
-            progress_stride=progress_stride,
-            n_walkers=None if n_walkers is None else int(n_walkers),
-            resume=strict_bool(mcmc_raw.get("resume", False), field="mcmc.resume"),
-            device=str(mcmc_raw.get("device", "cuda")),
-            rhat_tol=float(mcmc_raw.get("rhat_tol", 1.01)),
-            ess_min=int(mcmc_raw.get("ess_min", 100)),
-            include_implicit_charge=strict_bool(
-                mcmc_raw.get("include_implicit_charge", False),
-                field="mcmc.include_implicit_charge",
-            ),
+        ),
+    )
+    total_steps = mcmc.integer("total_steps", 1500, minimum=1)
+    warmup = mcmc.integer("warmup", 500, minimum=0)
+    if warmup >= total_steps:
+        raise ValueError(
+            f"mcmc.warmup ({warmup}) must be smaller than mcmc.total_steps "
+            f"({total_steps})."
         )
+    return LearnMCMCConfig(
+        priors_disttype=mcmc.string(
+            "priors_disttype", "normal", choices=("normal", "uniform")
+        ),
+        total_steps=total_steps,
+        warmup=warmup,
+        thin=mcmc.integer("thin", 1, minimum=1),
+        progress_stride=mcmc.integer("progress_stride", 100, minimum=1),
+        n_walkers=mcmc.integer("n_walkers", None, minimum=2),
+        resume=mcmc.boolean("resume", False),
+        device=mcmc.device("device", "auto"),
+        rhat_tol=mcmc.number("rhat_tol", 1.01, minimum=1, exclusive=True),
+        ess_min=mcmc.integer("ess_min", 400, minimum=1),
+    )
 
-        allowed_plots = {
+
+def _load_plots(config: ConfigSection) -> LearnPlotsConfig:
+    plots = config.section(
+        "plots",
+        allowed=(
             "max_corner_samples",
             "max_marginal_samples",
             "max_qoi_samples",
             "qoi_batch_size",
             "plot_metadata",
-        }
-        plots_raw = check_keys(
-            config.get("plots", {}), where="plots", allowed=allowed_plots
-        )
-        plot_values = {
-            "max_corner_samples": int(plots_raw.get("max_corner_samples", 2_000)),
-            "max_qoi_samples": int(plots_raw.get("max_qoi_samples", 10_000)),
-            "qoi_batch_size": int(plots_raw.get("qoi_batch_size", 256)),
-        }
-        for name, value in plot_values.items():
-            if value < 1:
-                raise ValueError(f"plots.{name} must be positive.")
-        max_marginal_samples_raw = plots_raw.get("max_marginal_samples", 10_000)
-        if max_marginal_samples_raw is None:
-            max_marginal_samples = None
-        else:
-            max_marginal_samples = int(max_marginal_samples_raw)
-            if max_marginal_samples == -1:
-                max_marginal_samples = None
-            elif max_marginal_samples < 1:
-                raise ValueError(
-                    "plots.max_marginal_samples must be positive, -1, or null."
-                )
-        plot_metadata_raw = plots_raw.get("plot_metadata", {})
-        if not isinstance(plot_metadata_raw, Mapping):
-            raise ValueError("plots.plot_metadata must be a mapping.")
-        plot_metadata: dict[str, dict[str, str]] = {}
-        for parameter, metadata in plot_metadata_raw.items():
-            if not isinstance(parameter, str) or not parameter:
-                raise ValueError(
-                    "plots.plot_metadata keys must be non-empty parameter names."
-                )
-            metadata = check_keys(
-                metadata,
-                where=f"plots.plot_metadata.{parameter}",
-                allowed={"xlabel", "ylabel"},
-            )
-            values = {}
-            for key, value in metadata.items():
-                if not isinstance(value, str) or not value.strip():
-                    raise ValueError(
-                        f"plots.plot_metadata.{parameter}.{key} must be a "
-                        "non-empty string."
-                    )
-                values[key] = value.strip()
-            plot_metadata[parameter] = values
-        plots = LearnPlotsConfig(
-            **plot_values,
-            max_marginal_samples=max_marginal_samples,
-            plot_metadata=plot_metadata,
-        )
+        ),
+    )
+    max_marginal_samples = plots.integer(
+        "max_marginal_samples", 10_000, minimum=1, special=(-1,)
+    )
+    plot_metadata: dict[str, dict[str, str]] = {}
+    if "plot_metadata" in plots:
+        for parameter, labels in plots.named_sections(
+            "plot_metadata", allowed=("xlabel", "ylabel")
+        ).items():
+            plot_metadata[parameter] = {
+                key: labels.string(key).strip() for key in labels.raw
+            }
+    return LearnPlotsConfig(
+        max_corner_samples=plots.integer("max_corner_samples", 2_000, minimum=1),
+        # -1 means every posterior sample.
+        max_marginal_samples=(
+            None if max_marginal_samples == -1 else max_marginal_samples
+        ),
+        max_qoi_samples=plots.integer("max_qoi_samples", 10_000, minimum=1),
+        qoi_batch_size=plots.integer("qoi_batch_size", 256, minimum=1),
+        plot_metadata=plot_metadata,
+    )
 
-        models_raw = config["models"]
-        if not isinstance(models_raw, Mapping) or not models_raw:
-            raise ValueError("models must be a non-empty mapping.")
-        models: dict[str, LearnModelConfig] = {}
-        for raw_name, model in models_raw.items():
-            if not isinstance(raw_name, str) or not raw_name:
-                raise ValueError("Model names must be non-empty strings.")
-            name = validate_system_id(raw_name, field="models key")
-            model = check_keys(
-                model,
-                where=f"models.{name}",
-                allowed={
-                    "model_path",
-                    "independent_observations",
-                    "n_eff",
-                    "tolerance",
-                },
-                required=("model_path",),
-            )
-            independent = strict_bool(
-                model.get("independent_observations", False),
-                field=f"models.{name}.independent_observations",
-            )
-            n_eff = None if model.get("n_eff") is None else float(model["n_eff"])
-            tolerance = (
-                None if model.get("tolerance") is None else float(model["tolerance"])
-            )
-            if n_eff is not None:
-                if not isfinite(n_eff) or n_eff <= 0:
-                    raise ValueError(
-                        f"models.{name}.n_eff must be positive and finite."
-                    )
-                if independent or tolerance is not None:
-                    raise ValueError(
-                        f"models.{name}.n_eff cannot be combined with "
-                        "independent_observations or tolerance."
-                    )
-            elif independent:
-                if tolerance is not None:
-                    raise ValueError(
-                        f"models.{name}.tolerance is invalid for independent "
-                        "observations."
-                    )
-            elif tolerance is None or not isfinite(tolerance) or tolerance <= 0:
-                raise ValueError(
-                    f"Curve model {name!r} requires a positive finite tolerance."
-                )
-            models[name] = LearnModelConfig(
-                model_path=resolve_path(
-                    base_dir, model["model_path"], kind=f"model {name!r} file"
-                ),
-                independent_observations=independent,
-                n_eff=n_eff,
-                tolerance=tolerance,
-            )
 
-        output_raw = check_keys(
-            config.get("output", {}),
-            where="output",
-            allowed={"directory", "overwrite"},
+def _load_models(config: ConfigSection) -> dict[str, LearnModelConfig]:
+    """Read ``models``: each surrogate and its accepted deviation."""
+    models: dict[str, LearnModelConfig] = {}
+    for name, model in config.named_sections(
+        "models", allowed=("model_path", "tolerance"), required=("model_path",)
+    ).items():
+        validate_system_id(name, field=model.where)
+        models[name] = LearnModelConfig(
+            model_path=model.path("model_path"),
+            tolerance=model.number("tolerance", 0.0, minimum=0),
         )
-        output_dir = resolve_path(
-            base_dir,
-            output_raw.get("directory", "./"),
-            must_exist=False,
-            kind="learn output directory",
-        )
-        overwrite = strict_bool(
-            output_raw.get("overwrite", False), field="output.overwrite"
-        )
-        if mcmc.resume and overwrite:
-            raise ValueError("mcmc.resume and output.overwrite cannot both be true.")
-        plots_dir = output_dir / "plots"
-        outputs_dir = output_dir / "outputs"
-        output = LearnOutputConfig(
-            directory=output_dir,
-            overwrite=overwrite,
-            log=output_dir / "learn.log",
-            plots_dir=plots_dir,
-            outputs_dir=outputs_dir,
-            prior=outputs_dir / "prior.pt",
-            posterior=outputs_dir / "posterior.pt",
-            checkpoint=outputs_dir / "mcmc.ckpt",
-            specs=outputs_dir / "specs.yaml",
-            marginals=plots_dir / "marginals.pdf",
-            qoi_marginals=plots_dir / "qoi-marginals.pdf",
-            corner=plots_dir / "corner.pdf",
-        )
-        return cls(
-            fn_config=fn_config,
-            specs=resolve_path(base_dir, config["specs"], kind="specs file"),
-            models=models,
-            mcmc=mcmc,
-            plots=plots,
-            output=output,
-        )
+    return models

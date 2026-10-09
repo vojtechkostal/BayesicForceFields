@@ -1,3 +1,5 @@
+"""Parallel Metropolis-Hastings sampler with resumable checkpoints."""
+
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -6,17 +8,14 @@ from typing import Any, Callable, Optional, Tuple
 import torch
 
 from ..io.utils import atomic_torch_save
-from .convergence import (
-    ConvergenceInfo,
-    integrated_autocorr_time,
-    rank_normalize,
-    rank_normalized_split_rhat,
-)
+from .convergence import MIN_STEPS, Diagnostics, diagnose
 from .proposal import Proposal
 
 
-@dataclass
+@dataclass(repr=False)
 class Checkpoint:
+    """Resumable state of a :class:`Sampler`, written to ``mcmc.ckpt``."""
+
     step: int
     total_steps: int
     phase: str
@@ -26,14 +25,19 @@ class Checkpoint:
     p: Optional[torch.Tensor] = None
     logp: Optional[torch.Tensor] = None
     accepted: Optional[torch.Tensor] = None
-    posterior: Optional[torch.Tensor] = None
+    # Saved states ``(n_saved, n_walkers, n_dim)`` and their log probabilities
+    # ``(n_saved, n_walkers)``.
+    chain: Optional[torch.Tensor] = None
+    chain_logp: Optional[torch.Tensor] = None
     acceptance_rate: Optional[float] = None
     scale: Optional[float] = None
-    convergence: Optional[ConvergenceInfo] = None
+    convergence: Optional[Diagnostics] = None
     it_per_sec: Optional[float] = None
     rng_state: Optional[torch.Tensor] = None
     proposal_state: Optional[dict[str, Any]] = None
     converged: bool = False
+    # Consecutive progress checks that met the convergence criteria.
+    n_passed: int = 0
     compatibility: Optional[dict[str, Any]] = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -41,7 +45,8 @@ class Checkpoint:
             "p": self.p,
             "logp": self.logp,
             "accepted": self.accepted,
-            "posterior": self.posterior,
+            "chain": self.chain,
+            "chain_logp": self.chain_logp,
             "step": self.step,
             "total_steps": self.total_steps,
             "warmup": self.warmup,
@@ -54,21 +59,29 @@ class Checkpoint:
             "acceptance_rate": self.acceptance_rate,
             "scale": self.scale,
             "it_per_sec": self.it_per_sec,
-            "convergence": self._serialize_convergence(self.convergence),
+            "convergence": (
+                None if self.convergence is None else self.convergence.to_dict()
+            ),
+            "n_passed": self.n_passed,
             "compatibility": self.compatibility,
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Checkpoint":
-        posterior = data.get("posterior", data.get("chain"))
-        if posterior is None:
-            raise KeyError("Checkpoint is missing 'posterior'.")
-        convergence = cls._deserialize_convergence(data.get("convergence"))
+        if data.get("chain") is None or data.get("chain_logp") is None:
+            raise KeyError(
+                "Checkpoint has no saved chain with log probabilities; it was "
+                "written by an older BFF version. Start a new run."
+            )
+        convergence = data.get("convergence")
+        if convergence is not None:
+            convergence = Diagnostics.from_dict(convergence)
         return cls(
             p=data["p"],
             logp=data["logp"],
             accepted=data["accepted"],
-            posterior=posterior,
+            chain=data["chain"],
+            chain_logp=data["chain_logp"],
             step=int(data["step"]),
             total_steps=int(data["total_steps"]),
             phase=data.get("phase", "sampling"),
@@ -82,6 +95,7 @@ class Checkpoint:
             rng_state=data["rng_state"],
             proposal_state=data["proposal_state"],
             converged=bool(data.get("converged", False)),
+            n_passed=int(data.get("n_passed", 0)),
             compatibility=data.get("compatibility"),
         )
 
@@ -98,8 +112,8 @@ class Checkpoint:
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, int]:
         if self.p is None or self.logp is None or self.accepted is None:
             raise ValueError("Checkpoint is missing sampler state.")
-        if self.posterior is None:
-            raise ValueError("Checkpoint is missing posterior samples.")
+        if self.chain is None or self.chain_logp is None:
+            raise ValueError("Checkpoint is missing the saved chain.")
         if self.rng_state is None or self.proposal_state is None:
             raise ValueError("Checkpoint is missing restart metadata.")
 
@@ -107,50 +121,19 @@ class Checkpoint:
         logp = sampler._to_tensor(self.logp)
         accepted = sampler._to_tensor(self.accepted).to(torch.int64)
 
-        posterior = sampler._to_tensor(self.posterior)
-        if posterior.numel():
-            sampler._chain = [
-                posterior[i].detach().clone() for i in range(posterior.shape[0])
-            ]
-        else:
-            sampler._chain = []
+        chain = sampler._to_tensor(self.chain)
+        chain_logp = sampler._to_tensor(self.chain_logp)
+        n_saved = chain.shape[0] if chain.numel() else 0
+        sampler._chain = [chain[i].detach().clone() for i in range(n_saved)]
+        sampler._chain_logp = [chain_logp[i].detach().clone() for i in range(n_saved)]
 
         sampler.rng.set_state(self.rng_state)
         sampler.proposal.load_state_dict(self.proposal_state)
         sampler.converged = self.converged
+        sampler._n_passed = self.n_passed
+        sampler.diagnostics = self.convergence
 
         return p, logp, accepted, self.step
-
-    @property
-    def tau(self) -> torch.Tensor | None:
-        if self.convergence is None or self.convergence.tau is None:
-            return None
-        tau = self.convergence.tau
-        return tau.mean(dim=0) if tau.ndim > 1 else tau
-
-    @staticmethod
-    def _serialize_convergence(
-        convergence: Optional[ConvergenceInfo],
-    ) -> dict[str, torch.Tensor | None] | None:
-        if convergence is None:
-            return None
-        return {
-            "rhat": convergence.rhat.cpu() if convergence.rhat is not None else None,
-            "tau": convergence.tau.cpu() if convergence.tau is not None else None,
-            "ess": convergence.ess.cpu() if convergence.ess is not None else None,
-        }
-
-    @staticmethod
-    def _deserialize_convergence(
-        data: dict[str, torch.Tensor | None] | None,
-    ) -> Optional[ConvergenceInfo]:
-        if data is None:
-            return None
-        return ConvergenceInfo(
-            rhat=data.get("rhat"),
-            tau=data.get("tau"),
-            ess=data.get("ess"),
-        )
 
 
 class Sampler:
@@ -196,7 +179,11 @@ class Sampler:
         self.rng = rng
 
         self._chain: list[torch.Tensor] = []
+        self._chain_logp: list[torch.Tensor] = []
         self.converged = False
+        self.diagnostics: Optional[Diagnostics] = None
+        self._n_passed = 0
+        self._n_diagnosed = 0
         self._warmup = 0
         self._thin = 1
         self._progress_stride = 1
@@ -216,6 +203,13 @@ class Sampler:
         if not self._chain:
             return torch.empty((0, 0, 0), dtype=self.dtype, device=self.device)
         return torch.stack(self._chain, dim=0)
+
+    @property
+    def chain_logp(self) -> torch.Tensor:
+        """Log probability of each saved state, shape ``(n_saved, n_walkers)``."""
+        if not self._chain_logp:
+            return torch.empty((0, 0), dtype=self.dtype, device=self.device)
+        return torch.stack(self._chain_logp, dim=0)
 
     def _to_tensor(self, x) -> torch.Tensor:
         if isinstance(x, torch.Tensor):
@@ -276,23 +270,6 @@ class Sampler:
                 f"expected {x.shape[0]}, got {y.shape[0]}")
         return torch.where(torch.isfinite(y), y, torch.full_like(y, -torch.inf))
 
-    def _diagnose_convergence(self, chain: torch.Tensor) -> ConvergenceInfo:
-        """
-        Compute convergence diagnostics from a chain tensor.
-        """
-        pooled = chain.reshape(-1, chain.shape[-1])
-        ranked_chain = rank_normalize(pooled).reshape(chain.shape)
-        rh = rank_normalized_split_rhat(chain)
-        tau = integrated_autocorr_time(ranked_chain)
-        n_total = chain.shape[0] * chain.shape[1]
-        ess = n_total / tau.mean(dim=0)
-
-        return ConvergenceInfo(
-            rhat=rh,
-            tau=tau,
-            ess=ess,
-        )
-
     def _validate_checkpoint(self, checkpoint: Checkpoint) -> None:
         if checkpoint.warmup != self._warmup:
             raise ValueError(
@@ -310,40 +287,6 @@ class Sampler:
                 "specifications, models, dimensions, walkers, proposal, or target."
             )
 
-    def _should_stop(
-        self,
-        conv: Optional[ConvergenceInfo],
-        *,
-        rhat_tol: float,
-        ess_min: int,
-    ) -> bool:
-        if conv is None:
-            return False
-
-        rhat_ok = conv.max_rhat is not None and conv.max_rhat < rhat_tol
-        ess_ok = conv.min_ess is not None and conv.min_ess > ess_min
-        return rhat_ok and ess_ok
-
-    def write_posterior(
-        self,
-        fn: Path | str,
-        *,
-        metadata: Optional[dict[str, Any]] = None,
-        priors: Any = None,
-        sample_labels: Optional[list[str]] = None,
-        specs: Any = None,
-    ) -> None:
-        payload: dict[str, Any] = {"posterior": self.chain.detach().cpu()}
-        if metadata is not None:
-            payload["metadata"] = metadata
-        if priors is not None:
-            payload["priors"] = [prior.to_dict() for prior in priors]
-        if sample_labels is not None:
-            payload["sample_labels"] = list(sample_labels)
-        if specs is not None:
-            payload["specs"] = specs.to_dict()
-        atomic_torch_save(payload, fn)
-
     def run(
         self,
         p0: torch.Tensor,
@@ -354,7 +297,7 @@ class Sampler:
         fn_checkpoint: Optional[str | Path] = None,
         restart: bool = False,
         rhat_tol: float = 1.01,
-        ess_min: int = 100,
+        ess_min: int = 400,
         checkpoint_compatibility: Optional[dict[str, Any]] = None,
     ):
         """
@@ -381,9 +324,12 @@ class Sampler:
             and resume sampling from the last saved position.
             Otherwise, sampling starts from p0.
         rhat_tol : float, default=1.01
-            Threshold for maximum R-hat to consider the chain converged.
-        ess_min : int, default=100
-            Minimum effective sample size to consider the chain converged.
+            Largest R-hat below which the chain counts as converged.
+        ess_min : int, default=400
+            Smallest bulk and tail effective sample size at which the chain
+            counts as converged. Both criteria must hold at two consecutive
+            diagnoses, made at progress reports once the chain has grown by
+            10 % since the last one; see :func:`bff.mcmc.convergence.diagnose`.
         Yields
         ------
         Checkpoint
@@ -392,6 +338,9 @@ class Sampler:
 
         fn_checkpoint = Path(fn_checkpoint) if fn_checkpoint is not None else None
         self.converged = False
+        self.diagnostics = None
+        self._n_passed = 0
+        self._n_diagnosed = 0
         self._warmup = warmup
         self._thin = thin
         self._progress_stride = progress_stride
@@ -422,6 +371,7 @@ class Sampler:
             logp = self._log_prob(p)
             accepted = torch.zeros(n_walkers, dtype=torch.int64, device=self.device)
             self._chain = []
+            self._chain_logp = []
             start_step = 0
 
         n_walkers, n_dim = p.shape
@@ -436,8 +386,8 @@ class Sampler:
             logu = torch.log(self._rand(n_walkers))
             accept_mask = logu < (logp_proposed - logp)
 
-            p[accept_mask] = proposals[accept_mask]
-            logp[accept_mask] = logp_proposed[accept_mask]
+            p = torch.where(accept_mask.unsqueeze(1), proposals, p)
+            logp = torch.where(accept_mask, logp_proposed, logp)
 
             # warmup / sampling
             if t < warmup:
@@ -446,6 +396,7 @@ class Sampler:
                 accepted += accept_mask
                 if (t - warmup) % thin == 0:
                     self._chain.append(p.detach().clone())
+                    self._chain_logp.append(logp.detach().clone())
 
             report_progress = (
                 ((t + 1) % self._progress_stride == 0)
@@ -463,10 +414,20 @@ class Sampler:
             last_report_time = now
 
             phase = "warmup" if t < warmup else "sampling"
-            chain = self.chain
-            convergence = None
-            if t >= warmup and chain.shape[0] >= 20:
-                convergence = self._diagnose_convergence(chain)
+            # One transfer per report serves the diagnostics and the checkpoint.
+            chain = self.chain.detach().cpu()
+            chain_logp = self.chain_logp.detach().cpu()
+            # Diagnose only after the chain has grown by 10 %, so the cost
+            # stays a fixed fraction of the sampling cost.
+            if t >= warmup and chain.shape[0] >= max(
+                MIN_STEPS, 1.1 * self._n_diagnosed
+            ):
+                self.diagnostics = diagnose(chain, chain_logp)
+                self._n_diagnosed = chain.shape[0]
+                passed = self.diagnostics.converged(rhat_tol, ess_min)
+                self._n_passed = self._n_passed + 1 if passed else 0
+                self.converged = self._n_passed >= 2
+            convergence = self.diagnostics if t >= warmup else None
 
             # acceptance rate during sampling phase
             acceptance_rate = None
@@ -474,14 +435,6 @@ class Sampler:
                 n_sampling_steps_done = t + 1 - warmup
                 total_accepted = accepted.sum().item()
                 acceptance_rate = total_accepted / (n_sampling_steps_done * n_walkers)
-
-            should_stop = self._should_stop(
-                convergence,
-                rhat_tol=rhat_tol,
-                ess_min=ess_min,
-            )
-            if should_stop:
-                self.converged = True
 
             # report progress
             checkpoint = Checkpoint(
@@ -494,7 +447,8 @@ class Sampler:
                 p=p.detach().cpu(),
                 logp=logp.detach().cpu(),
                 accepted=accepted.detach().cpu(),
-                posterior=self.chain.detach().cpu(),
+                chain=chain,
+                chain_logp=chain_logp,
                 acceptance_rate=acceptance_rate,
                 scale=self.proposal.info().get("scale"),
                 convergence=convergence,
@@ -502,6 +456,7 @@ class Sampler:
                 rng_state=self.rng.get_state(),
                 proposal_state=self.proposal.state_dict(),
                 converged=self.converged,
+                n_passed=self._n_passed,
                 compatibility=self._checkpoint_compatibility,
             )
 
@@ -511,5 +466,5 @@ class Sampler:
             yield checkpoint
 
             # Early stopping based on convergence diagnostics
-            if should_stop:
+            if self.converged:
                 break

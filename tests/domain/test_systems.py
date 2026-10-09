@@ -1,29 +1,28 @@
 from pathlib import Path
 
-import yaml
+import pytest
 
-from bff.domain.systems import (
-    BuildSystemMetadata,
-    load_build_system_metadata,
-    write_build_system_metadata,
-)
+from bff.domain.systems import resolve_explicit_inputs
 
 
-def test_system_metadata_round_trips_without_paths_or_versions(tmp_path: Path) -> None:
-    build_path = write_build_system_metadata(
-        tmp_path,
-        "acetate",
-        BuildSystemMetadata(
-            system_name="Aqueous acetate",
-            charge=-1,
-            multiplicity=1,
-            box=(10.0, 11.0, 12.0, 90.0, 90.0, 90.0),
-            maxwarn=0,
-            production_steps=1000,
-        ),
+def test_explicit_inputs_resolve_relative_paths_and_lists(tmp_path: Path) -> None:
+    (tmp_path / "a.pmf").write_text("1\n")
+    (tmp_path / "b.pmf").write_text("2\n")
+    inputs = resolve_explicit_inputs(
+        {"pmf": ["a.pmf", "b.pmf"], "unused": None},
+        base_dir=tmp_path,
+        system_id="acetate",
+        field="inputs",
     )
-    raw = yaml.safe_load(build_path.read_text())
-    assert not ({"schema_version", "version", "paths", "inputs"} & set(raw))
-    loaded = load_build_system_metadata(tmp_path, "acetate")
-    assert loaded.system_name == "Aqueous acetate"
-    assert loaded.box[:3] == (10.0, 11.0, 12.0)
+    assert inputs.inputs["pmf"] == (tmp_path / "a.pmf", tmp_path / "b.pmf")
+    assert inputs.inputs["unused"] is None
+
+
+def test_explicit_inputs_name_the_missing_file(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError, match=r"inputs\.trajectory"):
+        resolve_explicit_inputs(
+            {"trajectory": "missing.xtc"},
+            base_dir=tmp_path,
+            system_id="acetate",
+            field="inputs",
+        )

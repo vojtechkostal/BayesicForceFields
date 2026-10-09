@@ -1,3 +1,5 @@
+"""Proposal mechanisms of the MCMC sampler."""
+
 from typing import Optional
 
 import torch

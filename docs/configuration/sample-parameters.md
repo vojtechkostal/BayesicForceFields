@@ -26,62 +26,86 @@ charge_constraints:
   - selection: "resname ACE"
     target: -0.8
     scope: residue
-    implicit: "charge C2"
+    implicit: C2
 n_samples: 10
 gmx_cmd: gmx
 job_scheduler: local
 ```
 
-## Top-Level Keys
+## Options
 
-- `campaign_dir`
-  Output directory for sampled topologies, metadata, and trajectories.
-- `systems`
-  Non-empty list of exact build-system IDs plus system-specific MD lengths, or
-  systems with fully explicit `inputs` mappings.
-- `source`
-  Build stage root containing `systems/<system_id>/`. Do not combine this with
-  direct per-system inputs.
-- `bounds`
-  Mapping from parameter label to lower and upper bounds.
-- `charge_constraints`
-  Charge equations compiled from MDAnalysis selections. Each constraint defines
-  `selection`, `target`, `scope`, and a distinct bounded `implicit` parameter.
-- `n_samples`
-  Number of force-field vectors sampled for the campaign.
-- `gmx_cmd`
-  GROMACS executable.
-- `job_scheduler`
-  Either `local` or `slurm`.
-- `dispatch`
-  If `true`, launch jobs immediately after staging them.
-- `compress`
-  If `true`, compress finished simulation outputs.
-- `cleanup`
-  If `true`, prune each system result directory to the extensions listed in
-  `store` after a successful campaign. If `false`, retain every generated file.
-- `store`
-  File extensions to retain, without leading dots. Defaults to `['xtc']`.
-  GROMACS runs inside `samples/<sample_id>/<system_id>/`, so files such as a
-  Colvars `production.pmf` are written next to the trajectory.
-- `scratch_dir`
-  Optional directory, usually node-local, in which GROMACS runs; see
-  [Scratch directory](#scratch-directory).
-- `max_restarts`
-  Slurm only: how often samples stopped by the time limit are resubmitted;
-  see [Time limits and restarts](#time-limits-and-restarts). Defaults to 0.
-- `slurm`
-  Slurm-only runtime settings; see [Slurm](#slurm).
+General rules for all options are on the
+[conventions page](index.md).
 
-## `systems[]` Keys
+### Sampling options
 
-- `system_id`
-  Stable ID used for all paths and metadata matching.
-- `inputs`
-  Without `source`, explicit roles `topology`, `coordinates`, `index`,
-  `mdp_production`, optional `mdp_em`, and optional `bias`.
-- `n_steps`
-  Production MD length for this prepared system within the sampled campaign.
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `bounds` | mapping | *required* | Parameter label to `[lower, upper]` with finite `lower < upper`; see [Parameter labels](#parameter-labels). |
+| `n_samples` | integer >= 1 | *required* | Number of parameter vectors, drawn as one Latin hypercube. |
+| `seed` | integer >= 0 | none | Seed of the Latin hypercube. Without it a fresh seed is drawn; either way the seed is recorded in `samples.yaml`, so the draw can be repeated. |
+| `charge_constraints` | list | `[]` | Charge equations; see [charge_constraints](#charge_constraints). |
+
+--8<-- "campaign-options.md"
+
+### `charge_constraints[]`
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `selection` | string | *required* | MDAnalysis selection of the group whose total charge is fixed. |
+| `target` | number | *required* | Total charge of the group. |
+| `scope` | `residue` or `system` | *required* | `residue`: every selected residue on its own has the total charge `target`. `system`: all selected atoms of a system together have it. |
+| `implicit` | string | *required* | Atom name or type, inside the group, whose charge parameter is computed from the constraint instead of being sampled. It must belong to exactly one `charge ...` parameter in `bounds`, and each constraint needs a different one. |
+
+## Charge Constraints
+
+A charge constraint fixes the total charge of a group of atoms. Its implicit
+charge parameter is not sampled; it is computed so that the group has exactly
+the target charge. Atoms that no `charge ...` parameter controls keep their
+topology charge.
+
+Each selected residue of an acetate solution carries a charge of -0.8; `C2` is
+computed from the sampled `C1`, `O1 O2`, and `H1 H2 H3` charges:
+
+```yaml
+bounds:
+  charge C1: [-0.5, -0.1]
+  charge C2: [0.4, 1.0]
+  charge O1 O2: [-0.9, -0.5]
+  charge H1 H2 H3: [0.0, 0.2]
+charge_constraints:
+  - selection: "resname ACE"
+    target: -0.8
+    scope: residue
+    implicit: C2
+```
+
+With `scope: system`, the constraint holds for the selected atoms of a system
+as a whole. For a lithium chloride solution in which only the lithium charge is
+sampled, the chloride charge follows from requiring that all ion pairs are
+neutral together:
+
+```yaml
+bounds:
+  charge LI: [0.6, 1.0]
+  charge CL: [-1.0, -0.6]
+charge_constraints:
+  - selection: "resname LI CL"
+    target: 0.0
+    scope: system
+    implicit: CL
+```
+
+Every constraint becomes one linear equation in the charge parameters: the
+number of group atoms each parameter controls, plus the fixed charge of the
+other group atoms, equals `target`. The equation must be the same in every
+configured system (and every residue, for `scope: residue`); with 1000 or 10
+ion pairs, `system` scope gives the same equation. The implicit charges of all
+constraints are solved together, so constraints may overlap or depend on each
+other as long as they determine their implicit charges uniquely. The compiled
+equations are written to `specs.yaml`.
+
+## Biased systems
 
 When a system carries a Colvars bias, BFF copies the bias file into each
 `samples/<sample_id>/<system_id>/` run directory and writes a
@@ -151,22 +175,6 @@ checkpoint; PLUMED biases must be restartable by PLUMED itself (keep `HILLS`
 next to the run). Samples still incomplete after the last restart are recorded
 with status `incomplete` and are not used for QoI datasets.
 
-## `charge_constraints[]` Keys
-
-- `selection`
-  MDAnalysis atom selection. Selections must be disjoint or strictly nested;
-  partial overlaps are rejected.
-- `target`
-  Required total charge for the selected group.
-- `scope`
-  Either `system` for one complete-system sum or `residue` to apply the target
-  independently to each selected residue.
-- `implicit`
-  Parameter reconstructed to satisfy this equation. It must exist in `bounds`,
-  belong to this selection, and not occur in a descendant selection.
-
-Nested constraints are reconstructed from the smallest selected groups outward.
-
 ## Parameter Labels
 
 The `bounds` keys determine which GROMACS force-field parameters are sampled
@@ -199,8 +207,8 @@ Here, `O1` and `O2` share one charge parameter. If there is no atom named
 `HW`, all atoms of type `HW` share the second parameter. Charge labels must not
 overlap: one topology atom cannot be controlled by two entries in `bounds`.
 
-Charge parameters may participate in the hierarchical `charge_constraints`
-described above. Parameters of the other supported families are sampled
+Charge parameters may be fixed by the
+[charge constraints](#charge-constraints) described above. Parameters of the other supported families are sampled
 directly.
 
 ### Lennard-Jones Parameters
@@ -234,20 +242,44 @@ all of them to the same sampled value.
 
 `bff sample-parameters` writes:
 
-- `campaign_dir/specs.yaml`
-- `campaign_dir/samples.yaml`
-- `campaign_dir/systems/<system_id>/`
-- `campaign_dir/samples/<sample_id>/`: the job `config.yaml`, its output
-  `run.out`, and the GROMACS log `gmx.log`
-- `campaign_dir/samples/<sample_id>/<system_id>/`: the modified topology and
+- `campaign_dir/specs.yaml`: the parameter specification
+- `campaign_dir/samples.yaml`: parameters, status, and outputs per sample
+- `campaign_dir/campaign.yaml`: job settings shared by all samples
+- `campaign_dir/systems/<system_id>/`: staged inputs shared by all samples
+- `campaign_dir/samples/<sample_id>/`: the job output `run.out` and the GROMACS
+  log `gmx.log`
+- `campaign_dir/samples/<sample_id>/<system_id>/`: the sample's topology and
   all MD outputs of that system
-- `campaign_dir/run.sh` and `campaign_dir/slurm/` for Slurm campaigns
+- `campaign_dir/run.sh`, `tasks.txt`, and `slurm/` for Slurm campaigns
 
-Non-trajectory files are recorded by extension under each `samples.yaml`
-output's `inputs` mapping; for example, `store: [xtc, pmf]` creates
-`inputs.pmf` for systems that produced a PMF. With `cleanup: true`, system
-directories retain only the requested extensions; the files directly in
-`samples/<sample_id>/` are always kept.
+`samples.yaml` looks like this (paths are relative to the campaign):
+
+```yaml
+parameter_names: [charge C1, charge O1 O2]   # order of every params list
+provenance: {source: latin_hypercube, n_samples: 20, seed: 3602319095}
+systems:
+  acetate: {n_steps: 100000}
+samples:
+  "00":
+    params: [-0.37, -0.76]
+    status: completed
+    outputs:
+      acetate:
+        topology: samples/00/acetate/topology.top
+        trajectory: samples/00/acetate/production.xtc
+        pmf: samples/00/acetate/production.pmf
+```
+
+The sample's `topology` is always kept; `trajectory` is recorded when `xtc` is
+stored, and every other stored suffix under its own name, so `store: [xtc, pmf]`
+adds `pmf`. With `cleanup: true`, system directories keep only the stored
+suffixes and the topology; the files directly in `samples/<sample_id>/` are
+always kept.
+
+`samples.yaml` lists every sample from the start with its status (`staged`,
+`completed`, `incomplete`, or `failed`) and records the parameter draw under
+`provenance` (`source: latin_hypercube`, `n_samples`, `seed`).
 
 A sample whose MD fails is recorded as `failed` in `samples.yaml`; the rest of
-the campaign continues, locally and on Slurm.
+the campaign continues, locally and on Slurm. Rerun such samples with
+`resume: true`.

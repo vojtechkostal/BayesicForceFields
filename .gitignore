@@ -44,30 +44,4 @@ tests/tau.npy
 *.xvg
 *.xyz
 
-# Acetate example: keep source inputs, configs, notebooks, and helper code
-examples/acetate/**
-!examples/acetate/**/
-!examples/acetate/configs/*.yaml
-!examples/acetate/**/*.ipynb
-!examples/acetate/**/*.md
-!examples/acetate/inputs/**/*.py
-!examples/acetate/inputs/common/**
-!examples/acetate/inputs/biases/*.dat
-!examples/acetate/inputs/reference-inputs/*.inp
-!examples/acetate/inputs/reference-inputs/**/*.inp
-!examples/acetate/inputs/reference-trajectories/*.xtc
-examples/acetate/inputs/common/mdp/mdout.mdp
-
-# Runtime stage outputs for the acetate walkthrough
-examples/acetate/configs/*/
-examples/acetate/01-build/
-examples/acetate/02-reference-snapshots/
-examples/acetate/02-reference-md/
-examples/acetate/03-sample/
-examples/acetate/04-qoi/
-examples/acetate/05-lgp/
-examples/acetate/06-learn/
-examples/acetate/07-validate/
-examples/acetate/notebooks/*.png
-examples/acetate/__pycache__/
-examples/acetate/inputs/__pycache__/
+# Acetate example: see examples/acetate/.gitignore

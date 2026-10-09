@@ -31,9 +31,9 @@ def test_qoi_validates_label_shape_and_round_trips_dict() -> None:
 def test_qoi_dataset_validates_shapes_and_round_trips_file(tmp_path: Path) -> None:
     dataset = QoIDataset(
         name="rdf",
-        inputs=np.zeros((3, 2)),
-        outputs=np.ones((3, 4)),
-        outputs_ref=np.arange(4),
+        X=np.zeros((3, 2)),
+        y=np.ones((3, 4)),
+        y_ref=np.arange(4),
         labels=("a", "b"),
         values_per_label=2,
         nuisance=0.5,
@@ -51,15 +51,15 @@ def test_qoi_dataset_validates_shapes_and_round_trips_file(tmp_path: Path) -> No
     assert loaded.name == dataset.name
     assert loaded.labels == dataset.labels
     assert loaded.nuisance == 0.5
-    assert np.allclose(loaded.outputs_ref, dataset.outputs_ref)
+    assert np.allclose(loaded.y_ref, dataset.y_ref)
 
 
 def test_qoi_dataset_counts_labeled_curves() -> None:
     dataset = QoIDataset(
         name="rdf",
-        inputs=np.zeros((2, 1)),
-        outputs=np.zeros((2, 8)),
-        outputs_ref=np.zeros(8),
+        X=np.zeros((2, 1)),
+        y=np.zeros((2, 8)),
+        y_ref=np.zeros(8),
         labels=(
             "acetate:OC",
             "acetate-contact:OC",
@@ -76,9 +76,9 @@ def test_qoi_dataset_counts_labeled_curves() -> None:
 def test_qoi_dataset_counts_unlabeled_curves_from_values_per_label() -> None:
     dataset = QoIDataset(
         name="pmf",
-        inputs=np.zeros((2, 1)),
-        outputs=np.zeros((2, 40)),
-        outputs_ref=np.zeros(40),
+        X=np.zeros((2, 1)),
+        y=np.zeros((2, 40)),
+        y_ref=np.zeros(40),
         values_per_label=20,
     )
 
@@ -87,7 +87,7 @@ def test_qoi_dataset_counts_unlabeled_curves_from_values_per_label() -> None:
 
 
 def test_qoi_dataset_rejects_inconsistent_shapes() -> None:
-    with pytest.raises(ValueError, match="input samples"):
+    with pytest.raises(ValueError, match="X has 2 rows but y has 3"):
         QoIDataset("qoi", np.zeros((2, 1)), np.zeros((3, 1)), np.zeros(1))
 
     with pytest.raises(ValueError, match="Output dimension"):

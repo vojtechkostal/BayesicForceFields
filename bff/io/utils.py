@@ -10,9 +10,13 @@ import numpy as np
 import yaml
 
 PathLike = Union[str, Path]
+# libyaml's C implementation is much faster for large manifests; the pure-
+# Python classes behave the same.
+_YAML_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+_YAML_DUMPER = getattr(yaml, "CSafeDumper", yaml.SafeDumper)
 
 
-class NumpyYAMLEncoder(yaml.SafeDumper):
+class NumpyYAMLEncoder(_YAML_DUMPER):
     """YAML encoder for numpy arrays and numpy scalar types."""
 
     def represent_numpy(self, obj):
@@ -42,8 +46,7 @@ def load_yaml(fn: PathLike) -> dict:
     """Load .yaml file into a dictionary"""
     fn = str(fn)
     with open(fn, "r") as f:
-        file = yaml.safe_load(f)
-    return file
+        return yaml.load(f, Loader=_YAML_LOADER)
 
 
 class NumpyArrayEncoder(json.JSONEncoder):

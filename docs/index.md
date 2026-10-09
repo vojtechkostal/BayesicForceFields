@@ -17,15 +17,17 @@ See the [changelog](changelog.md) for post-publication highlights.
 
 ## What BFF Does
 
-BFF uses labeling as an MLIP handoff alongside its parameter-learning workflow:
+BFF learns force-field parameters against a reference trajectory that you
+simulate outside BFF:
 
 ```text
-build -> label-snapshots -> external MLIP workflow
-      -> sample-parameters -> build-qoi-datasets -> fit-lgp -> learn -> validate
+build -> [external reference MD] -> sample-parameters -> build-qoi-datasets
+      -> fit-lgp -> learn -> validate
 ```
 
 - `build`: equilibrate systems and run seeded production trajectories
-- `label-snapshots`: extract trajectory frames and label them with CP2K
+- reference MD: your own simulation, for example with a foundation or
+  fine-tuned MLIP; see [Reference trajectories](reference-trajectories.md)
 - `sample-parameters`: run sampled force-field MD campaigns
 - `build-qoi-datasets`: compute quantities of interest from sample and reference data
 - `fit-lgp`: train fingerprinted surrogate models
@@ -61,20 +63,13 @@ cd examples/acetate
     [official PyTorch selector](https://pytorch.org/get-started/locally/) for
     CPU or CUDA installation commands.
 
-Each example stage has config templates. Copy the needed files into the stage
-directory, edit them there, and run BFF from that directory:
+Each stage of the acetate example is a directory with its config. Edit the
+config there and run BFF from that directory:
 
 ```bash
-mkdir -p 01-build
-cp configs/01-build-colvars.yaml 01-build/config.yaml
 cd 01-build
 bff build config.yaml
 cd ..
-
-mkdir -p 02-reference-snapshots
-cp configs/02-reference-snapshots-local.yaml 02-reference-snapshots/config.yaml
-cd 02-reference-snapshots
-bff label-snapshots config.yaml
 ```
 
 Continue with the stages in the [acetate example](examples/acetate.md).
@@ -83,6 +78,7 @@ Continue with the stages in the [acetate example](examples/acetate.md).
 
 - [Installation](installation.md)
 - [Architecture](architecture.md)
+- [Reference trajectories](reference-trajectories.md)
 - [Command-line interface](cli.md)
 - [Examples overview](examples/index.md)
 - [Configuration reference](configuration/build.md)

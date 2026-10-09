@@ -35,7 +35,6 @@ class Logger:
     }
     _TITLE_STYLES = {
         "build": ("bold", "bright_cyan"),
-        "label-snapshots": ("bold", "bright_blue"),
         "sample-parameters": ("bold", "bright_yellow"),
         "build-qoi-datasets": ("bold", "bright_magenta"),
         "fit-lgp": ("bold", "bright_green"),
@@ -265,7 +264,7 @@ def print_progress_mcmc(
     logger = logger or Logger("mcmc-progress")
 
     rhat_tol = kwargs.get("rhat_tol", 1.01)
-    ess_target = kwargs.get("ess_min", 100)
+    ess_target = kwargs.get("ess_min", 400)
     total_digits = len(str(total_steps))
     warmup_digits = len(str(kwargs.get("warmup", total_steps)))
     sampling_digits = len(str(max(total_steps - kwargs.get("warmup", 0), 0)))

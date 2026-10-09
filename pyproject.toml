@@ -10,7 +10,7 @@ requires-python = ">=3.10"
 license = "GPL-3.0-only"
 license-files = ["LICENSE"]
 dependencies = [
-  "gmxtopology>=0.1.1",
+  "gmxtopology==0.3.0",
   "matplotlib>=3.8",
   "MDAnalysis>=2.7",
   "numpy>=1.26",

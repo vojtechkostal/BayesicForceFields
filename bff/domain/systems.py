@@ -1,4 +1,4 @@
-"""Stable system identities, explicit inputs, and stage-local metadata."""
+"""Stable system identities and explicitly configured input files."""
 
 from __future__ import annotations
 
@@ -6,10 +6,6 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
-
-import numpy as np
-
-from ..io.utils import load_yaml, save_yaml
 
 PathValue = Path | tuple[Path, ...] | dict[str, "PathValue"] | None
 _SYSTEM_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
@@ -27,6 +23,7 @@ def validate_system_id(value: object, *, field: str = "system_id") -> str:
 def validate_unique_system_ids(
     values: list[str], *, field: str = "systems"
 ) -> None:
+    """Raise if ``values`` repeat a system ID; ``field`` names the config key."""
     duplicates = sorted({value for value in values if values.count(value) > 1})
     if duplicates:
         raise ValueError(
@@ -72,18 +69,16 @@ class SystemInputs:
 
     system_id: str
     inputs: dict[str, PathValue]
-    system_name: str | None = None
 
     def __post_init__(self) -> None:
         validate_system_id(self.system_id)
-        if self.system_name is not None and not isinstance(self.system_name, str):
-            raise ValueError("system_name must be a string or null.")
         if not isinstance(self.inputs, dict) or not self.inputs:
             raise ValueError(
                 f"system {self.system_id!r} inputs must be a non-empty role mapping."
             )
 
     def require_path(self, role: str) -> Path:
+        """The path of ``role``; raises if it is missing or not one path."""
         value = self.inputs.get(role)
         if not isinstance(value, Path):
             raise ValueError(
@@ -93,6 +88,7 @@ class SystemInputs:
         return value
 
     def optional_path(self, role: str) -> Path | None:
+        """The path of ``role``, or ``None`` if it is not given."""
         value = self.inputs.get(role)
         if value is None:
             return None
@@ -122,120 +118,3 @@ def resolve_explicit_inputs(
             )
         inputs[role] = _resolve_value(value, base_dir, field=f"{field}.{role}")
     return SystemInputs(system_id=system_id, inputs=inputs)
-
-
-def _metadata_path(root: str | Path, system_id: str) -> Path:
-    return (
-        Path(root).resolve()
-        / "systems"
-        / validate_system_id(system_id)
-        / "system.yaml"
-    )
-
-
-def _load_metadata(
-    root: str | Path, system_id: str, *, expected: set[str]
-) -> dict[str, Any]:
-    path = _metadata_path(root, system_id)
-    if not path.is_file():
-        raise FileNotFoundError(
-            f"system {system_id!r}: expected stage metadata at {path}; point "
-            "'source' to the stage output root or regenerate the stage."
-        )
-    data = load_yaml(path)
-    if not isinstance(data, Mapping):
-        raise ValueError(f"System metadata {path} must contain a mapping.")
-    unknown = set(data) - expected
-    missing = expected - {"system_name"} - set(data)
-    if unknown or missing:
-        details = []
-        if missing:
-            details.append("missing " + ", ".join(sorted(missing)))
-        if unknown:
-            details.append("unsupported " + ", ".join(sorted(unknown)))
-        raise ValueError(f"System metadata {path} is invalid: {'; '.join(details)}.")
-    if data.get("system_name") is not None and not isinstance(data["system_name"], str):
-        raise ValueError(f"system_name in {path} must be a string or null.")
-    return dict(data)
-
-
-def _box(value: Any, *, path: Path) -> tuple[float, ...]:
-    box = np.asarray(value, dtype=float)
-    if (
-        box.shape != (6,)
-        or not np.all(np.isfinite(box))
-        or np.any(box[:3] <= 0)
-        or np.any(box[3:] <= 0)
-        or np.any(box[3:] > 180)
-    ):
-        raise ValueError(
-            f"box in {path} must contain six finite values with positive lengths "
-            "and angles in (0, 180], "
-            f"got {value!r}."
-        )
-    return tuple(float(item) for item in box)
-
-
-def _integer(value: Any, *, field: str, path: Path) -> int:
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError(f"{field} in {path} must be an integer, got {value!r}.")
-    return value
-
-
-@dataclass(frozen=True, slots=True)
-class BuildSystemMetadata:
-    system_name: str | None
-    charge: int
-    multiplicity: int
-    box: tuple[float, ...]
-    maxwarn: int
-    production_steps: int
-
-
-def write_build_system_metadata(
-    root: str | Path, system_id: str, metadata: BuildSystemMetadata
-) -> Path:
-    path = _metadata_path(root, system_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    save_yaml(
-        {
-            "system_name": metadata.system_name,
-            "charge": metadata.charge,
-            "multiplicity": metadata.multiplicity,
-            "box": list(metadata.box),
-            "maxwarn": metadata.maxwarn,
-            "production_steps": metadata.production_steps,
-        },
-        path,
-    )
-    return path
-
-
-def load_build_system_metadata(
-    root: str | Path, system_id: str
-) -> BuildSystemMetadata:
-    expected = {
-        "system_name", "charge", "multiplicity", "box", "maxwarn", "production_steps"
-    }
-    data = _load_metadata(root, system_id, expected=expected)
-    path = _metadata_path(root, system_id)
-    charge = _integer(data["charge"], field="charge", path=path)
-    multiplicity = _integer(data["multiplicity"], field="multiplicity", path=path)
-    maxwarn = _integer(data["maxwarn"], field="maxwarn", path=path)
-    steps = _integer(data["production_steps"], field="production_steps", path=path)
-    if steps <= 0:
-        raise ValueError(f"production_steps in {path} must be positive, got {steps}.")
-    if multiplicity <= 0:
-        raise ValueError(
-            f"multiplicity in {path} must be positive, got {multiplicity}."
-        )
-    if maxwarn < 0:
-        raise ValueError(f"maxwarn in {path} must be non-negative, got {maxwarn}.")
-    return BuildSystemMetadata(
-        system_name=data.get("system_name"),
-        charge=charge,
-        multiplicity=multiplicity,
-        box=_box(data["box"], path=path),
-        maxwarn=maxwarn,
-        production_steps=steps,
-    )

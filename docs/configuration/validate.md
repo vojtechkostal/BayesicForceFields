@@ -19,9 +19,10 @@ possible.
 ```yaml
 campaign_dir: ./
 posterior:
-  file: ../06-learn/outputs/posterior.pt
+  file: ../06-learn/outputs/results.pt
   n_samples: 10
   include_mean: true
+  include_map: true
   distribution: normal
   confidence: 0.9
   seed: null
@@ -33,9 +34,10 @@ gmx_cmd: gmx
 job_scheduler: local
 ```
 
-The posterior's embedded specifications are authoritative and are copied to
-`campaign_dir/specs.yaml`. `n_samples` counts random draws; `include_mean`
-prepends one additional deterministic sample. Supported distributions are
+The specification stored in the results is authoritative and is copied to
+`campaign_dir/specs.yaml`. `n_samples` counts random draws; `include_mean` and
+`include_map` prepend the posterior mean and the MAP (the sampled state of
+highest log posterior) as deterministic samples. Supported distributions are
 `empirical`, `normal`, `uniform`, and `kde`. A null or omitted seed uses
 fresh randomness.
 
@@ -56,58 +58,46 @@ job_scheduler: local
 Exactly one of `parameters` or `posterior` is required. `specs` is required
 only with `parameters` and is rejected with `posterior`.
 
-## Top-Level Keys
+Before anything is staged, validation checks that every parameter sample
+satisfies the bounds once implicit charges are reconstructed, and that every
+charge constraint gives the same equation in the validation systems as in the
+systems the specification was compiled for. Validation systems may lack some
+parameters or constraints, for example a system without calcium, but a
+constraint that selects atoms must still reconstruct the learned charges.
 
-- `campaign_dir`
-  Output directory for the validation campaign.
-- `parameters`
-  YAML file containing explicit parameter samples.
-- `posterior`
-  Learned posterior source and draw settings. Strict keys are `file`,
-  `n_samples`, `include_mean`, `distribution`, `confidence`, and `seed`.
-  At least one random or mean sample must be requested.
-- `specs`
-  Force-field specification file used only with explicit parameter samples.
-- `systems`
-  Non-empty list of build-stage system IDs plus validation MD lengths, or systems
-  with fully explicit FFMD role mappings.
-- `source`
-  Build stage root containing the selected system directories. Do not combine
-  it with explicit per-system `inputs`.
-- `gmx_cmd`
-  GROMACS executable.
-- `job_scheduler`
-  Either `local` or `slurm`.
-- `dispatch`
-  If `true`, launch jobs immediately after staging them.
-- `compress`
-  If `true`, compress finished simulation outputs.
-- `cleanup`
-  If `true`, retain only extensions listed in `store` inside each system result
-  directory after a successful campaign. If `false`, retain all generated files.
-- `store`
-  File extensions to retain, without leading dots. Defaults to `['xtc']`.
-  Stored non-trajectory files are recorded as named manifest inputs.
-- `scratch_dir`, `max_restarts`
-  Node-local MD and resubmission of samples stopped by the time limit, as for
-  [sample-parameters](sample-parameters.md#scratch-directory).
-- `slurm`
-  Slurm runtime configuration, as for
-  [sample-parameters](sample-parameters.md#slurm).
+## Options
 
-## `systems[]` Keys
+General rules for all options are on the
+[conventions page](index.md). Set exactly one of `posterior` and
+`parameters`.
 
-- `system_id`
-  Stable ID selected from the build-stage `source`.
-- `inputs`
-  Alternatively, the explicit FFMD roles documented for `bff sample-parameters`.
-- `n_steps`
-  Production MD length for this validation run.
+### Validation options
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `posterior` | mapping | none | Draw parameters from a learned posterior; see [posterior](#posterior). |
+| `parameters` | path | none | YAML file with explicit parameter samples; see [the format](#explicit-parameter-file-format). |
+| `specs` | path | *required with `parameters`* | Parameter specification for `parameters`; not allowed with `posterior`, which embeds its own. |
+
+### `posterior`
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `posterior.file` | path | *required* | `outputs/results.pt` written by `bff learn`. |
+| `posterior.n_samples` | integer >= 0 | `10` | Random draws. |
+| `posterior.include_mean` | boolean | `false` | Prepend one deterministic sample at the posterior mean. |
+| `posterior.include_map` | boolean | `false` | Prepend one deterministic sample at the MAP, after the mean. At least one sample must result from `n_samples`, `include_mean`, and `include_map`. |
+| `posterior.distribution` | `empirical`, `normal`, `uniform`, or `kde` | `normal` | `empirical` resamples posterior samples, `normal` draws from a fitted multivariate normal, `uniform` from the per-parameter central `confidence` interval, and `kde` from a Gaussian KDE. |
+| `posterior.confidence` | number in (0, 1) | `0.9` | Central interval width; used only by `uniform`. |
+| `posterior.seed` | integer | none | Random seed; omitted means fresh randomness. |
+
+--8<-- "campaign-options.md"
 
 ## Explicit Parameter File Format
 
 The explicit mode consumes YAML only. The expected structure is a mapping from
-explicit parameter name to a list of sampled values:
+explicit parameter name to a list of sampled values; names not in the
+specification are rejected:
 
 ```yaml
 charge C1: [-0.5, -0.4, -0.3]
@@ -115,16 +105,35 @@ charge O1 O2: [-0.7, -0.6, -0.5]
 ```
 
 Implicit charges are reconstructed from `specs.yaml`, so they do not need to
-appear in the file.
+appear in the file; columns for them, as written by
+`results.draw(..., implicit=True)`, are ignored.
 
 Validation campaigns use the same layout as sampling: each
-`samples/<sample_id>/` holds the job `config.yaml`, `run.out`, and `gmx.log`,
+`samples/<sample_id>/` holds `run.out` and `gmx.log`,
 with one directory per system below it.
 Locally dispatched campaigns show console-only progress from `0/N` while the
 first MD job is running and advance after each completed parameter sample.
 
-For the alternative explicit workflow, load `outputs/posterior.pt` with
-`PosteriorResults` and call
-`sample_posterior(..., fn_out="outputs/posterior-samples.yaml")`. Posterior
-mode performs the same preparation, nuisance exclusion, parameter ordering,
-bounds enforcement, and implicit-charge reconstruction automatically.
+For the alternative explicit workflow, load `outputs/results.pt` with
+`Results.load` and call `results.draw(10, fn_out="posterior-samples.yaml")`.
+Posterior mode performs the same parameter ordering, bounds enforcement, and
+implicit-charge reconstruction automatically.
+
+## Analyzing a Validation Campaign
+
+A validation campaign has the same layout as a sampling campaign: it always
+contains `specs.yaml` (copied from `specs` or from the posterior) next to
+`samples.yaml`, so `bff build-qoi-datasets` can analyze it like a sampling
+campaign, for example to compare validation QoIs with the reference:
+
+```yaml
+training_samples:
+  manifest: ../07-validate/samples.yaml
+  systems:
+    - system_id: acetate
+```
+
+`samples.yaml` records the parameter source under `provenance`: `source:
+posterior` with the results path and SHA-256, `distribution`, `confidence`,
+`n_samples`, `include_mean`, `include_map`, and the `seed` actually used, or `source:
+parameters` with the parameter file, its SHA-256, and `specs`.

@@ -11,8 +11,8 @@ reference targets already exist outside the built-in trajectory-analysis
 workflow. It calibrates two water-like Lennard-Jones parameters against
 realistic synthetic density, enthalpy-of-vaporization, and diffusion data.
 
-No GROMACS installation is required. Fitting and learning use CUDA when
-available and otherwise run on CPU.
+No GROMACS installation is required. Fitting runs on the CPU; learning uses
+CUDA when available.
 
 ## Run
 
@@ -31,15 +31,15 @@ Open `arbitrary-data.ipynb` and execute it from top to bottom. The notebook
 demonstrates the complete data-facing workflow:
 
 1. load user-provided whitespace-delimited tables;
-2. construct and write one `QoIDataset` per observable;
+2. construct one `QoIDataset` per observable;
 3. train local Gaussian-process surrogate models;
-4. build a constrained `LearningProblem`;
-5. sample the posterior and write standard and QoI-attributed marginal plots.
+4. build a `LearningProblem` and sample the posterior;
+5. plot the corner plot and the QoI-attributed marginals, which color each
+   posterior marginal by the local contribution of density, enthalpy of
+   vaporization, and diffusion.
 
-The generated QoI datasets can also be passed to `bff fit-lgp`. All
-notebook-generated files are written under `generated/`.
-The plot `generated/qoi-marginals.pdf` colors each posterior marginal by the
-local contribution from density, enthalpy of vaporization, and diffusion.
+The datasets can also be written with `dataset.write(...)` and passed to
+`bff fit-lgp`. Generated files are written under `generated/`.
 
 ## Input Tables
 
@@ -51,7 +51,7 @@ local contribution from density, enthalpy of vaporization, and diffusion.
   used during posterior learning.
 
 The committed `.dat` values are illustrative synthetic data. Replace them with
-your own tables and update the notebook mappings for a new application.
+your own tables and adapt the `QoIDataset` construction for a new application.
 
 [arbitrary-data-root]: https://github.com/vojtechkostal/BayesicForceFields/tree/main/examples/arbitrary-data
 [arbitrary-data-simulations]: https://github.com/vojtechkostal/BayesicForceFields/blob/main/examples/arbitrary-data/raw-data/simulation-results.dat

@@ -63,7 +63,7 @@ def test_write_reference_system_removes_declared_virtual_sites(tmp_path: Path) -
     assert removed == 2
     reference_topology = Topology(output_dir / "topology.top")
     assert len(reference_topology.atoms) == 6
-    assert not reference_topology.molecules["SOL"][0].virtual_sites3
+    assert not reference_topology.moleculetype("SOL").virtual_sites3
     reference = mda.Universe(
         output_dir / "topology.top",
         output_dir / "coordinates.gro",

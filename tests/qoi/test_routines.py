@@ -2,7 +2,16 @@ from pathlib import Path
 
 import pytest
 
-from bff.qoi.routines import load_routine_configs, run_routine
+from bff.qoi.routines import run_routine
+from bff.workflows.build_qoi_datasets.config import load_routines
+from bff.workflows.config import ConfigSection
+
+
+def load_routine_configs(routines: list[dict]):
+    config = ConfigSection(
+        {"routines": routines}, "", base_dir=Path.cwd(), allowed=("routines",)
+    )
+    return load_routines(config)
 
 
 def _write(path: Path, text: str) -> Path:
@@ -130,7 +139,7 @@ def test_routine_errors_name_the_routine_system_and_sample(tmp_path: Path) -> No
             {"name": "x", "type": "rdf", "systems": ["s"], "loader": "a"},
             "unsupported key",
         ),
-        ({"name": "x", "type": "adf", "systems": ["s"]}, "unknown type"),
+        ({"name": "x", "type": "adf", "systems": ["s"]}, "type must be one of"),
         ({"name": "x", "systems": ["s"]}, "exactly one of type or callable"),
         ({"name": "x", "type": "rdf", "systems": ["s"], "inputs": ["pmf"]}, "inputs"),
         (

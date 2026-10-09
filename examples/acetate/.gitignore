@@ -1,17 +1,12 @@
-# Generated stage outputs
-01-build/
-02-reference-snapshots/
-02-reference-md/
-03-sample/
-04-qoi/
-05-lgp/
-06-learn/
-07-validate/
-
-# Notebook exports
-notebooks/*.png
-
-# Python cache
+# Everything a stage writes. Configs, notebooks, and the reference-MD inputs
+# stay; so do the example inputs even where a global rule ignores their type.
+0[1-7]-*/*
+!0[1-7]-*/config*.yaml
+!0[1-7]-*/*.ipynb
+!02-reference-md/label-structures.yaml
+!02-reference-md/cp2k/
+!02-reference-md/trajectories/
+!02-reference-md/trajectories/**/trajectory.xtc
+!inputs/**
+.*offsets*
 __pycache__/
-inputs/__pycache__/
-*.pyc

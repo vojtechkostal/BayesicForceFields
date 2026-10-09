@@ -3,86 +3,100 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
+from ...domain.charge_constraints import check_specs_topologies
 from ...domain.specs import Specs
-from ...io.logs import Logger
-from ...io.utils import load_yaml
-from ..campaign.run import log_campaign_summary, run_campaign
+from ...io.utils import file_sha256, load_yaml
+from ..campaign.run import fresh_seed, run_campaign
 from .config import ValidateConfig
 
 
 def load_parameter_samples(fn_samples: Path, specs: Specs) -> np.ndarray:
-    """Load samples from a YAML mapping of explicit parameter name to values."""
+    """Load samples from a YAML mapping of parameter name to a list of values.
+
+    Every explicit parameter needs a column. Columns of implicit charges, as
+    written by ``PosteriorResults.sample_posterior(include_implicit_charge=
+    True)``, are accepted and ignored: they are reconstructed from the
+    constraints.
+    """
     raw = load_yaml(fn_samples)
-    names = specs.parameter_names(explicit_only=True)
-    if not isinstance(raw, dict) or not all(name in raw for name in names):
+    names = specs.explicit_names
+    if not isinstance(raw, dict):
         raise ValueError(
-            f"Parameter sample file {fn_samples} must map every explicit "
-            f"parameter name ({', '.join(names)}) to a list of values."
+            f"{fn_samples} must map every explicit parameter name "
+            f"({', '.join(names)}) to a list of values."
         )
-    if len({len(raw[name]) for name in names}) != 1:
+    unknown = sorted(set(raw) - set(specs.names))
+    missing = [name for name in names if name not in raw]
+    if unknown or missing:
         raise ValueError(
-            "Column-oriented YAML sample lists must all have the same length."
+            f"{fn_samples} does not match the specifications: "
+            f"missing {missing}, unknown {unknown}."
         )
-    samples = np.column_stack([np.asarray(raw[name], dtype=float) for name in names])
+    columns = [raw[name] for name in names]
+    if not all(isinstance(column, list) for column in columns) or (
+        len({len(column) for column in columns}) > 1
+    ):
+        raise ValueError(f"{fn_samples}: every column must be a list of one length.")
+    samples = np.column_stack([np.asarray(column, dtype=float) for column in columns])
     if samples.shape[0] == 0:
-        raise ValueError("No validation parameter samples were found.")
+        raise ValueError(f"{fn_samples} contains no parameter samples.")
     return samples
 
 
 def main(fn_config: str | Path) -> None:
     config = ValidateConfig.load(fn_config)
-    config.campaign_dir.mkdir(parents=True, exist_ok=True)
-
     if config.posterior is None:
-        fn_specs = config.specs
-        parameter_samples = load_parameter_samples(config.parameters, Specs(fn_specs))
+        specs = Specs(config.specs)
     else:
-        from ...bayes.results import PosteriorResults
+        from ...bayes.results import Results
 
-        posterior = PosteriorResults.load(config.posterior.file)
-        if posterior.specs is None:
-            raise ValueError(
-                f"Posterior '{config.posterior.file}' does not contain embedded "
-                "parameter specifications."
-            )
-        parameter_samples = posterior.sample_posterior(
-            n_samples=config.posterior.n_samples,
-            include_mean=config.posterior.include_mean,
-            distribution=config.posterior.distribution,
-            confidence=config.posterior.confidence,
-            random_state=config.posterior.seed,
-        )
-        fn_specs = config.campaign_dir / "specs.yaml"
-        posterior.specs.write(fn_specs)
+        results = Results.load(config.posterior.file)
+        specs = results.specs
+    # Validation systems may differ from the sampled ones; the learned
+    # charges must still be reconstructable in them.
+    check_specs_topologies(specs, [system.topology_path for system in config.systems])
 
-    logger = Logger("validate", str(config.log), mode="w")
-    log_campaign_summary(
-        config, len(parameter_samples), logger, title="Validation Campaign"
-    )
-    if config.posterior is None:
-        logger.kv("Parameter source", config.parameters)
-    else:
-        logger.kv("Posterior source", config.posterior.file)
-        logger.kv("Random draws", config.posterior.n_samples)
-        logger.kv("Distribution", config.posterior.distribution)
-        logger.kv("Confidence", config.posterior.confidence)
-        logger.kv(
-            "Seed",
-            "fresh random seed"
-            if config.posterior.seed is None
-            else config.posterior.seed,
+    def draw() -> tuple[np.ndarray, dict[str, Any]]:
+        if config.posterior is None:
+            provenance = {
+                "source": "parameters",
+                "parameters": str(config.parameters),
+                "parameters_sha256": file_sha256(config.parameters),
+                "specs": str(config.specs),
+            }
+            return load_parameter_samples(config.parameters, specs), provenance
+        settings = config.posterior
+        seed = fresh_seed() if settings.seed is None else settings.seed
+        draws = results.draw(
+            settings.n_samples,
+            distribution=settings.distribution,
+            confidence=settings.confidence,
+            seed=seed,
+            include_mean=settings.include_mean,
+            include_map=settings.include_map,
         )
-        logger.kv(
-            "Posterior mean sample",
-            "first sample" if config.posterior.include_mean else "not included",
-        )
-    logger.blank()
+        samples = np.column_stack([draws[name] for name in specs.explicit_names])
+        provenance = {
+            "source": "posterior",
+            "results": str(settings.file),
+            "results_sha256": file_sha256(settings.file),
+            "distribution": settings.distribution,
+            "confidence": settings.confidence,
+            "n_samples": settings.n_samples,
+            "include_mean": settings.include_mean,
+            "include_map": settings.include_map,
+            "seed": seed,
+        }
+        return samples, provenance
+
     run_campaign(
         config,
-        fn_specs=fn_specs,
-        parameter_samples=parameter_samples,
-        logger=logger,
+        stage="validate",
+        title="Validate",
+        specs=specs,
+        draw=draw,
     )

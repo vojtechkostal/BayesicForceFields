@@ -17,13 +17,12 @@ import hashlib
 import importlib
 import importlib.util
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable
 
-from ..domain.systems import validate_system_id, validate_unique_system_ids
 from .dataset import QoI
 from .hbonds import hydrogen_bonds
 from .rdf import rdf
@@ -102,113 +101,6 @@ def load_custom_routine(
     if not callable(routine):
         raise ValueError(f"Resolved object {specification!r} is not callable.")
     return specification, routine
-
-
-def _load_routine_config(
-    config: Mapping[str, Any],
-    *,
-    base_dir: Path | None,
-) -> AnalysisRoutineConfig:
-    if not isinstance(config, Mapping):
-        raise ValueError("Each routines entry must be a mapping.")
-    unknown = set(config) - {
-        "name",
-        "type",
-        "callable",
-        "systems",
-        "selections",
-        "inputs",
-        "options",
-    }
-    if unknown:
-        raise ValueError(
-            "Routine contains unsupported key(s): " + ", ".join(sorted(unknown))
-        )
-
-    name = validate_system_id(config.get("name"), field="routines[].name")
-    if ("type" in config) == ("callable" in config):
-        raise ValueError(
-            f"Routine {name!r} must define exactly one of type or callable."
-        )
-
-    systems = config.get("systems")
-    if not isinstance(systems, list) or not systems:
-        raise ValueError(f"Routine {name!r}.systems must be a non-empty ID list.")
-    systems = [
-        validate_system_id(value, field=f"routines.{name}.systems[{index}]")
-        for index, value in enumerate(systems)
-    ]
-    validate_unique_system_ids(systems, field=f"routines.{name}.systems")
-
-    selections = config.get("selections", {})
-    inputs = config.get("inputs", [])
-    options = config.get("options", {})
-    if not isinstance(selections, Mapping) or not all(
-        isinstance(key, str) and isinstance(value, str)
-        for key, value in selections.items()
-    ):
-        raise ValueError(f"Routine {name!r}.selections must map names to selections.")
-    if not isinstance(inputs, list) or not all(
-        isinstance(role, str) and role for role in inputs
-    ):
-        raise ValueError(f"Routine {name!r}.inputs must be a role list.")
-    if len(set(inputs)) != len(inputs):
-        raise ValueError(f"Routine {name!r}.inputs contains duplicates.")
-    if not isinstance(options, Mapping):
-        raise ValueError(f"Routine {name!r}.options must be a mapping.")
-    duplicated = set(selections) & set(options)
-    if duplicated:
-        raise ValueError(
-            f"Routine {name!r} defines {sorted(duplicated)} in both selections "
-            "and options."
-        )
-
-    routine_type = None
-    callable_spec = None
-    if "type" in config:
-        routine_type = str(config["type"])
-        if routine_type not in BUILTIN_ROUTINES:
-            raise ValueError(
-                f"Routine {name!r} has unknown type {routine_type!r}; "
-                f"expected one of {sorted(BUILTIN_ROUTINES)}."
-            )
-        if inputs:
-            raise ValueError(f"Built-in routine {name!r} cannot define inputs.")
-    else:
-        if selections:
-            raise ValueError(
-                f"Custom routine {name!r} cannot define selections; pass custom "
-                "settings through options."
-            )
-        callable_spec, _ = load_custom_routine(str(config["callable"]), base_dir)
-
-    return AnalysisRoutineConfig(
-        name=name,
-        systems=tuple(systems),
-        type=routine_type,
-        callable=callable_spec,
-        inputs=tuple(inputs),
-        options={**selections, **options},
-    )
-
-
-def load_routine_configs(
-    routines: Sequence[Mapping[str, Any]],
-    *,
-    base_dir: Path | None = None,
-) -> tuple[AnalysisRoutineConfig, ...]:
-    if not isinstance(routines, Sequence) or isinstance(routines, (str, bytes)):
-        raise ValueError("routines must be a non-empty list.")
-    loaded = tuple(
-        _load_routine_config(routine, base_dir=base_dir) for routine in routines
-    )
-    if not loaded:
-        raise ValueError("routines must be a non-empty list.")
-    names = [routine.name for routine in loaded]
-    duplicates = sorted({name for name in names if names.count(name) > 1})
-    if duplicates:
-        raise ValueError("Routine names must be unique: " + ", ".join(duplicates))
-    return loaded
 
 
 def run_routine(

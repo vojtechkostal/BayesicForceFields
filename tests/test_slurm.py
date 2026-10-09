@@ -5,20 +5,31 @@ import pytest
 
 from bff import slurm
 from bff.io.logs import Logger
+from bff.workflows.campaign.config import load_slurm_config
+from bff.workflows.config import ConfigSection
+
+
+def _load_slurm(raw: dict) -> slurm.SlurmConfig:
+    config = ConfigSection(
+        {"slurm": raw}, "", base_dir=Path.cwd(), allowed=("slurm",)
+    )
+    return load_slurm_config(config)
 
 
 def test_slurm_config_rejects_array_and_validates_limits() -> None:
-    config = slurm.load_slurm_config(
+    config = _load_slurm(
         {"sbatch": {"time": "1:00:00"}, "max_parallel_jobs": -1, "setup": ["ml gmx"]}
     )
     assert config.max_parallel_jobs == -1
     assert config.setup == ("ml gmx",)
     with pytest.raises(ValueError, match="array is set by BFF"):
-        slurm.load_slurm_config({"sbatch": {"array": "0-3"}})
-    with pytest.raises(ValueError, match="positive or -1"):
-        slurm.load_slurm_config({"sbatch": {}, "max_parallel_jobs": 0})
+        _load_slurm({"sbatch": {"array": "0-3"}})
+    with pytest.raises(ValueError, match=r"max_parallel_jobs must be .* or -1"):
+        _load_slurm({"sbatch": {}, "max_parallel_jobs": 0})
     with pytest.raises(ValueError, match="unsupported key"):
-        slurm.load_slurm_config({"sbatch": {}, "partition": "cpu"})
+        _load_slurm({"sbatch": {}, "partition": "cpu"})
+    with pytest.raises(ValueError, match="missing required key"):
+        _load_slurm({"max_parallel_jobs": 4})
 
 
 def test_task_script_maps_array_index_to_global_task(tmp_path: Path) -> None:

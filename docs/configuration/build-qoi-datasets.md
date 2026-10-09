@@ -5,13 +5,12 @@ by list position. Both sections must contain the same unique ID set.
 
 ```yaml
 training_samples:
-  manifest: ../03-sample/samples.yaml
+  manifest: ../03-sample-parameters/samples.yaml
   systems:
     - system_id: acetate
     - system_id: acetate-contact
   frames: {start: 1, stop: null, step: 1}
   workers: -1
-  progress_stride: 10
 
 reference:
   systems:
@@ -50,34 +49,103 @@ run:
   in_memory: true
 output:
   directory: ./qoi
-  write_raw: false
 ```
+
+## Options
+
+General rules for all options are on the
+[conventions page](index.md).
+
+### `training_samples`
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `training_samples.manifest` | path | *required* | `samples.yaml` of a `bff sample-parameters` campaign. |
+| `training_samples.systems` | list | *required* | Entries `{system_id: <ID>}`; the same ID set as `reference.systems`. |
+| `training_samples.frames` | mapping | see [frames](#frames) | Trajectory frames analyzed for every sample. |
+| `training_samples.workers` | integer >= 1 or -1 | `-1` | Samples analyzed in parallel; `-1` uses every available CPU. |
+
+### `reference`
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `reference.systems` | list | *required* | One entry per system ID. |
+| `reference.systems[].system_id` | ID | *required* | System ID, paired with the training samples by ID. |
+| `reference.systems[].inputs` | mapping | *required* | Role to path (or list of paths). Trajectory routines need `topology`, `coordinates`, and `trajectory`; file routines need the roles in their `inputs`. Roles no routine of this system uses are rejected. |
+| `reference.frames` | mapping | see [frames](#frames) | Reference trajectory frames analyzed. |
+
+### `frames`
+
+Both `training_samples.frames` and `reference.frames` take:
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `start` | integer >= 0 | `1` | First frame (0-based); the default skips the starting structure. |
+| `stop` | integer > `start` | none (last frame) | Frame after the last analyzed one. |
+| `step` | integer >= 1 | `1` | Stride between analyzed frames. |
+
+### `routines[]`
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `name` | ID | *required* | QoI name and output file `qoi/<name>.pt`; unique. |
+| `systems` | list of IDs | *required* | Systems this routine analyzes. |
+| `type` | `rdf` or `hydrogen_bonds` | none | Built-in routine; exactly one of `type` and `callable`. |
+| `callable` | string | none | Custom routine as `module:function` or `path/to/file.py:function` (relative to this file). |
+| `selections` | mapping | `{}` | Built-ins only: MDAnalysis selections merged into `options`. |
+| `inputs` | list of strings | `[]` | Custom routines only: file roles passed to the routine; without them it analyzes a trajectory. |
+| `options` | mapping | `{}` | Passed to the routine, which checks them itself; see below for the built-ins. |
+
+### `run` and `output`
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `run.in_memory` | boolean | `true` | Copy each analyzed trajectory slice into memory once, so every routine reads it without decompressing again. A slice larger than its share of the available memory is read from disk instead. |
+| `output.directory` | path | `./qoi` | Directory for `<name>.pt` datasets. |
+| `output.log` | path | `<output.directory>/../build-qoi-datasets.log` | Workflow log file. |
+
+## Built-in Routines
 
 Built-ins are `rdf` and `hydrogen_bonds`. RDF requires `group_a` and
 `group_b`. It emits one curve for every atom type represented in `group_a`,
 with labels sorted by atom type; `group_b` is the neighbor selection used for
 every curve.
 
-Hydrogen bonds require `selection` and `water_selection`. `selection` defines
-the solute heavy-atom sites of interest and `water_selection` defines the whole
-solvent group. BFF finds O/N/S sites, discovers donor hydrogens from topology
+Hydrogen bonds require `selection`, the solute heavy-atom sites of interest;
+`water_selection` defines the whole solvent group. BFF finds O/N/S sites, discovers donor hydrogens from topology
 bonds, and evaluates both solute-to-water and water-to-solute combinations.
 Override the candidate elements with `options.elements` when needed. An NH2
 nitrogen can therefore contribute as both a donor and an acceptor.
 
-RDF options are `range` (default `[0, 10]` Angstrom), `bins` (200), `pbc`
-(true), `update_selections` (false), and `smooth` (false). Hydrogen-bond
-options are `elements` (`[O, N, S]`), `donor_acceptor_cutoff` (3.5 Angstrom),
-`angle_cutoff` (150 degrees), `pbc`, and `update_selections`.
+| `rdf` option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `group_a` | selection | *required* | Atoms whose RDFs are computed, one curve per atom type. |
+| `group_b` | selection | *required* | Neighbor atoms. |
+| `range` | `[min, max]` | `[0, 10]` | Distance range in angstrom. |
+| `bins` | integer | `200` | Histogram bins per curve. |
+| `pbc` | boolean | `true` | Use periodic boundary conditions. |
+| `update_selections` | boolean | `false` | Reevaluate selections every frame. |
+| `smooth` | boolean | `false` | Smooth each curve. |
+
+| `hydrogen_bonds` option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `selection` | selection | *required* | Solute heavy-atom sites of interest. |
+| `water_selection` | selection | `resname SOL HOH WAT` | The whole solvent group. |
+| `elements` | list of strings | `[O, N, S]` | Candidate donor and acceptor elements. |
+| `donor_acceptor_cutoff` | number | `3.5` | Donor-acceptor distance cutoff in angstrom. |
+| `angle_cutoff` | number | `150` | Minimum donor-hydrogen-acceptor angle in degrees. |
+| `pbc` | boolean | `true` | Use periodic boundary conditions. |
+| `update_selections` | boolean | `false` | Reevaluate selections every frame. |
 
 Selections are full MDAnalysis expressions. Static selections are the default;
 `update_selections: true` reevaluates them each frame. Empty selections,
 missing bonds, and invalid PBC boxes are errors.
 
 For reference MDAnalysis routines, use the virtual-site-free topology and
-coordinates created by `bff build`. The external MLIP trajectory must contain
-the same atoms in the same order. BFF keeps the trajectory explicit because
-training and running the MLIP are outside this workflow.
+coordinates created by `bff build`. The external reference trajectory must
+contain the same atoms in the same order. BFF keeps the trajectory explicit
+because the reference simulation is outside this workflow; see
+[Reference trajectories](../reference-trajectories.md).
 
 ## Routine Interface
 
@@ -156,10 +224,27 @@ and trajectory. Iterate over `universe.trajectory[frames]`; do not reopen the
 trajectory. File-based routines do not receive a universe or frame slice, and
 trajectory-based routines do not receive the `inputs` mapping.
 
-Each worker analyzes one complete training sample and processes that sample's
-systems sequentially. All trajectory routines for one system share the same
-Universe. The reference follows the same path as one sample, while only the
-training samples are processed in parallel.
+## How Samples Are Analyzed
 
-Outputs are `qoi/<routine-name>.pt`, `build-qoi-datasets.log`, and optional
-`qoi/raw.json`. Dataset metadata records `system_ids`.
+Samples are analyzed in parallel, one worker process per sample. Within a
+sample, the systems are analyzed one after another; each system's trajectory
+is opened once and all of that system's routines run on it. The reference is
+analyzed first, the same way, so configuration errors appear within seconds.
+
+Each training sample is analyzed with its own topology,
+`samples/<sample_id>/<system_id>/topology.top`, which carries the sampled
+parameters; routines that need charges, such as a dipole, therefore see the
+sample's charges. Coordinates come from the staged `systems/<system_id>/`.
+
+A sample is skipped, with a warning naming it and the reason, when its files
+are missing, its trajectory or a routine fails, or its QoIs do not match the
+reference in shape. The remaining samples are still analyzed, and every
+dataset contains the same samples. A failing reference stops the stage.
+
+## Outputs
+
+One `qoi/<routine-name>.pt` per routine and `build-qoi-datasets.log`. Each
+dataset records the `sample_ids` of its rows, the `parameter_names` of its
+input columns (from the campaign), and the `system_ids` it combines.
+`fit-lgp` stores the parameter names in the model, and `learn` checks them
+against its `specs.yaml`.

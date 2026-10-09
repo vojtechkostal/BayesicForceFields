@@ -7,6 +7,8 @@ edit_uri: edit/main/docs/
 docs_dir: docs
 site_dir: site
 strict: true
+exclude_docs: |
+  configuration/snippets/
 
 theme:
   name: material
@@ -44,6 +46,9 @@ markdown_extensions:
   - toc:
       permalink: true
   - pymdownx.details
+  - pymdownx.snippets:
+      base_path: [docs/configuration/snippets]
+      check_paths: true
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid
@@ -57,12 +62,14 @@ nav:
   - Home: index.md
   - Installation: installation.md
   - Architecture: architecture.md
+  - Reference Trajectories: reference-trajectories.md
+  - Results: results.md
   - Migration: migration.md
   - Changelog: changelog.md
   - CLI: cli.md
   - Configuration:
+      - Conventions: configuration/index.md
       - Build: configuration/build.md
-      - Label Snapshots: configuration/label-snapshots.md
       - Sample Parameters: configuration/sample-parameters.md
       - Build QoI Datasets: configuration/build-qoi-datasets.md
       - Fit LGP: configuration/fit-lgp.md

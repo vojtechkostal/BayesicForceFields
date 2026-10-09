@@ -1,20 +1,22 @@
-from pathlib import Path
-from typing import Any, Mapping, Optional, Sequence, Union
+"""Figures of a learning run: ``plot_marginals``, ``plot_qoi_marginals``,
+``plot_corner``. Each takes a :class:`bff.bayes.results.Results` (also
+available as its methods) and returns the matplotlib ``Figure``; save it with
+``fig.savefig(...)``.
+"""
+
+from typing import Any, Mapping, Optional, Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
-import torch
 from matplotlib.colors import ListedColormap
 from matplotlib.patches import Patch
 from matplotlib.ticker import MaxNLocator
 from scipy.special import softmax
 from scipy.stats import gaussian_kde
 
-from .bayes.results import PosteriorResults
-from .domain.specs import Specs
-
-PathLike = Union[str, Path]
-ArrayLike = Union[np.ndarray, torch.Tensor]
+from .bayes.results import Results, marginal_mode
+from .bayes.utils import evenly_spaced_indices
+from .domain.specs import parameter_kind
 
 
 def _wrap_label(text: str, max_per_line: int = 3) -> str:
@@ -23,60 +25,6 @@ def _wrap_label(text: str, max_per_line: int = 3) -> str:
         " ".join(words[i:i + max_per_line])
         for i in range(0, len(words), max_per_line)
     )
-
-
-def _coerce_specs(specs: Specs | PathLike) -> Specs:
-    return specs if isinstance(specs, Specs) else Specs(specs)
-
-
-def _coerce_samples(
-    samples: PosteriorResults | ArrayLike,
-) -> np.ndarray:
-    if isinstance(samples, PosteriorResults):
-        return np.asarray(samples.prepared_samples, dtype=float)
-    if isinstance(samples, torch.Tensor):
-        return samples.detach().cpu().numpy()
-    return np.asarray(samples, dtype=float)
-
-
-def _parameter_labels(
-    names: Sequence[str],
-    labels: Optional[Sequence[str] | Mapping[str, str]] = None,
-) -> list[str]:
-    if labels is None:
-        return list(names)
-    if isinstance(labels, Mapping):
-        return [labels.get(name, name) for name in names]
-    if len(labels) != len(names):
-        raise ValueError(
-            "parameter_labels must match the number of plotted parameters.")
-    return list(labels)
-
-
-def _expand_short_labels(
-    labels: Sequence[str],
-    full_labels: Sequence[str],
-) -> list[str]:
-    """Expand shortened labels like ``C1`` back to ``charge C1`` when possible."""
-    if len(labels) != len(full_labels):
-        return list(labels)
-
-    lookup: dict[str, str] = {}
-    for full_label in full_labels:
-        if full_label.startswith("$"):
-            lookup.setdefault(full_label, full_label)
-            continue
-        lookup.setdefault(full_label, full_label)
-        lookup.setdefault(full_label.split(maxsplit=1)[-1], full_label)
-
-    expanded: list[str] = []
-    changed = False
-    for label in labels:
-        replacement = lookup.get(label, label)
-        expanded.append(replacement)
-        changed |= replacement != label
-
-    return expanded if changed else list(labels)
 
 
 def _axis_labels(kind: str) -> tuple[str, str]:
@@ -96,7 +44,7 @@ def _marginal_panel_sections(
         raise ValueError("max_parameters_per_row must be positive.")
     param_groups: dict[str, list[int]] = {}
     for idx, name in enumerate(param_names):
-        param_groups.setdefault(name.split()[0], []).append(idx)
+        param_groups.setdefault(parameter_kind(name), []).append(idx)
 
     sections: list[tuple[str, list[list[list[int]]]]] = []
     for kind, indices in param_groups.items():
@@ -280,7 +228,6 @@ def _plot_metadata(
 
 def _marginal_tick_labels(
     param_names: Sequence[str],
-    parameter_labels: Optional[Sequence[str] | Mapping[str, str]],
     plot_metadata: Mapping[str, Mapping[str, str]],
 ) -> list[str]:
     unknown_metadata = set(plot_metadata) - set(param_names)
@@ -289,13 +236,8 @@ def _marginal_tick_labels(
             "plot_metadata contains unknown parameter(s): "
             + ", ".join(sorted(unknown_metadata))
         )
-    if parameter_labels is not None:
-        return _parameter_labels(param_names, parameter_labels)
     return [
-        plot_metadata.get(name, {}).get(
-            "xlabel",
-            name if name.startswith("$") else name.split(maxsplit=1)[-1],
-        )
+        plot_metadata.get(name, {}).get("xlabel", name.split(maxsplit=1)[-1])
         for name in param_names
     ]
 
@@ -335,205 +277,6 @@ def _format_range_value(
     return f"{value:.{decimals}f}"
 
 
-def _marginal_mode(
-    kde: gaussian_kde,
-    values: np.ndarray,
-    lower: float,
-    upper: float,
-) -> float:
-    """Estimate a bounded one-dimensional KDE mode on an adaptive grid."""
-    grid_lower = max(float(lower), float(np.min(values)))
-    grid_upper = min(float(upper), float(np.max(values)))
-    if grid_lower >= grid_upper:
-        return grid_lower
-    grid = np.linspace(grid_lower, grid_upper, 512)
-    return float(grid[np.argmax(kde(grid))])
-
-
-def plot_marginals(
-    results: PosteriorResults,
-    specs: Specs | PathLike,
-    *,
-    parameter_labels: Optional[Sequence[str] | Mapping[str, str]] = None,
-    plot_metadata: Optional[Mapping[str, Mapping[str, str]]] = None,
-    max_samples: Optional[int] = None,
-    color_prior: str = "gray",
-    color_posterior: str = "tab:red",
-    fn_out: Optional[PathLike] = None,
-) -> None:
-    specs = _coerce_specs(specs)
-    posterior = (
-        results.prepared_samples
-        if results.include_implicit_charge
-        else specs.with_implicit_charges(results.prepared_samples)
-    )
-    if max_samples is not None and max_samples != -1:
-        if max_samples < 1:
-            raise ValueError("max_samples must be positive, -1, or None.")
-        if len(posterior) > max_samples:
-            indices = np.linspace(0, len(posterior) - 1, max_samples, dtype=int)
-            posterior = posterior[indices]
-    param_names = specs.bounds.names.tolist()
-    plot_metadata = _plot_metadata(plot_metadata)
-    tick_labels = _marginal_tick_labels(
-        param_names, parameter_labels, plot_metadata
-    )
-    panel_sections = _marginal_panel_sections(param_names)
-    fig, panel_axes = _marginal_figure(panel_sections)
-
-    explicit_names = specs.explicit_bounds.names.tolist()
-    prior_index = {name: i for i, name in enumerate(explicit_names)}
-    show_prior = results.priors is not None
-    legend_used = {"prior": False, "posterior": False, "bounds": False}
-    for ax, kind, indices in panel_axes:
-        bounds_block = np.asarray(
-            [specs.bounds.by_name[param_names[i]] for i in indices],
-            dtype=float,
-        )
-        y_min = bounds_block[:, 0].min()
-        y_max = bounds_block[:, 1].max()
-        y_pad = max(0.05, 0.18 * (y_max - y_min))
-        posterior_peaks: list[float] = []
-        prior_peaks: list[float] = []
-        curves: dict[
-            int, tuple[np.ndarray, np.ndarray, Optional[np.ndarray], float]
-        ] = {}
-
-        for idx in indices:
-            name = param_names[idx]
-            lower, upper = specs.bounds.by_name[name]
-            y = np.linspace(lower - y_pad, upper + y_pad, 400)
-
-            prior_density = None
-            if show_prior and name in prior_index:
-                prior = results.priors.distributions[prior_index[name]]
-                prior_density = (
-                    prior.log_prob(torch.as_tensor(y, dtype=torch.float32))
-                    .exp()
-                    .detach()
-                    .cpu()
-                    .numpy()
-                )
-                prior_peaks.append(float(np.max(prior_density)))
-
-            posterior_values = posterior[:, idx]
-            posterior_kde = gaussian_kde(posterior_values)
-            posterior_density = posterior_kde(y)
-            posterior_peaks.append(float(np.max(posterior_density)))
-            posterior_mode = _marginal_mode(
-                posterior_kde,
-                posterior_values,
-                lower,
-                upper,
-            )
-            curves[idx] = (y, posterior_density, prior_density, posterior_mode)
-
-        max_posterior_peak = max(posterior_peaks, default=1.0)
-        max_prior_peak = max(prior_peaks, default=max_posterior_peak)
-        posterior_width = 1.2
-        prior_width = 0.7
-        posterior_scale = posterior_width / max(max_posterior_peak, 1e-12)
-        prior_scale = prior_width / max(max_prior_peak, 1e-12)
-
-        for xpos, idx in enumerate(indices):
-            name = param_names[idx]
-            lower, upper = specs.bounds.by_name[name]
-            y, posterior_density, prior_density, posterior_mode = curves[idx]
-
-            if prior_density is not None:
-                ax.fill_betweenx(
-                    y,
-                    xpos - prior_scale * prior_density,
-                    xpos,
-                    color=color_prior,
-                    lw=0,
-                    zorder=1,
-                    label="prior" if not legend_used["prior"] else None,
-                )
-                legend_used["prior"] = True
-
-            ax.fill_betweenx(
-                y,
-                xpos,
-                xpos + posterior_scale * posterior_density,
-                color=color_posterior,
-                lw=0,
-                zorder=2,
-                label="posterior" if not legend_used["posterior"] else None,
-            )
-            legend_used["posterior"] = True
-
-            center = 0.5 * (lower + upper)
-            yerr = np.array([[center - lower], [upper - center]])
-            ax.errorbar(
-                [xpos],
-                [center],
-                yerr=yerr,
-                lw=2.5,
-                ls="",
-                capsize=4,
-                capthick=2.5,
-                markeredgewidth=2.5,
-                color="k",
-                zorder=3,
-                label="bounds" if not legend_used["bounds"] else None,
-            )
-            legend_used["bounds"] = True
-
-            ax.text(
-                xpos,
-                lower - 0.25 * y_pad,
-                _format_range_value(posterior_mode, lower, upper, kind),
-                color="tab:red",
-                fontweight="bold",
-                fontsize=12,
-                ha="center",
-                va="top",
-                zorder=4,
-            )
-
-        ax.set_xlim(-prior_width - 0.25, len(indices) - 1 + posterior_width + 0.25)
-        ax.set_ylim(y_min - y_pad, y_max + y_pad)
-        if kind == "define" and len(indices) == 1:
-            ax.set_xticks([])
-        else:
-            ax.set_xticks(range(len(indices)))
-            ax.set_xticklabels(
-                [_wrap_label(tick_labels[i]) for i in indices],
-                rotation=30,
-                ha="center",
-                fontsize=15,
-            )
-        xlabel, ylabel = _marginal_axis_labels(
-            kind, indices, param_names, plot_metadata
-        )
-        ax.set_xlabel(xlabel, fontsize=15)
-        ax.set_ylabel(ylabel, fontsize=15)
-        ax.tick_params(direction="in", width=1.2, labelsize=15)
-        for spine in ax.spines.values():
-            spine.set_linewidth(1.2)
-
-    if panel_axes:
-        handles_by_label = {}
-        for ax, _, _ in panel_axes:
-            handles, labels = ax.get_legend_handles_labels()
-            handles_by_label.update(zip(labels, handles))
-        labels = [
-            label
-            for label in ("prior", "posterior", "bounds")
-            if label in handles_by_label
-        ]
-        handles = [handles_by_label[label] for label in labels]
-        if handles:
-            _place_top_legends(fig, [(handles, len(labels))])
-    _align_marginal_ylabels(fig, panel_axes)
-    if fn_out is not None:
-        plt.savefig(fn_out, bbox_inches="tight")
-        plt.close(fig)
-    else:
-        plt.show()
-
-
 def _local_qoi_responsibilities(
     parameter: np.ndarray,
     grid: np.ndarray,
@@ -552,62 +295,216 @@ def _local_qoi_responsibilities(
     return softmax((local_scores - baseline) / temperature, axis=1)
 
 
-def plot_qoi_marginals(
-    results: PosteriorResults,
-    specs: Specs | PathLike,
-    log_likelihood_by_qoi: Mapping[str, ArrayLike],
+
+
+def _check_max_samples(max_samples: Optional[int]) -> None:
+    if max_samples is not None and max_samples != -1 and max_samples < 1:
+        raise ValueError("max_samples must be positive, -1, or None.")
+
+
+def _bounds_block(results: Results, names: Sequence[str], indices: Sequence[int]):
+    """Axis limits and padding of the panel of the parameters ``indices``."""
+    bounds = np.asarray([results.specs.bounds[names[i]] for i in indices])
+    y_min, y_max = bounds[:, 0].min(), bounds[:, 1].max()
+    return y_min, y_max, max(0.05, 0.18 * (y_max - y_min))
+
+
+def _style_panel(
+    ax: Any,
+    kind: str,
+    indices: Sequence[int],
+    names: Sequence[str],
+    tick_labels: Sequence[str],
+    plot_metadata: Mapping[str, Mapping[str, str]],
+    x_limits: tuple[float, float],
+    y_limits: tuple[float, float],
+) -> None:
+    ax.set_xlim(*x_limits)
+    ax.set_ylim(*y_limits)
+    if kind == "define" and len(indices) == 1:
+        ax.set_xticks([])
+    else:
+        ax.set_xticks(range(len(indices)))
+        ax.set_xticklabels(
+            [_wrap_label(tick_labels[i]) for i in indices],
+            rotation=30,
+            ha="center",
+            fontsize=15,
+        )
+    xlabel, ylabel = _marginal_axis_labels(kind, indices, names, plot_metadata)
+    ax.set_xlabel(xlabel, fontsize=15)
+    ax.set_ylabel(ylabel, fontsize=15)
+    ax.tick_params(direction="in", width=1.2, labelsize=15)
+    for spine in ax.spines.values():
+        spine.set_linewidth(1.2)
+
+
+def _bounds_marker(ax: Any, xpos: float, lower: float, upper: float, zorder: int, **kw):
+    center = 0.5 * (lower + upper)
+    return ax.errorbar(
+        [xpos],
+        [center],
+        yerr=[[center - lower], [upper - center]],
+        lw=2.5,
+        ls="",
+        capsize=4,
+        capthick=2.5,
+        markeredgewidth=2.5,
+        color="k",
+        zorder=zorder,
+        **kw,
+    )
+
+
+def plot_marginals(
+    results: Results,
     *,
-    parameter_labels: Optional[Sequence[str] | Mapping[str, str]] = None,
+    plot_metadata: Optional[Mapping[str, Mapping[str, str]]] = None,
+    max_samples: Optional[int] = None,
+    color_prior: str = "gray",
+    color_posterior: str = "tab:red",
+):
+    """Prior and posterior marginals of every parameter, with bounds and MAP.
+
+    Parameters of one kind (charges, sigmas, ...) share a panel. The number
+    under each marginal is the mode of its posterior density; the black
+    diamond is the MAP. ``plot_metadata`` maps parameter names to
+    ``{"xlabel": ..., "ylabel": ...}`` (the tick label and, for ``define``
+    parameters, the axis labels). ``max_samples`` caps the samples used for
+    the kernel density estimates (``-1``/``None``: all). Returns the figure.
+    """
+    _check_max_samples(max_samples)
+    names = list(results.specs.names)
+    rows = evenly_spaced_indices(results.n_samples, max_samples)
+    posterior = results.samples[rows][:, : len(names)]
+    map_values = [results.map[name] for name in names]
+    plot_metadata = _plot_metadata(plot_metadata)
+    tick_labels = _marginal_tick_labels(names, plot_metadata)
+    fig, panel_axes = _marginal_figure(_marginal_panel_sections(names))
+
+    posterior_width, prior_width = 1.2, 0.7
+    for ax, kind, indices in panel_axes:
+        y_min, y_max, y_pad = _bounds_block(results, names, indices)
+        curves = {}
+        for idx in indices:
+            lower, upper = results.specs.bounds[names[idx]]
+            y = np.linspace(lower - y_pad, upper + y_pad, 400)
+            prior_density = results.prior_density(names[idx], y)
+            density = gaussian_kde(posterior[:, idx])(y)
+            mode = marginal_mode(posterior[:, idx], lower, upper)
+            curves[idx] = (y, density, prior_density, mode)
+
+        posterior_scale = posterior_width / max(
+            max(density.max() for _, density, _, _ in curves.values()), 1e-12
+        )
+        prior_peaks = [p.max() for _, _, p, _ in curves.values() if p is not None]
+        prior_scale = prior_width / max(max(prior_peaks, default=1.0), 1e-12)
+
+        for xpos, idx in enumerate(indices):
+            lower, upper = results.specs.bounds[names[idx]]
+            y, density, prior_density, mode = curves[idx]
+            if prior_density is not None:
+                ax.fill_betweenx(
+                    y,
+                    xpos - prior_scale * prior_density,
+                    xpos,
+                    color=color_prior,
+                    lw=0,
+                    zorder=1,
+                    label="prior",
+                )
+            ax.fill_betweenx(
+                y,
+                xpos,
+                xpos + posterior_scale * density,
+                color=color_posterior,
+                lw=0,
+                zorder=2,
+                label="posterior",
+            )
+            _bounds_marker(ax, xpos, lower, upper, zorder=3, label="bounds")
+            ax.plot(
+                [xpos],
+                [map_values[idx]],
+                marker="D",
+                ms=7,
+                color="k",
+                ls="",
+                zorder=5,
+                label="MAP",
+            )
+            ax.text(
+                xpos,
+                lower - 0.25 * y_pad,
+                _format_range_value(mode, lower, upper, kind),
+                color="tab:red",
+                fontweight="bold",
+                fontsize=12,
+                ha="center",
+                va="top",
+                zorder=4,
+            )
+        _style_panel(
+            ax,
+            kind,
+            indices,
+            names,
+            tick_labels,
+            plot_metadata,
+            (-prior_width - 0.25, len(indices) - 1 + posterior_width + 0.25),
+            (y_min - y_pad, y_max + y_pad),
+        )
+
+    handles_by_label = {}
+    for ax, _, _ in panel_axes:
+        handles, labels = ax.get_legend_handles_labels()
+        handles_by_label.update(zip(labels, handles))
+    labels = [
+        label for label in ("prior", "posterior", "bounds", "MAP")
+        if label in handles_by_label
+    ]
+    handles = [handles_by_label[label] for label in labels]
+    _place_top_legends(fig, [(handles, len(labels))])
+    _align_marginal_ylabels(fig, panel_axes)
+    return fig
+
+
+def plot_qoi_marginals(
+    results: Results,
+    *,
     plot_metadata: Optional[Mapping[str, Mapping[str, str]]] = None,
     temperature: float = 0.7,
     colors: Optional[Mapping[str, Any]] = None,
     color_prior: str = "gray",
-    sample_indices: Optional[ArrayLike] = None,
-    fn_out: Optional[PathLike] = None,
-) -> None:
-    """Plot contrastive QoI attribution within posterior marginals."""
+):
+    """Posterior marginals colored by the QoI that supports each region.
+
+    Within every marginal, the profile is split by how much each QoI's log
+    likelihood favours that value, relative to the other QoIs (a contrast, so
+    that QoIs that agree do not dominate). It uses the likelihoods stored in
+    the results. Returns the figure.
+    """
     if not np.isfinite(temperature) or temperature <= 0.0:
         raise ValueError("temperature must be positive and finite.")
-    if not log_likelihood_by_qoi:
-        raise ValueError("log_likelihood_by_qoi must not be empty.")
-
-    specs = _coerce_specs(specs)
-    posterior = (
-        results.prepared_samples
-        if results.include_implicit_charge
-        else specs.with_implicit_charges(results.prepared_samples)
-    )
-    if sample_indices is not None:
-        sample_indices = np.asarray(_coerce_samples(sample_indices), dtype=int)
-        if sample_indices.ndim != 1:
-            raise ValueError("sample_indices must be one-dimensional.")
-        if np.any(sample_indices < 0) or np.any(sample_indices >= len(posterior)):
-            raise ValueError("sample_indices contains an out-of-range index.")
-        posterior = posterior[sample_indices]
-    param_names = specs.bounds.names.tolist()
-    plot_metadata = _plot_metadata(plot_metadata)
-    tick_labels = _marginal_tick_labels(
-        param_names, parameter_labels, plot_metadata
-    )
-
-    qoi_names = list(log_likelihood_by_qoi)
-    log_likelihood = np.column_stack([
-        _coerce_samples(log_likelihood_by_qoi[qoi]).reshape(-1)
-        for qoi in qoi_names
-    ])
-    if log_likelihood.shape[0] != len(posterior):
+    if not results.qoi_log_likelihood:
         raise ValueError(
-            "QoI log likelihoods must match the prepared posterior sample count."
+            "These results hold no per-QoI log likelihoods; they are stored by "
+            "LearningProblem.learn (max_qoi_samples)."
         )
+    names = list(results.specs.names)
+    posterior = results.samples[results.qoi_index][:, : len(names)]
+    plot_metadata = _plot_metadata(plot_metadata)
+    tick_labels = _marginal_tick_labels(names, plot_metadata)
+
+    qoi_names = list(results.qoi_log_likelihood)
+    log_likelihood = np.column_stack(
+        [results.qoi_log_likelihood[qoi] for qoi in qoi_names]
+    )
     if not np.all(np.isfinite(log_likelihood)):
         raise ValueError("QoI log likelihoods must contain only finite values.")
-
     centers = np.median(log_likelihood, axis=0)
-    scales = np.subtract(
-        *np.quantile(log_likelihood, [0.75, 0.25], axis=0)
-    )
-    fallback = np.std(log_likelihood, axis=0)
-    scales = np.where(scales > 1e-12, scales, fallback)
+    scales = np.subtract(*np.quantile(log_likelihood, [0.75, 0.25], axis=0))
+    scales = np.where(scales > 1e-12, scales, np.std(log_likelihood, axis=0))
     scales = np.where(scales > 1e-12, scales, 1.0)
     standardized = (log_likelihood - centers) / scales
 
@@ -620,63 +517,35 @@ def plot_qoi_marginals(
         )
         for i, qoi in enumerate(qoi_names)
     }
-
-    panel_sections = _marginal_panel_sections(param_names)
-
-    explicit_names = specs.explicit_bounds.names.tolist()
-    prior_index = {name: i for i, name in enumerate(explicit_names)}
-    show_prior = results.priors is not None
-
-    fig, panel_axes = _marginal_figure(panel_sections)
-    profile_width = 1.2
-    prior_width = 0.7
+    fig, panel_axes = _marginal_figure(_marginal_panel_sections(names))
+    profile_width, prior_width = 1.2, 0.7
 
     for ax, kind, indices in panel_axes:
-        bounds_block = np.asarray(
-            [specs.bounds.by_name[param_names[i]] for i in indices],
-            dtype=float,
-        )
-        y_min = bounds_block[:, 0].min()
-        y_max = bounds_block[:, 1].max()
-        y_pad = max(0.05, 0.18 * (y_max - y_min))
-
+        y_min, y_max, y_pad = _bounds_block(results, names, indices)
         for xpos, idx in enumerate(indices):
-            name = param_names[idx]
-            lower, upper = specs.bounds.by_name[name]
+            lower, upper = results.specs.bounds[names[idx]]
             grid = np.linspace(lower, upper, 400)
             values = posterior[:, idx]
             density = gaussian_kde(values)(grid)
             density /= max(float(density.max()), 1e-12)
             responsibilities = _local_qoi_responsibilities(
-                values,
-                grid,
-                standardized,
-                temperature,
+                values, grid, standardized, temperature
             )
-
             cumulative = np.zeros_like(grid)
             for qoi_idx, qoi in enumerate(qoi_names):
-                next_cumulative = cumulative + responsibilities[:, qoi_idx]
+                upper_edge = cumulative + responsibilities[:, qoi_idx]
                 ax.fill_betweenx(
                     grid,
                     xpos + profile_width * cumulative * density,
-                    xpos + profile_width * next_cumulative * density,
+                    xpos + profile_width * upper_edge * density,
                     color=qoi_colors[qoi],
                     lw=0,
                     zorder=2,
                 )
-                cumulative = next_cumulative
-
-            if show_prior and name in prior_index:
-                prior = results.priors.distributions[prior_index[name]]
-                prior_density = (
-                    prior.log_prob(torch.as_tensor(grid, dtype=torch.float32))
-                    .exp()
-                    .detach()
-                    .cpu()
-                    .numpy()
-                )
-                prior_density /= max(float(prior_density.max()), 1e-12)
+                cumulative = upper_edge
+            prior_density = results.prior_density(names[idx], grid)
+            if prior_density is not None:
+                prior_density = prior_density / max(float(prior_density.max()), 1e-12)
                 ax.fill_betweenx(
                     grid,
                     xpos - prior_width * prior_density,
@@ -685,135 +554,64 @@ def plot_qoi_marginals(
                     lw=0,
                     zorder=1,
                 )
-
-            ax.plot(
-                xpos + profile_width * density,
-                grid,
-                color="k",
-                lw=2.0,
-                zorder=3,
-            )
-            center = 0.5 * (lower + upper)
-            ax.errorbar(
-                xpos,
-                center,
-                yerr=[[center - lower], [upper - center]],
-                lw=2.5,
-                ls="",
-                capsize=4,
-                capthick=2.5,
-                markeredgewidth=2.5,
-                color="k",
-                zorder=4,
-            )
-
-        ax.set_xlim(
-            -prior_width - 0.25,
-            len(indices) - 1 + profile_width + 0.25,
+            ax.plot(xpos + profile_width * density, grid, color="k", lw=2.0, zorder=3)
+            _bounds_marker(ax, xpos, lower, upper, zorder=4)
+        _style_panel(
+            ax,
+            kind,
+            indices,
+            names,
+            tick_labels,
+            plot_metadata,
+            (-prior_width - 0.25, len(indices) - 1 + profile_width + 0.25),
+            (y_min - y_pad, y_max + y_pad),
         )
-        ax.set_ylim(y_min - y_pad, y_max + y_pad)
-        if kind == "define" and len(indices) == 1:
-            ax.set_xticks([])
-        else:
-            ax.set_xticks(range(len(indices)))
-            ax.set_xticklabels(
-                [_wrap_label(tick_labels[i]) for i in indices],
-                rotation=30,
-                ha="center",
-                fontsize=15,
-            )
-        xlabel, ylabel = _marginal_axis_labels(
-            kind, indices, param_names, plot_metadata
-        )
-        ax.set_xlabel(xlabel, fontsize=15)
-        ax.set_ylabel(ylabel, fontsize=15)
-        ax.tick_params(direction="in", width=1.2, labelsize=15)
-        for spine in ax.spines.values():
-            spine.set_linewidth(1.2)
 
     summary_handles = [
-        Patch(facecolor=color_prior, label="prior"),
         plt.Line2D([0], [0], color="k", lw=2.0, label="posterior"),
-        panel_axes[0][0].errorbar(
-            [np.nan],
-            [np.nan],
-            yerr=[[0.5], [0.5]],
-            color="k",
-            lw=2.5,
-            ls="",
-            capsize=4,
-            capthick=2.5,
-            label="bounds",
-        ),
+        _bounds_marker(panel_axes[0][0], np.nan, -0.5, 0.5, zorder=0, label="bounds"),
     ]
-    if not show_prior:
-        summary_handles = summary_handles[1:]
-    qoi_handles = [
-        Patch(facecolor=qoi_colors[qoi], label=qoi)
-        for qoi in qoi_names
-    ]
+    if results.prior is not None:
+        summary_handles.insert(0, Patch(facecolor=color_prior, label="prior"))
+    qoi_handles = [Patch(facecolor=qoi_colors[qoi], label=qoi) for qoi in qoi_names]
     _place_top_legends(
         fig,
-        [
-            (summary_handles, len(summary_handles)),
-            (qoi_handles, len(qoi_handles)),
-        ],
+        [(summary_handles, len(summary_handles)), (qoi_handles, len(qoi_handles))],
     )
     _align_marginal_ylabels(fig, panel_axes)
-
-    if fn_out is not None:
-        plt.savefig(fn_out, bbox_inches="tight")
-        plt.close(fig)
-    else:
-        plt.show()
+    return fig
 
 
 def plot_corner(
-    samples: PosteriorResults | ArrayLike,
-    labels: Optional[Sequence[str]] = None,
+    results: Results,
     *,
+    names: Optional[Sequence[str]] = None,
     quantiles: Sequence[float] = (0.16, 0.5, 0.84),
     figsize: float = 1.5,
     cmap: Any = "Reds",
     levels: int = 5,
     scatter_alpha: float = 0.15,
     max_samples: Optional[int] = None,
-    fn_out: Optional[PathLike] = None,
-) -> None:
-    sample_source = samples
-    samples = _coerce_samples(samples)
-    result_labels = None
-    if (
-        isinstance(sample_source, PosteriorResults)
-        and sample_source.specs is not None
-        and not sample_source.include_implicit_charge
-    ):
-        samples = sample_source.specs.with_implicit_charges(samples)
-        result_labels = sample_source._labels_with_implicit_charges()
-    elif isinstance(sample_source, PosteriorResults):
-        result_labels = list(sample_source.labels)
+):
+    """Corner plot of posterior samples (default: every parameter and noise).
 
-    if samples.ndim != 2:
-        raise ValueError("plot_corner expects samples with shape (n_samples, n_dim).")
-    if max_samples is not None:
-        if max_samples < 1:
-            raise ValueError("max_samples must be positive.")
-        if len(samples) > max_samples:
-            indices = np.linspace(0, len(samples) - 1, max_samples, dtype=int)
-            samples = samples[indices]
+    The diagonal shows each marginal with its median and 16/84 % quantiles;
+    ``names`` selects and orders columns of ``results.names``. Returns the
+    figure.
+    """
+    _check_max_samples(max_samples)
+    names = list(results.names if names is None else names)
+    unknown = [name for name in names if name not in results.names]
+    if unknown:
+        raise ValueError(
+            f"Unknown parameter(s) {unknown}; choose from {list(results.names)}."
+        )
+    columns = [results.names.index(name) for name in names]
+    samples = results.samples[evenly_spaced_indices(results.n_samples, max_samples)]
+    samples = samples[:, columns]
+    n_dim = len(names)
+    labels = [_wrap_label(name) for name in names]
 
-    n_dim = samples.shape[1]
-    if labels is None:
-        if result_labels is not None:
-            labels = result_labels
-        else:
-            labels = [f"theta_{i}" for i in range(n_dim)]
-    elif len(labels) != n_dim:
-        raise ValueError("labels must match the posterior sample dimension.")
-    elif result_labels is not None:
-        labels = _expand_short_labels(labels, result_labels)
-
-    labels = [_wrap_label(label) for label in labels]
     base_cmap = plt.get_cmap(cmap)
     colors = base_cmap(np.linspace(0, 1, max(levels, 2)))
     colors[0] = np.array([1.0, 1.0, 1.0, 0.0])
@@ -823,9 +621,8 @@ def plot_corner(
         n_dim,
         figsize=(figsize * n_dim, figsize * n_dim),
         gridspec_kw={"wspace": 0.05, "hspace": 0.05},
+        squeeze=False,
     )
-    axes = np.asarray(axes, dtype=object).reshape(n_dim, n_dim)
-
     limits = [(samples[:, i].min(), samples[:, i].max()) for i in range(n_dim)]
 
     for i in range(n_dim):
@@ -837,8 +634,7 @@ def plot_corner(
 
             if i == j:
                 x = np.linspace(*limits[i], 400)
-                kde = gaussian_kde(samples[:, i])
-                density = kde(x)
+                density = gaussian_kde(samples[:, i])(x)
                 ax.plot(x, density, color="k", lw=2.5)
                 ax.fill_between(x, 0, density, color="0.75", alpha=0.7)
                 if quantiles:
@@ -847,22 +643,17 @@ def plot_corner(
                         ax.axvline(q, color="k", ls="--", lw=1.3)
                     if len(q_values) == 3:
                         median = q_values[1]
-                        lower = median - q_values[0]
-                        upper = q_values[2] - median
                         ax.set_title(
-                            (
-                                f"{labels[i]}\n"
-                                f"{median:.3f}\n"
-                                f"(+{upper:.3f} / -{lower:.3f})"
-                            ),
+                            f"{labels[i]}\n{median:.3f}\n"
+                            f"(+{q_values[2] - median:.3f} / "
+                            f"-{median - q_values[0]:.3f})",
                             fontsize=15,
                         )
                 ax.set_xlim(*limits[i])
                 ax.set_yticks([])
                 ax.tick_params(axis="y", left=False, labelleft=False)
             else:
-                x = samples[:, j]
-                y = samples[:, i]
+                x, y = samples[:, j], samples[:, i]
                 ax.scatter(
                     x[::10],
                     y[::10],
@@ -880,9 +671,7 @@ def plot_corner(
                     ]
                     zi = kde(np.vstack([xi.ravel(), yi.ravel()])).reshape(xi.shape)
                     contour_levels = np.linspace(zi.min(), zi.max(), levels)
-                    ax.contourf(
-                        xi, yi, zi, levels=contour_levels, cmap=contour_cmap
-                    )
+                    ax.contourf(xi, yi, zi, levels=contour_levels, cmap=contour_cmap)
                     ax.contour(
                         xi, yi, zi, levels=contour_levels, colors="k", linewidths=0.8
                     )
@@ -894,21 +683,14 @@ def plot_corner(
             ax.xaxis.set_major_locator(MaxNLocator(nbins=4))
             ax.yaxis.set_major_locator(MaxNLocator(nbins=4))
             ax.tick_params(direction="in", top=True, right=True, labelsize=15)
-
             if i == n_dim - 1:
                 ax.set_xlabel(labels[j], fontsize=15)
             else:
                 ax.set_xticklabels([])
-
             if j == 0 and i > 0:
                 ax.set_ylabel(labels[i], fontsize=15)
             elif i != j:
                 ax.set_yticklabels([])
 
     fig.align_labels()
-
-    if fn_out is not None:
-        plt.savefig(fn_out, bbox_inches="tight")
-        plt.close(fig)
-    else:
-        plt.show()
+    return fig

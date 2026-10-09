@@ -1,0 +1,39 @@
+campaign_dir: /home/vojta/code/BayesicForceFields/examples/acetate/03-sample-local
+fn_specs: /home/vojta/code/BayesicForceFields/examples/acetate/03-sample-local/specs.yaml
+gmx_cmd: gmx
+job_scheduler: local
+params:
+- 0.2680875303662947
+- -0.2550721938230102
+- -0.5408802974179665
+sample_id: '00'
+store:
+- xtc
+systems:
+- bias: null
+  coordinates: /home/vojta/code/BayesicForceFields/examples/acetate/03-sample-local/window-000.gro
+  index: /home/vojta/code/BayesicForceFields/examples/acetate/03-sample-local/window-000.ndx
+  mdp:
+    em: /home/vojta/code/BayesicForceFields/examples/acetate/03-sample-local/window-000.em.mdp
+    prod: /home/vojta/code/BayesicForceFields/examples/acetate/03-sample-local/window-000.mdp
+  n_steps: 20000
+  system_id: '000'
+  topology: /home/vojta/code/BayesicForceFields/examples/acetate/03-sample-local/window-000.top
+- bias: /home/vojta/code/BayesicForceFields/examples/acetate/03-sample-local/window-001.bias.colvars.dat
+  coordinates: /home/vojta/code/BayesicForceFields/examples/acetate/03-sample-local/window-001.gro
+  index: /home/vojta/code/BayesicForceFields/examples/acetate/03-sample-local/window-001.ndx
+  mdp:
+    em: /home/vojta/code/BayesicForceFields/examples/acetate/03-sample-local/window-001.em.mdp
+    prod: /home/vojta/code/BayesicForceFields/examples/acetate/03-sample-local/window-001.mdp
+  n_steps: 20000
+  system_id: '001'
+  topology: /home/vojta/code/BayesicForceFields/examples/acetate/03-sample-local/window-001.top
+- bias: /home/vojta/code/BayesicForceFields/examples/acetate/03-sample-local/window-002.bias.colvars.dat
+  coordinates: /home/vojta/code/BayesicForceFields/examples/acetate/03-sample-local/window-002.gro
+  index: /home/vojta/code/BayesicForceFields/examples/acetate/03-sample-local/window-002.ndx
+  mdp:
+    em: /home/vojta/code/BayesicForceFields/examples/acetate/03-sample-local/window-002.em.mdp
+    prod: /home/vojta/code/BayesicForceFields/examples/acetate/03-sample-local/window-002.mdp
+  n_steps: 20000
+  system_id: '002'
+  topology: /home/vojta/code/BayesicForceFields/examples/acetate/03-sample-local/window-002.top

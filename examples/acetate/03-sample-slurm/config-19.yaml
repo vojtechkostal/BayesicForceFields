@@ -1,0 +1,39 @@
+campaign_dir: /home/kostal/code/BayesicForceFields/examples/acetate/03-sample-slurm
+fn_specs: /home/kostal/code/BayesicForceFields/examples/acetate/03-sample-slurm/specs.yaml
+gmx_cmd: gmx_mpi
+job_scheduler: slurm
+params:
+- 0.09554400014758313
+- -0.12062364988162466
+- -0.6444076586064003
+sample_id: '19'
+store:
+- xtc
+systems:
+- bias: null
+  coordinates: /home/kostal/code/BayesicForceFields/examples/acetate/03-sample-slurm/window-000.gro
+  index: /home/kostal/code/BayesicForceFields/examples/acetate/03-sample-slurm/window-000.ndx
+  mdp:
+    em: /home/kostal/code/BayesicForceFields/examples/acetate/03-sample-slurm/window-000.em.mdp
+    prod: /home/kostal/code/BayesicForceFields/examples/acetate/03-sample-slurm/window-000.mdp
+  n_steps: 50000
+  system_id: '000'
+  topology: /home/kostal/code/BayesicForceFields/examples/acetate/03-sample-slurm/window-000.top
+- bias: /home/kostal/code/BayesicForceFields/examples/acetate/03-sample-slurm/window-001.bias.colvars.dat
+  coordinates: /home/kostal/code/BayesicForceFields/examples/acetate/03-sample-slurm/window-001.gro
+  index: /home/kostal/code/BayesicForceFields/examples/acetate/03-sample-slurm/window-001.ndx
+  mdp:
+    em: /home/kostal/code/BayesicForceFields/examples/acetate/03-sample-slurm/window-001.em.mdp
+    prod: /home/kostal/code/BayesicForceFields/examples/acetate/03-sample-slurm/window-001.mdp
+  n_steps: 50000
+  system_id: '001'
+  topology: /home/kostal/code/BayesicForceFields/examples/acetate/03-sample-slurm/window-001.top
+- bias: /home/kostal/code/BayesicForceFields/examples/acetate/03-sample-slurm/window-002.bias.colvars.dat
+  coordinates: /home/kostal/code/BayesicForceFields/examples/acetate/03-sample-slurm/window-002.gro
+  index: /home/kostal/code/BayesicForceFields/examples/acetate/03-sample-slurm/window-002.ndx
+  mdp:
+    em: /home/kostal/code/BayesicForceFields/examples/acetate/03-sample-slurm/window-002.em.mdp
+    prod: /home/kostal/code/BayesicForceFields/examples/acetate/03-sample-slurm/window-002.mdp
+  n_steps: 50000
+  system_id: '002'
+  topology: /home/kostal/code/BayesicForceFields/examples/acetate/03-sample-slurm/window-002.top

@@ -23,7 +23,8 @@ authoritative; do not treat this file as permission to broaden a task.
 - `bff/workflows/`: one package per user-facing workflow stage.
 - `bff/workflows/campaign/`: MD campaigns shared by `sample-parameters` and
   `validate`, including the per-sample `md` job.
-- `bff/workflows/config.py`: parsing helpers shared by stage configs.
+- `bff/workflows/config.py`: `ConfigSection`, the typed reader every stage
+  config loader uses; read new options through it, not with ad hoc checks.
 - `bff/gromacs.py` and `bff/slurm.py`: GROMACS runs and Slurm job arrays.
 - `bff/domain/`: stable domain models and serialized workflow records.
 - `bff/io/`: file formats and logging.
@@ -31,6 +32,8 @@ authoritative; do not treat this file as permission to broaden a task.
   trajectory analysis, and `QoIDataset` construction.
 - `bff/bayes/` and `bff/mcmc/`: surrogate fitting and posterior learning.
 - `examples/`: user templates and self-contained notebook examples.
+- `scripts/`: standalone helpers distributed with the repository but not the
+  package, such as `label_structures.py` for CP2K labeling on Slurm.
 - `docs/`: MkDocs site; configuration pages describe the YAML contract.
 - `tests/`: unit, integration, configuration, and example-contract tests.
 
@@ -39,32 +42,35 @@ authoritative; do not treat this file as permission to broaden a task.
 The public pipeline is:
 
 ```text
-build -> label-snapshots -> external MLIP workflow
-      -> sample-parameters -> build-qoi-datasets -> fit-lgp -> learn -> validate
+build -> [external reference MD] -> sample-parameters -> build-qoi-datasets
+      -> fit-lgp -> learn -> validate
 ```
 
 Use these names in code, tests, examples, and documentation. Do not add aliases
 for retired stage names unless the user explicitly requests compatibility.
-Scheduled-job commands such as `md` and `label-snapshot-job` are internal, even
-though workflow code invokes them.
+The scheduled-job command `md` is internal, even though workflow code invokes
+it. The reference MD is external; `scripts/label_structures.py` is a standalone
+CP2K labeling helper for it that must not import `bff` and is not part of the
+CLI.
 
 Stage directories and serialized files are interfaces, not incidental output.
 Preserve stable `system_id` and `sample_id` values, fixed artifact names,
 explicit handoffs, and compatibility metadata. Pair systems by ID, never by
 YAML order or display name. When changing a configuration model or artifact,
 update its parser, tests, example YAML, configuration reference, and migration
-notes when the change is user-visible.
+notes when the change is user-visible. `tests/test_docs_config.py` fails when
+an accepted key is missing from its stage's options table.
 
 ## External Software Boundaries
 
-BFF orchestrates GROMACS, CP2K, PLUMED or Colvars, and optionally Slurm. Keep
+BFF orchestrates GROMACS, PLUMED or Colvars, and optionally Slurm. Keep
 external commands at the established topology, I/O, scheduler, and workflow
 boundaries. Tests should use temporary files and mocked process execution
 unless an integration test explicitly requires installed scientific software.
 Do not claim an external simulation succeeded when only staging was tested.
 
 The acetate example is a complete template for BFF-owned stages but has an
-intentional external MLIP boundary. Do not add substitute trajectories or an
+intentional external reference-MD boundary. Do not add substitute trajectories or an
 MLIP implementation. Its reference trajectories must retain the documented
 atom-order-matched, virtual-site-free handoff.
 

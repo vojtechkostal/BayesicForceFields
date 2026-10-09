@@ -3,20 +3,21 @@
 from __future__ import annotations
 
 import shutil
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
 import MDAnalysis as mda
 import numpy as np
-from gmxtopology import Topology
+from gmxtopology import Topology, drop_vsites, virtual_site_numbers
 from MDAnalysis import transformations
 from MDAnalysis.selections.gromacs import SelectionWriter
 
 from ...domain.bias import BiasSpec
-from ...domain.systems import BuildSystemMetadata, write_build_system_metadata
 from ...gromacs import check_gmx_available, run_md
 from ...io.logs import Logger
 from ...io.plumed import ensure_plumed_kernel
+from ...topology import quiet_itp_parser
 from .box import create_box
 from .config import BuildConfig, BuildSystemConfig
 
@@ -109,12 +110,13 @@ def equilibrate(
         maxwarn=maxwarn,
         log=fn_gmx_log,
     )
-    universe = mda.Universe(
-        fn_topol,
-        deffnm_npt.with_suffix(".xtc"),
-        topology_format="ITP",
-        to_guess=("elements", "masses"),
-    )
+    with quiet_itp_parser():
+        universe = mda.Universe(
+            fn_topol,
+            deffnm_npt.with_suffix(".xtc"),
+            topology_format="ITP",
+            to_guess=("elements", "masses"),
+        )
     # Average the box over the last 80% of the equilibration.
     discard = int(universe.trajectory.n_frames * 0.2)
     boxes = [ts.dimensions for ts in universe.trajectory[discard:]]
@@ -132,23 +134,21 @@ def write_reference_system(
 ) -> int:
     """Write matching topology and coordinates with virtual sites removed."""
     top = Topology(fn_topol)
-    universe = mda.Universe(fn_topol, fn_coords, topology_format="ITP")
+    with quiet_itp_parser():
+        universe = mda.Universe(fn_topol, fn_coords, topology_format="ITP")
 
     virtual_site_indices: list[int] = []
     atom_offset = 0
-    for mol, count in top.molecules.values():
-        molecule_virtual_sites = {
-            virtual_site.ai.nr - 1
-            for section in mol.VSITE_SECTIONS
-            for virtual_site in getattr(mol, section)
-        }
+    for mol, count in top.molecules:
+        molecule_virtual_sites = {nr - 1 for nr in virtual_site_numbers(mol)}
         for molecule_index in range(count):
             molecule_offset = atom_offset + molecule_index * len(mol.atoms)
             virtual_site_indices.extend(
                 molecule_offset + atom_index for atom_index in molecule_virtual_sites
             )
         atom_offset += count * len(mol.atoms)
-        mol.remove_vsites()
+    for mol, _ in top.molecules:
+        drop_vsites(mol)
 
     if atom_offset != len(universe.atoms):
         raise ValueError(
@@ -170,11 +170,8 @@ def write_reference_system(
     with mda.Writer(fn_out_coords, n_atoms=len(atoms)) as writer:
         writer.write(atoms)
 
-    reference = mda.Universe(
-        fn_out_topol,
-        fn_out_coords,
-        topology_format="ITP",
-    )
+    with quiet_itp_parser():
+        reference = mda.Universe(fn_out_topol, fn_out_coords, topology_format="ITP")
     if len(reference.atoms) != len(atoms):
         raise ValueError(
             f"Generated reference topology {fn_out_topol} contains "
@@ -189,6 +186,7 @@ def write_reference_system(
 
 
 def main(fn_config: PathLike) -> None:
+    started = time.perf_counter()
     config = BuildConfig.load(fn_config)
     check_gmx_available(config.gmx_cmd)
     if any(system.bias.kind == "plumed" for system in config.systems):
@@ -201,28 +199,25 @@ def main(fn_config: PathLike) -> None:
     systems_dir.mkdir(parents=True, exist_ok=True)
     fn_gmx_log = project_dir / "gromacs.log"
     logger = Logger("build", str(config.fn_log) if config.fn_log else None, mode="w")
-    logger.section(f"Build: {project_dir.name}")
+    logger.section("Build")
     logger.kv("Config", Path(fn_config).resolve())
-    logger.kv("Project directory", project_dir)
-    logger.kv("Equilibration directory", equilibration_dir)
-    logger.kv("Systems directory", systems_dir)
-    logger.kv("Systems", len(config.systems))
-    logger.kv("GROMACS command", config.gmx_cmd)
+    logger.kv("Project", project_dir)
+    logger.kv("Systems", ", ".join(system.system_id for system in config.systems))
+    logger.kv("GROMACS", config.gmx_cmd)
     if any(system.bias.is_biased for system in config.systems):
         logger.warn(
-            "Bias files are staged verbatim. For strong restraints, supply a "
-            "user-prepared ramp-up stage or starting structures already near the "
-            "intended region.",
+            "Bias files are used verbatim. For strong restraints, supply a "
+            "ramp-up stage or starting structures already near the intended "
+            "region."
         )
-    if config.fn_log is not None:
-        logger.kv("Log file", config.fn_log.resolve())
     logger.blank()
 
     keys = [_equilibration_key(system) for system in config.systems]
     equilibrated: dict[tuple, EquilibratedTopology] = {}
     for i, (system, key) in enumerate(zip(config.systems, keys)):
+        name = f" ({system.system_name})" if system.system_name else ""
         logger.info(
-            f"System {i + 1}/{len(config.systems)}: {system.system_id}", level=1
+            f"System {i + 1}/{len(config.systems)}: {system.system_id}{name}", level=1
         )
         if key not in equilibrated:
             equilibrated[key] = equilibrate(
@@ -286,17 +281,10 @@ def main(fn_config: PathLike) -> None:
             detail=f"removed {removed} virtual sites",
             level=2,
         )
-        write_build_system_metadata(
-            project_dir,
-            system.system_id,
-            BuildSystemMetadata(
-                system_name=system.system_name,
-                charge=system.charge,
-                multiplicity=system.mult,
-                box=tuple(float(value) for value in state.box),
-                maxwarn=state.maxwarn,
-                production_steps=system.nsteps_prod,
-            ),
-        )
-        logger.done("System metadata", detail=str(system_dir / "system.yaml"), level=2)
         logger.blank()
+
+    logger.done(
+        "Build",
+        detail=f"{len(config.systems)} system(s) | "
+        f"{time.perf_counter() - started:.1f} s | {systems_dir}",
+    )
