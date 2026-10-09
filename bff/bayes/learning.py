@@ -1,45 +1,40 @@
+"""Bayesian learning of force-field parameters from surrogate models."""
+
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
-from typing import Callable, Mapping, Optional, Sequence, Union
+from typing import Mapping, Optional, Union
 
 import numpy as np
 import torch
 
+from ..domain.specs import Specs
 from ..io.logs import Logger, print_progress_mcmc
 from ..io.utils import mapping_fingerprint
 from ..mcmc.proposal import AdaptiveGaussianProposal
 from ..mcmc.sampler import Sampler
-from ..qoi.data import QoIDataset
-from .gaussian_process import (
-    LGPCommittee,
-    LocalGaussianProcess,
-    MeanFunction,
-    evaluate_mean,
-)
-from .likelihoods import gaussian_log_likelihood, loo_log_likelihood
-from .means import rdf_sigmoid_mean
+from .gaussian_process import LGPCommittee
+from .likelihoods import gaussian_log_likelihood, gaussian_log_likelihood_by_qoi
 from .posterior import log_posterior
-from .priors import Prior, Priors
-from .results import PosteriorResults
-from .utils import (
-    check_device,
-    check_tensor,
-    find_map,
-    initialize_walkers,
-    laplace_approximation,
-    train_test_split,
-)
+from .priors import Priors
+from .results import Results
+from .utils import evenly_spaced_indices, initialize_walkers, resolve_device
 
 PathLike = Union[str, Path]
 
 
 @dataclass(frozen=True, slots=True)
 class LearningProblem:
-    """Complete Bayesian learning problem for force-field parameters."""
+    """Surrogate models of QoIs, to be learned against their references.
+
+    ``specs`` defines the sampled parameters (the model inputs), their bounds,
+    and the implicit charges; without it, parameters are unbounded.
+    """
 
     models: dict[str, LGPCommittee]
-    constraint: Optional[Callable] = None
+    specs: Optional[Specs] = None
     observations: dict[str, np.ndarray | torch.Tensor] = field(
         init=False,
         repr=False,
@@ -49,7 +44,7 @@ class LearningProblem:
         if not self.models:
             raise ValueError("LearningProblem requires at least one surrogate model.")
 
-        empty_models = [qoi for qoi, model in self.models.items() if not model.lgps]
+        empty_models = [qoi for qoi, model in self.models.items() if not model.members]
         if empty_models:
             raise ValueError(
                 "Surrogate models without committee members: "
@@ -60,7 +55,7 @@ class LearningProblem:
             self,
             "observations",
             {
-                qoi: np.asarray(model.reference_values, dtype=float)
+                qoi: np.asarray(model.y_ref, dtype=float)
                 for qoi, model in self.models.items()
             },
         )
@@ -68,8 +63,8 @@ class LearningProblem:
         inconsistent_inputs = []
         for qoi, model in self.models.items():
             input_shapes = {
-                tuple(int(dim) for dim in lgp.X_train.shape)
-                for lgp in model.lgps
+                tuple(int(dim) for dim in member.X_train.shape)
+                for member in model.members
             }
             if len(input_shapes) != 1:
                 inconsistent_inputs.append(qoi)
@@ -79,21 +74,21 @@ class LearningProblem:
                 + ", ".join(sorted(inconsistent_inputs))
             )
 
-        n_params = {model.n_params for model in self.models.values()}
+        n_params = {model.n_inputs for model in self.models.values()}
         if len(n_params) != 1:
             raise ValueError("All surrogate models must have the same input dimension.")
 
-        if self.constraint is not None and self.constraint.n_params != self.n_params:
+        if self.specs is not None and len(self.specs.explicit_names) != self.n_params:
             raise ValueError(
-                "The selected surrogate models and the charge constraint disagree "
-                f"on the number of explicit parameters: models expect "
-                f"{self.n_params}, constraint defines {self.constraint.n_params}."
+                "The selected surrogate models and the specification disagree "
+                f"on the number of sampled parameters: models expect "
+                f"{self.n_params}, specs define {len(self.specs.explicit_names)}."
             )
 
         invalid = [
             qoi
             for qoi, model in self.models.items()
-            if model.reference_values.size != model.y_size
+            if model.y_ref.size != model.n_outputs
         ]
         if invalid:
             raise ValueError(
@@ -104,7 +99,7 @@ class LearningProblem:
         invalid_curve_schema = []
         for qoi, model in self.models.items():
             n_curves = int(getattr(model, "n_curves", 0))
-            if n_curves <= 0 or model.reference_values.size % n_curves != 0:
+            if n_curves <= 0 or model.y_ref.size % n_curves != 0:
                 invalid_curve_schema.append(qoi)
         if invalid_curve_schema:
             raise ValueError(
@@ -114,65 +109,87 @@ class LearningProblem:
 
     @property
     def qoi_names(self) -> list[str]:
+        """Names of the QoIs, in model order."""
         return list(self.models)
 
     @property
     def n_params(self) -> int:
-        return next(iter(self.models.values())).n_params
+        """Number of sampled parameters."""
+        return next(iter(self.models.values())).n_inputs
 
     @property
     def parameter_bounds(self) -> np.ndarray:
-        if self.constraint is None:
+        """Bounds of the sampled parameters, shape ``(n_params, 2)``."""
+        if self.specs is None:
             return np.tile([-1e5, 1e5], (self.n_params, 1))
-        return np.asarray(self.constraint.explicit_bounds, dtype=float)
+        return self.specs.explicit_bounds
 
     @property
     def parameter_names(self) -> list[str] | None:
-        if self.constraint is None:
-            return None
-        if not hasattr(self.constraint, "explicit_parameter_names"):
-            return None
-        return list(self.constraint.explicit_parameter_names)
+        """Names of the sampled parameters; ``None`` without ``specs``."""
+        return None if self.specs is None else list(self.specs.explicit_names)
 
     @property
-    def nuisance_names(self) -> list[str]:
-        return [
-            f"log_sigma_{qoi}"
-            for qoi, model in self.models.items()
-            if model.nuisance is None
-        ]
-
-    @property
-    def n_free_nuisance(self) -> int:
-        return len(self.nuisance_names)
+    def nuisances(self) -> list[str]:
+        """QoIs whose noise (sigma) is learned: those without a fixed nuisance."""
+        return [qoi for qoi, model in self.models.items() if model.nuisance is None]
 
     @classmethod
     def from_models(
         cls,
         models: Mapping[str, LGPCommittee],
         *,
-        constraint: Optional[Callable] = None,
-    ) -> "LearningProblem":
-        return cls(models=dict(models), constraint=constraint)
+        specs: Optional[Specs] = None,
+    ) -> LearningProblem:
+        """Problem of ``models`` (QoI name to committee) and optional ``specs``."""
+        return cls(models=dict(models), specs=specs)
 
     def build_priors(self, dist_type: str = "normal") -> Priors:
+        """Priors of the sampled parameters (``normal`` or ``uniform`` over
+        their bounds), then of the log noise of each learned nuisance."""
         return Priors.from_bounds(
-            bounds=self.parameter_bounds,
+            self.parameter_bounds,
             dist_type=dist_type,
-            n_nuisance=self.n_free_nuisance,
             names=self.parameter_names,
-            nuisance_names=self.nuisance_names,
+            nuisance_names=[f"log noise {qoi}" for qoi in self.nuisances],
         )
+
+    def warn_if_bounds_exceed_training_samples(
+        self, logger: Logger, fraction: float = 0.1
+    ) -> None:
+        """Warn about parameters whose bounds extend over more than ``fraction``
+        of their width beyond the samples a surrogate was trained on: there it
+        falls back to its mean and the data cannot constrain the parameter."""
+        if self.specs is None:
+            return
+        lower, upper = self.parameter_bounds.T
+        for qoi, model in self.models.items():
+            X = model.members[0].X_train.cpu().numpy()
+            slack = fraction * (upper - lower)
+            outside = (X.min(axis=0) - lower > slack) | (upper - X.max(axis=0) > slack)
+            if outside.any():
+                names = [n for n, flag in zip(self.parameter_names, outside) if flag]
+                logger.warn(
+                    f"{qoi}: the bounds of {', '.join(names)} extend well beyond "
+                    "the training samples; the surrogate falls back to its mean "
+                    "there and the posterior is unconstrained. Narrow the bounds "
+                    "or sample more widely.",
+                    level=1,
+                )
 
     def to_torch(
         self,
         device: str,
         dtype: torch.dtype = torch.float32,
-    ) -> "LearningProblem":
-        problem = LearningProblem(
-            models=self.models,
-            constraint=self.constraint,
-        )
+    ) -> LearningProblem:
+        """Copy with the reference observations as tensors on ``device``.
+
+        The surrogate models move to ``device`` and ``dtype`` too, in place:
+        the device is chosen once and nothing is transferred afterwards.
+        """
+        for model in self.models.values():
+            model.to(device, dtype)
+        problem = LearningProblem(models=self.models, specs=self.specs)
         object.__setattr__(
             problem,
             "observations",
@@ -183,6 +200,40 @@ class LearningProblem:
         )
         return problem
 
+    def log_likelihood_by_qoi(
+        self,
+        theta: np.ndarray,
+        device: str,
+        batch_size: int = 256,
+    ) -> dict[str, np.ndarray]:
+        """Log likelihood of each QoI at the rows of ``theta`` (sampled
+        parameters, then the log noise of each learned nuisance).
+
+        Batches are halved when a CUDA allocation fails.
+        """
+        problem = self.to_torch(device)
+        chunks: dict[str, list[np.ndarray]] = {}
+        start = 0
+        size = max(1, min(batch_size, len(theta)))
+        with torch.inference_mode():
+            while start < len(theta):
+                stop = min(start + size, len(theta))
+                try:
+                    batch = torch.as_tensor(
+                        theta[start:stop], dtype=torch.float32, device=device
+                    )
+                    for qoi, values in gaussian_log_likelihood_by_qoi(
+                        batch, problem
+                    ).items():
+                        chunks.setdefault(qoi, []).append(values.cpu().numpy())
+                    start = stop
+                except torch.OutOfMemoryError:
+                    if not str(device).startswith("cuda") or size == 1:
+                        raise
+                    size = max(1, size // 2)
+                    torch.cuda.empty_cache()
+        return {qoi: np.concatenate(values) for qoi, values in chunks.items()}
+
     def learn(
         self,
         *,
@@ -192,34 +243,35 @@ class LearningProblem:
         thin: int = 1,
         progress_stride: int = 100,
         n_walkers: Optional[int] = None,
-        fn_posterior: PathLike = "./posterior.pt",
+        fn_results: PathLike = "./results.pt",
         fn_checkpoint: Optional[PathLike] = "./mcmc.ckpt",
-        fn_priors: Optional[PathLike] = "./prior.pt",
         resume: bool = False,
-        device: str = "cuda",
+        device: str = "auto",
         logger: Optional[Logger] = None,
         rhat_tol: float = 1.01,
-        ess_min: int = 100,
-        include_implicit_charge: bool = False,
+        ess_min: int = 400,
+        max_qoi_samples: int = 10_000,
+        qoi_batch_size: int = 256,
         compatibility: Optional[dict] = None,
-    ) -> PosteriorResults:
-        """Run posterior sampling for this learning problem."""
+    ) -> Results:
+        """Sample the posterior; write ``fn_results`` and return it.
+
+        ``max_qoi_samples`` posterior samples (evenly spaced) get their
+        per-QoI log likelihood stored for :func:`bff.plotting.plot_qoi_marginals`.
+        """
         owns_logger = logger is None
         logger = logger or Logger("learn")
         if owns_logger:
-            logger.section("Posterior Learning")
+            logger.section("Learn")
             logger.blank()
 
+        device = resolve_device(device)
+        self.warn_if_bounds_exceed_training_samples(logger)
         priors = self.build_priors(dist_type=priors_disttype)
         n_walkers = 5 * len(priors) if n_walkers is None else n_walkers
-        initial_positions = initialize_walkers(
-            priors.distributions,
-            n_walkers,
-            self.constraint,
-        )
-        proposal_cov = check_tensor(
-            torch.diag(torch.tensor(priors.scales, dtype=torch.float32) ** 2),
-            device=device,
+        initial_positions = initialize_walkers(priors, n_walkers, self.specs)
+        proposal_cov = torch.diag(
+            torch.tensor(priors.scales, dtype=torch.float32, device=device) ** 2
         )
         proposal = AdaptiveGaussianProposal(proposal_cov, device=device)
         log_likelihood = partial(
@@ -230,7 +282,6 @@ class LearningProblem:
             log_posterior,
             priors=priors,
             log_likelihood_fn=log_likelihood,
-            device=device,
         )
         sampler = Sampler(
             log_prob=log_probability,
@@ -239,25 +290,18 @@ class LearningProblem:
             dtype=torch.float32,
         )
 
-        fn_posterior = Path(fn_posterior).resolve()
-        fn_checkpoint = (
-            None if fn_checkpoint is None else Path(fn_checkpoint).resolve()
-        )
-        fn_priors = None if fn_priors is None else Path(fn_priors).resolve()
-
+        fn_results = Path(fn_results).resolve()
         if fn_checkpoint is None:
-            fn_checkpoint = _default_checkpoint_path(fn_posterior)
+            fn_checkpoint = fn_results.with_suffix(".ckpt")
+        fn_checkpoint = Path(fn_checkpoint).resolve()
 
-        specs = getattr(self.constraint, "specs", None)
-        specifications_fingerprint = (
-            None
-            if specs is None
-            else mapping_fingerprint(specs.to_dict())
+        specs_fingerprint = (
+            None if self.specs is None else mapping_fingerprint(self.specs.to_dict())
         )
         checkpoint_compatibility = dict(compatibility or {})
         checkpoint_compatibility.update(
             {
-                "specifications_fingerprint": specifications_fingerprint,
+                "specifications_fingerprint": specs_fingerprint,
                 "n_params": self.n_params,
                 "n_dimensions": len(priors),
                 "n_walkers": n_walkers,
@@ -274,14 +318,6 @@ class LearningProblem:
             }
         )
 
-        if fn_priors is not None:
-            priors.write(
-                fn_priors,
-                metadata={
-                    "specifications_fingerprint": specifications_fingerprint,
-                },
-            )
-
         print_progress_mcmc(
             sampler,
             initial_positions,
@@ -297,21 +333,30 @@ class LearningProblem:
             checkpoint_compatibility=checkpoint_compatibility,
         )
 
-        sampler.write_posterior(
-            fn_posterior,
-            metadata={
-                "n_params": self.n_params,
-                "qoi_names": self.qoi_names,
-                "parameter_labels": list(self.parameter_names or []),
-                "nuisance_labels": list(self.nuisance_names),
-                "sample_labels": list(priors.names),
-                "specifications_fingerprint": specifications_fingerprint,
-                "model_fingerprints": checkpoint_compatibility.get(
-                    "model_fingerprints", {}
-                ),
-                "effective_observations": {
-                    qoi: float(model.n_eff) for qoi, model in self.models.items()
-                },
+        chain = sampler.chain.detach().cpu().numpy()
+        flat = chain.reshape(-1, chain.shape[2])
+        index = evenly_spaced_indices(len(flat), max_qoi_samples)
+        log_likelihood_by_qoi = self.log_likelihood_by_qoi(
+            flat[index], device, qoi_batch_size
+        )
+        diag = sampler.diagnostics
+        results = Results(
+            chain=chain,
+            log_prob=sampler.chain_logp.detach().cpu().numpy(),
+            specs=self.specs if self.specs is not None else _unbounded_specs(self),
+            prior=priors,
+            nuisances=self.nuisances,
+            qoi={
+                qoi: {
+                    "n_eff": float(model.n_eff),
+                    "tolerance": float(getattr(model, "tolerance", 0.0)),
+                    "nuisance": model.nuisance,
+                }
+                for qoi, model in self.models.items()
+            },
+            qoi_index=index,
+            qoi_log_likelihood=log_likelihood_by_qoi,
+            info={
                 "mcmc": {
                     "priors_disttype": priors_disttype,
                     "total_steps": total_steps,
@@ -321,283 +366,20 @@ class LearningProblem:
                     "rhat_tol": rhat_tol,
                     "ess_min": ess_min,
                     "converged": sampler.converged,
+                    "max_rhat": None if diag is None else diag.max_rhat,
+                    "min_ess": None if diag is None else diag.min_ess,
                 },
+                "specifications_fingerprint": specs_fingerprint,
+                "compatibility": dict(compatibility or {}),
             },
-            priors=priors,
-            sample_labels=list(priors.names),
-            specs=specs,
         )
-        return PosteriorResults.load(
-            posterior=fn_posterior,
-            priors=priors,
-            specs=specs,
-            include_implicit_charge=include_implicit_charge,
-        )
+        results.save(fn_results)
+        return results
 
 
-def _resolve_mean(
-    dataset: QoIDataset,
-    mean: MeanFunction | str,
-) -> MeanFunction:
-    """Resolve a configured surrogate mean specification."""
-    if isinstance(mean, str):
-        if mean == "sigmoid":
-            bins = dataset.settings.get("bins")
-            distance_range = dataset.settings.get("range")
-            if bins is None or distance_range is None:
-                raise ValueError(
-                    "RDF sigmoid mean requires shared RDF settings in the dataset. "
-                    "Build the dataset with one consistent RDF routine definition "
-                    "per QoI."
-                )
-            if bins != dataset.curve_length:
-                raise ValueError(
-                    "RDF dataset settings declare "
-                    f"bins={bins!r}, but each RDF curve contains "
-                    f"{dataset.curve_length} values."
-                )
-            return rdf_sigmoid_mean(bins, distance_range, dataset.outputs_ref)
-        else:
-            raise NotImplementedError(
-                "Other than 'sigmoid' or single-value mean is not implemented")
-    return mean
-
-
-def _default_checkpoint_path(fn_posterior: Path) -> Path:
-    suffix = "".join(fn_posterior.suffixes) or ".pt"
-    stem = fn_posterior.name[: -len(suffix)] if suffix else fn_posterior.name
-    return fn_posterior.with_name(f"{stem}.ckpt{suffix}")
-
-
-def _default_lgp_hyperpriors(
-    X: torch.Tensor,
-    residuals: torch.Tensor,
-) -> Priors:
-    """Build scale-aware priors for log GP hyperparameters."""
-    input_scales = X.std(dim=0, unbiased=False)
-    input_scales = torch.where(
-        torch.isfinite(input_scales) & (input_scales > 0),
-        input_scales,
-        torch.ones_like(input_scales),
+def _unbounded_specs(problem: LearningProblem) -> Specs:
+    """Specification of parameters without bounds or constraints."""
+    names = [f"theta_{i}" for i in range(problem.n_params)]
+    return Specs(
+        {"bounds": {name: [-1e5, 1e5] for name in names}, "charge_constraints": []}
     )
-
-    target_scale = residuals.std(unbiased=False)
-    if not torch.isfinite(target_scale) or target_scale <= 0:
-        target_scale = torch.sqrt(torch.mean(residuals.square()))
-    if not torch.isfinite(target_scale) or target_scale <= 0:
-        target_scale = torch.ones((), dtype=residuals.dtype)
-
-    # LocalGaussianProcess adds ``sigma`` directly to the covariance diagonal,
-    # so its natural scale is a fraction of the target variance.
-    noise_scale = 0.1 * target_scale.square()
-    tiny = torch.finfo(noise_scale.dtype).tiny
-    noise_scale = torch.clamp(noise_scale, min=tiny)
-
-    return Priors(
-        [
-            Prior("normal", float(torch.log(scale)), 2.0, name=f"length_{i}")
-            for i, scale in enumerate(input_scales)
-        ]
-        + [
-            Prior("normal", float(torch.log(target_scale)), 2.0, name="width"),
-            Prior("normal", float(torch.log(noise_scale)), 3.0, name="noise"),
-        ]
-    )
-
-
-def fit_lgp_committee(
-    X: torch.Tensor,
-    y: torch.Tensor,
-    y_mean: MeanFunction,
-    test_fraction: float,
-    n_hyper: int,
-    committee: int,
-    reference_values: np.ndarray,
-    n_curves: int,
-    nuisance: float | None,
-    fn_out: PathLike | None,
-    device: str,
-    logger: Optional[Logger] = None,
-    opt_kwargs: Optional[dict[str, Union[int, float, str]]] = None,
-    hyperpriors: Optional[Priors | Sequence] = None,
-    dataset_fingerprint: str | None = None,
-) -> LGPCommittee:
-    """Fit a committee of local Gaussian-process surrogates."""
-    check_device(device)
-    logger = logger or Logger("fit-lgp")
-    opt_kwargs = dict(opt_kwargs or {})
-
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_fraction)
-    n_hyper = min(n_hyper, len(X_train))
-
-    X_hyper = check_tensor(X_train[:n_hyper], device="cpu")
-    y_hyper = check_tensor(y_train[:n_hyper], device="cpu")
-    y_hyper_mean = evaluate_mean(y_mean, X_hyper, device="cpu")
-
-    n_params = X.shape[1]
-    if hyperpriors is None:
-        priors = _default_lgp_hyperpriors(X_hyper, y_hyper - y_hyper_mean)
-    else:
-        priors = Priors.from_any(hyperpriors)
-    if len(priors) != n_params + 2:
-        raise ValueError(
-            "LGP hyperpriors must define one length scale per input parameter, "
-            "followed by width and noise."
-        )
-    p0 = torch.tensor(priors.means, dtype=torch.float32)
-
-    log_likelihood = partial(
-        loo_log_likelihood,
-        X=X_hyper,
-        y=y_hyper - y_hyper_mean,
-    )
-    log_probability = partial(
-        log_posterior,
-        priors=priors,
-        log_likelihood_fn=log_likelihood,
-        device="cpu",
-        numpy_output=False,
-    )
-
-    map_theta = find_map(log_probability, p0, logger=logger, **opt_kwargs)
-
-    if committee > 1:
-        cov = laplace_approximation(log_probability, map_theta, device="cpu")
-        hyper_dist = torch.distributions.MultivariateNormal(map_theta, cov)
-        hyper_samples = hyper_dist.sample((committee,))
-    else:
-        hyper_samples = map_theta.unsqueeze(0)
-
-    hyper_samples = hyper_samples.exp()
-    lengths = hyper_samples[:, :-2]
-    widths = hyper_samples[:, -2]
-    sigmas = hyper_samples[:, -1]
-
-    logger.status("Committee", f"0/{committee}", level=2, overwrite=True)
-    lgps = []
-    for i, (length, width, sigma) in enumerate(
-        zip(lengths, widths, sigmas),
-        start=1,
-    ):
-        lgps.append(
-            LocalGaussianProcess(
-                X_train,
-                y_train,
-                y_mean,
-                length,
-                width,
-                sigma,
-                device,
-            )
-        )
-        if i < committee:
-            logger.status("Committee", f"{i}/{committee}", level=2, overwrite=True)
-
-    lgp_committee = LGPCommittee(
-        lgps=lgps,
-        reference_values=reference_values,
-        n_curves=n_curves,
-        nuisance=nuisance,
-        dataset_fingerprint=dataset_fingerprint,
-    )
-    lgp_committee.validate(X_test, y_test)
-    logger.done(
-        "Committee",
-        detail=f"{committee}/{committee} (100%) | MAPE = {lgp_committee.error:.2f}%",
-        level=2,
-    )
-
-    if fn_out is not None:
-        lgp_committee.write(fn_out)
-
-    return lgp_committee
-
-
-def fit_surrogates(
-    datasets: Sequence[QoIDataset],
-    *,
-    y_means: Optional[Mapping[str, MeanFunction | str]] = None,
-    hyperpriors: Optional[Mapping[str, Priors | Sequence]] = None,
-    model_paths: Optional[Mapping[str, PathLike | None]] = None,
-    reuse_models: bool = True,
-    n_hyper_max: int = 200,
-    committee_size: int = 1,
-    test_fraction: float = 0.2,
-    device: str = "cuda",
-    logger: Optional[Logger] = None,
-    **opt_kwargs,
-) -> dict[str, LGPCommittee]:
-    """Fit or load QoI surrogate models."""
-    owns_logger = logger is None
-    logger = logger or Logger("fit-lgp")
-    y_means = dict(y_means or {})
-    hyperpriors = dict(hyperpriors or {})
-    model_paths = dict(model_paths or {})
-
-    if owns_logger:
-        logger.section("Surrogate Fitting")
-        logger.blank()
-
-    models: dict[str, LGPCommittee] = {}
-    for dataset in datasets:
-        if not isinstance(dataset, QoIDataset):
-            raise TypeError(
-                f"Invalid dataset type: {type(dataset)}. Expected QoIDataset."
-            )
-
-        qoi = dataset.name
-        logger.info(f"QoI {qoi}", level=1)
-
-        fn_model_raw = model_paths.get(qoi)
-        fn_model = None if fn_model_raw is None else Path(fn_model_raw).resolve()
-        if fn_model is not None:
-            fn_model.parent.mkdir(parents=True, exist_ok=True)
-
-        if reuse_models and fn_model is not None and fn_model.exists():
-            models[qoi] = LGPCommittee.load(fn_model)
-            fingerprint = dataset.fingerprint()
-            if models[qoi].dataset_fingerprint != fingerprint:
-                raise ValueError(
-                    f"Cached surrogate for {qoi!r} at {fn_model} was fitted "
-                    "from different QoI data. Set fit.reuse_models: false "
-                    "or remove the stale model."
-                )
-            models[qoi].reference_values = np.asarray(
-                dataset.outputs_ref,
-                dtype=float,
-            ).reshape(-1)
-            models[qoi].n_eff = float(models[qoi].reference_values.size)
-            models[qoi].n_curves = dataset.n_curves
-            if models[qoi].reference_values.size != models[qoi].y_size:
-                raise ValueError(
-                    f"Cached surrogate for {qoi!r} is incompatible with the "
-                    "current reference observation size."
-                )
-            models[qoi].write(fn_model)
-            logger.info(
-                f"Using cached surrogate model. | MAPE = {models[qoi].error:.2f}",
-                level=2,
-            )
-            logger.blank()
-            continue
-
-        models[qoi] = fit_lgp_committee(
-            X=dataset.inputs,
-            y=dataset.outputs,
-            y_mean=_resolve_mean(dataset, y_means.get(qoi, 0)),
-            test_fraction=test_fraction,
-            n_hyper=n_hyper_max,
-            committee=committee_size,
-            reference_values=dataset.outputs_ref,
-            n_curves=dataset.n_curves,
-            nuisance=dataset.nuisance,
-            fn_out=fn_model,
-            device=device,
-            logger=logger,
-            opt_kwargs=opt_kwargs,
-            hyperpriors=hyperpriors.get(qoi),
-            dataset_fingerprint=dataset.fingerprint(),
-        )
-        logger.blank()
-
-    return models

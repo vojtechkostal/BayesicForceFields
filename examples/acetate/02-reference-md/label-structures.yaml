@@ -1,0 +1,40 @@
+# Optional: label MLIP-driven MD frames with CP2K, to fine-tune the MLIP that
+# then runs the reference MD. Run it from this directory with the standalone
+# script (not a bff command, not installed by pip):
+#   python /path/to/BayesicForceFields/scripts/label_structures.py run label-structures.yaml
+#
+# ADAPT: the trajectories are your own MLIP MD, started from
+# ../01-build/systems/<system_id>/reference/coordinates.gro in that atom order.
+# Use far more snapshots for real fine-tuning data.
+cp2k_cmd: cp2k.psmp  # ADAPT: CP2K executable on the compute nodes
+seed: 2026
+
+systems:
+  - id: acetate
+    topology: ../01-build/systems/acetate/reference/coordinates.gro
+    trajectory: ./mlip/acetate.xtc
+    n_snapshots: 5
+    cp2k_input: ./cp2k/sp-acetate.inp
+  - id: calcium-acetate
+    topology: ../01-build/systems/calcium-acetate/reference/coordinates.gro
+    trajectory: ./mlip/calcium-acetate.xtc
+    elements: {CAL: Ca}
+    n_snapshots: 5
+    cp2k_input: ./cp2k/sp-calcium-acetate.inp
+
+single_atom_inputs:
+  H: ./cp2k/single-atom-h.inp
+  C: ./cp2k/single-atom-c.inp
+  O: ./cp2k/single-atom-o.inp
+  Ca: ./cp2k/single-atom-ca.inp
+
+slurm:  # ADAPT: resources and environment for your cluster
+  max_parallel_jobs: 50
+  sbatch:
+    time: "04:00:00"
+    mem: 20G
+    nodes: 1
+    ntasks_per_node: 8
+  setup:
+    - module load cp2k
+    - export OMP_NUM_THREADS=1

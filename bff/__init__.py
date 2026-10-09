@@ -6,21 +6,21 @@ from importlib import import_module
 from pathlib import Path
 from typing import Any
 
-__version__ = "0.4.2"
+__version__ = "0.5.0"
 
 _INTERNAL_MODULES = {
     "bayes",
     "domain",
     "io",
+    "mcmc",
     "plotting",
     "qoi",
-    "tools",
+    "workflows",
 }
 
 __all__ = [
     "Project",
     "build",
-    "label_snapshots",
     "sample_parameters",
     "build_qoi_datasets",
     "fit_lgp",
@@ -28,7 +28,7 @@ __all__ = [
     "validate",
     "QoI",
     "QoIDataset",
-    "PosteriorResults",
+    "Results",
 ]
 
 
@@ -39,10 +39,6 @@ def _run_workflow(module_name: str, fn_config: str | Path):
 
 def build(fn_config: str | Path):
     return _run_workflow("bff.workflows.build", fn_config)
-
-
-def label_snapshots(fn_config: str | Path):
-    return _run_workflow("bff.workflows.label_snapshots", fn_config)
 
 
 def sample_parameters(fn_config: str | Path):
@@ -66,8 +62,18 @@ def validate(fn_config: str | Path):
 
 
 class Project:
+    """A project directory: run workflows with configs relative to ``root``.
+
+    ``Project("acetate").learn("06-learn/config.yaml")`` is
+    ``bff.learn("acetate/06-learn/config.yaml")``; the other stages follow the
+    same pattern.
+    """
+
     def __init__(self, root: str | Path):
         self.root = Path(root).expanduser().resolve()
+
+    def __repr__(self) -> str:
+        return f"Project({str(self.root)!r})"
 
     def _resolve(self, fn_config: str | Path) -> Path:
         fn_config = Path(fn_config)
@@ -77,9 +83,6 @@ class Project:
 
     def build(self, fn_config: str | Path):
         return build(self._resolve(fn_config))
-
-    def label_snapshots(self, fn_config: str | Path):
-        return label_snapshots(self._resolve(fn_config))
 
     def sample_parameters(self, fn_config: str | Path):
         return sample_parameters(self._resolve(fn_config))
@@ -101,12 +104,12 @@ def __getattr__(name: str) -> Any:
     if name in _INTERNAL_MODULES:
         return import_module(f".{name}", __name__)
     if name == "QoI":
-        from .qoi.data import QoI
+        from .qoi.dataset import QoI
         return QoI
     if name == "QoIDataset":
-        from .qoi.data import QoIDataset
+        from .qoi.dataset import QoIDataset
         return QoIDataset
-    if name == "PosteriorResults":
-        from .bayes.results import PosteriorResults
-        return PosteriorResults
+    if name == "Results":
+        from .bayes.results import Results
+        return Results
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

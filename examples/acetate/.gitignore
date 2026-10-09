@@ -1,17 +1,12 @@
-# Generated stage outputs
-01-build/
-02-reference-snapshots/
-02-reference-md/
-03-sample/
-04-qoi/
-05-lgp/
-06-learn/
-07-validate/
-
-# Notebook exports
-notebooks/*.png
-
-# Python cache
+# Everything a stage writes. Configs, notebooks, inputs, and the reference
+# data stay.
+0[1-7]-*/*
+!0[1-7]-*/config.yaml
+!06-learn/posterior.ipynb
+!02-reference-md/acetate.xtc
+!02-reference-md/calcium-acetate.pmf
+!02-reference-md/label-structures.yaml
+!02-reference-md/cp2k/
+!inputs/**
+.*offsets*
 __pycache__/
-inputs/__pycache__/
-*.pyc

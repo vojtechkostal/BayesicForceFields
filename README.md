@@ -1,7 +1,7 @@
 # Bayesic Force Fields
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/vojtechkostal/BayesicForceFields/main/docs/assets/bff-logo.svg" alt="BFF logo" width="300">
+  <img src="https://raw.githubusercontent.com/vojtechkostal/BayesicForceFields/main/docs/assets/bff-logo.svg" alt="BFF logo" width="260">
 </p>
 
 [![Docs](https://img.shields.io/badge/docs-latest-brightgreen)](https://vojtechkostal.github.io/BayesicForceFields/)
@@ -9,137 +9,122 @@
 [![Release](https://img.shields.io/github/v/tag/vojtechkostal/BayesicForceFields?label=release)](https://github.com/vojtechkostal/BayesicForceFields/releases)
 [![License](https://img.shields.io/badge/license-GPLv3-blue.svg)](https://github.com/vojtechkostal/BayesicForceFields/blob/main/LICENSE)
 
-Bayesic Force Fields (BFF) is a Python toolkit for learning fixed-charge
-molecular force-field parameters from molecular-dynamics observables. It
-coordinates simulation campaigns, trajectory analysis, surrogate fitting, and
-Bayesian posterior learning.
-
-Posterior learning supports explicit or data-derived effective observation
-counts for scalar and curve-valued observables. It also writes QoI-attributed
-marginals that show which observables support different posterior regions.
-
-Full documentation:
-[vojtechkostal.github.io/BayesicForceFields](https://vojtechkostal.github.io/BayesicForceFields/)
+Bayesic Force Fields (BFF) learns fixed-charge force-field parameters for
+GROMACS by Bayesian inference. It runs classical MD for many sampled
+parameter sets, compares quantities of interest (QoIs) such as RDFs or free
+energy profiles with a reference simulation, fits Gaussian-process surrogates
+to them, and samples the posterior distribution of the parameters.
 
 ## Workflow
 
+Each step is one command with one YAML config:
+
 ```text
-build -> label-snapshots -> external MLIP workflow
-      -> sample-parameters -> build-qoi-datasets -> fit-lgp -> learn -> validate
+  bff build                 build and equilibrate the GROMACS systems
+      │
+      ▼
+  reference MD              outside BFF: AIMD or an MLIP (see below)
+      │
+      ▼
+  bff sample-parameters     draw parameter sets, run classical MD for each
+      │
+      ▼
+  bff build-qoi-datasets    compute the QoIs of every sample and of the reference
+      │
+      ▼
+  bff fit-lgp               fit a Gaussian-process surrogate per QoI
+      │
+      ▼
+  bff learn                 sample the posterior of the parameters (MCMC)
+      │
+      ▼
+  bff validate              rerun MD with posterior parameters
 ```
 
-The command-line interface guides a force-field model from prepared molecular
-systems to sampled trajectories, quantities of interest, surrogate models, and
-validated posterior samples. See the [CLI reference](https://vojtechkostal.github.io/BayesicForceFields/cli/)
-for the
-individual commands.
+**BFF does not generate the reference data.** You run the reference simulation
+yourself; we recommend ab initio MD or a machine-learned interatomic potential
+(MLIP), ideally a foundation model fine-tuned for your system. For fine-tuning,
+the repository provides
+[`scripts/label_structures.py`](https://github.com/vojtechkostal/BayesicForceFields/blob/main/scripts/label_structures.py), which labels MD
+frames with CP2K on Slurm. It is not installed by `pip`; download it from the
+repository. See
+[Reference data](https://vojtechkostal.github.io/BayesicForceFields/reference-trajectories/).
 
-## Installation
-
-Create an environment, install the [PyTorch build appropriate for your
-machine](https://pytorch.org/get-started/locally/), and then install BFF:
+## Install
 
 ```bash
 mamba create -n bfflearn python=3.10 pip
 mamba activate bfflearn
+pip install torch          # pick the build for your CPU/GPU: https://pytorch.org/get-started/locally/
 pip install bfflearn
 ```
 
-For Jupyter notebooks, install the optional notebook tools:
+The MD stages need GROMACS (with Colvars or PLUMED for biased systems).
+Notebook examples need `pip install "bfflearn[notebook]"`.
+
+## Quick start
 
 ```bash
-pip install "bfflearn[notebook]"
+bff examples           # copy the examples matching your BFF version
+cd examples/acetate    # full workflow: aqueous acetate and calcium acetate
 ```
 
-> **WARNING:** GPU-enabled PyTorch must be installed separately. Use the
-> [official PyTorch installation selector](https://pytorch.org/get-started/locally/)
-> to choose the command matching your CUDA version before running fitting,
-> learning, or the posterior notebooks.
-
-Full MD workflows also require GROMACS. CP2K and PLUMED are needed only for the
-stages that use them. See the [installation guide](https://vojtechkostal.github.io/BayesicForceFields/installation/)
-for
-details, CUDA guidance, and the repository-development setup.
-
-## Quick Start
-
-Install the example tree and choose a walkthrough:
-
-```bash
-bff examples
-cd examples/acetate
-```
-
-- [Acetate](https://github.com/vojtechkostal/BayesicForceFields/tree/main/examples/acetate):
-  complete BFF stage template with an explicit external MLIP handoff.
-- [Arbitrary data](https://github.com/vojtechkostal/BayesicForceFields/tree/main/examples/arbitrary-data):
-  notebook using existing tabular
-  simulation results and targets.
-- [Neon Mie](https://github.com/vojtechkostal/BayesicForceFields/tree/main/examples/neon-mie-lgpmd):
-  notebook using published RDF data.
-
-The [examples guide](https://vojtechkostal.github.io/BayesicForceFields/examples/)
-explains which starting point fits your data. The
+Every stage of the example is a directory with its config; run `bff <stage>
+config.yaml` inside it. The
 [acetate walkthrough](https://vojtechkostal.github.io/BayesicForceFields/examples/acetate/)
-shows the full command sequence.
+explains each step.
 
-## Supported Parameters
+## Learned parameters
 
-BFF currently updates and learns four GROMACS force-field parameter families:
-
-| Parameter | Bound label example |
+| Parameter | Label in `bounds` |
 | --- | --- |
 | Partial charge | `charge O1 O2` |
 | Lennard-Jones sigma | `sigma OW` |
 | Lennard-Jones epsilon | `epsilon OW` |
 | Function-9 dihedral force constant | `dihedraltype9_3_180` |
 
-Multiple names in one label share one learned value. Charges can additionally
-participate in hierarchical residue- or system-level constraints. The [sample
-configuration reference](https://vojtechkostal.github.io/BayesicForceFields/configuration/sample-parameters/#parameter-labels)
-documents the complete syntax and matching rules.
+Names in one label share one value. Charges can be tied by residue- or
+system-level charge constraints.
 
-## Architecture
+## Repository
 
-```mermaid
-flowchart LR
-    A["YAML configs or Python API"] --> B["Simulation workflows"]
-    B --> C["Trajectories and reference data"]
-    C --> D["QoIDataset"]
-    D --> E["Gaussian-process surrogates"]
-    E --> F["Posterior learning and validation"]
+```text
+BayesicForceFields/
+├── bff/                     the Python package and the `bff` command
+│   ├── workflows/           one package per stage
+│   ├── qoi/                 QoI routines (rdf, hydrogen_bonds, custom) and datasets
+│   ├── bayes/, mcmc/        surrogates, likelihoods, posterior sampling
+│   └── domain/, io/         data models and file formats
+├── examples/
+│   ├── acetate/             full MD workflow with an RDF and a PMF
+│   ├── arbitrary-data/      notebook: learn from your own tabular data
+│   └── neon-mie-lgpmd/      notebook: learn from published RDFs
+├── scripts/
+│   └── label_structures.py  CP2K labeling for MLIP fine-tuning (not installed by pip)
+├── docs/                    documentation site
+└── tests/
 ```
-
-The [architecture guide](https://vojtechkostal.github.io/BayesicForceFields/architecture/)
-describes the package modules, workflow stages, persisted artifacts, and
-repository layout.
 
 ## Documentation
 
-- [Installation](https://vojtechkostal.github.io/BayesicForceFields/installation/)
-- [Examples](https://vojtechkostal.github.io/BayesicForceFields/examples/)
-- [Configuration reference](https://vojtechkostal.github.io/BayesicForceFields/configuration/build/)
-- [Architecture](https://vojtechkostal.github.io/BayesicForceFields/architecture/)
-- [Changelog](https://github.com/vojtechkostal/BayesicForceFields/blob/main/CHANGELOG.md)
-- [Development](https://vojtechkostal.github.io/BayesicForceFields/development/)
-- [AI agent guidance](https://github.com/vojtechkostal/BayesicForceFields/blob/main/AGENTS.md)
-- [Contributing](https://github.com/vojtechkostal/BayesicForceFields/blob/main/CONTRIBUTING.md)
-- [Support](https://github.com/vojtechkostal/BayesicForceFields/blob/main/SUPPORT.md)
-- [Security](https://github.com/vojtechkostal/BayesicForceFields/blob/main/SECURITY.md)
+[vojtechkostal.github.io/BayesicForceFields](https://vojtechkostal.github.io/BayesicForceFields/):
+[how BFF works](https://vojtechkostal.github.io/BayesicForceFields/workflow/),
+[all settings](https://vojtechkostal.github.io/BayesicForceFields/configuration/),
+[examples](https://vojtechkostal.github.io/BayesicForceFields/examples/), and
+[development](https://vojtechkostal.github.io/BayesicForceFields/development/).
+See also the [changelog](https://github.com/vojtechkostal/BayesicForceFields/blob/main/CHANGELOG.md), [contributing](https://github.com/vojtechkostal/BayesicForceFields/blob/main/CONTRIBUTING.md),
+[support](https://github.com/vojtechkostal/BayesicForceFields/blob/main/SUPPORT.md), and [security](https://github.com/vojtechkostal/BayesicForceFields/blob/main/SECURITY.md).
 
 ## Citation
-
-If you use BFF, please cite:
 
 > Kostal, V.; Shanks, B. L.; Jungwirth, P.; Martinez-Seara, H.
 > Bayesian Learning for Accurate and Robust Biomolecular Force Fields.
 > *J. Chem. Theory Comput.* **2026**, *22* (5), 2652-2663.
-> [https://doi.org/10.1021/acs.jctc.5c02051](https://doi.org/10.1021/acs.jctc.5c02051)
+> [doi:10.1021/acs.jctc.5c02051](https://doi.org/10.1021/acs.jctc.5c02051)
 
-The exact publication snapshot is archived as
+The code used for the paper is archived as
 [`v0.0.1`](https://github.com/vojtechkostal/BayesicForceFields/tree/v0.0.1).
 
 ## License
 
-BFF is distributed under the
-[GNU GPL v3](https://github.com/vojtechkostal/BayesicForceFields/blob/main/LICENSE).
+[GNU GPL v3](https://github.com/vojtechkostal/BayesicForceFields/blob/main/LICENSE)

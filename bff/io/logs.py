@@ -35,7 +35,6 @@ class Logger:
     }
     _TITLE_STYLES = {
         "build": ("bold", "bright_cyan"),
-        "label-snapshots": ("bold", "bright_blue"),
         "sample-parameters": ("bold", "bright_yellow"),
         "build-qoi-datasets": ("bold", "bright_magenta"),
         "fit-lgp": ("bold", "bright_green"),
@@ -250,20 +249,6 @@ class Logger:
             write_file=write_file,
         )
 
-    def result_summary(
-        self,
-        count: int,
-        outcome: str,
-        elapsed: float,
-        *,
-        level: int = 0,
-        style: str | tuple[str, ...] | None = None,
-    ) -> None:
-        """Write a compact terminal completion summary."""
-        if style is None:
-            style = ("bold", "green") if outcome == "completed" else ("bold", "red")
-        self.info(f"Done. Finished in {elapsed:.2f}s", level=level, style=style)
-
 
 def print_progress_mcmc(
     sampler: Sampler,
@@ -279,7 +264,7 @@ def print_progress_mcmc(
     logger = logger or Logger("mcmc-progress")
 
     rhat_tol = kwargs.get("rhat_tol", 1.01)
-    ess_target = kwargs.get("ess_min", 100)
+    ess_target = kwargs.get("ess_min", 400)
     total_digits = len(str(total_steps))
     warmup_digits = len(str(kwargs.get("warmup", total_steps)))
     sampling_digits = len(str(max(total_steps - kwargs.get("warmup", 0), 0)))

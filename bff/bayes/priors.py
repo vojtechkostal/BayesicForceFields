@@ -1,19 +1,21 @@
+"""Priors of the sampled parameters and nuisance parameters."""
+
+from __future__ import annotations
+
+import math
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Iterable, Optional, Sequence, Union
+from typing import Optional, Sequence
 
 import numpy as np
 import torch
 from torch.distributions import Distribution, Normal, Uniform
 
-from ..io.utils import atomic_torch_save
-
-ArrayLike = Union[np.ndarray, torch.Tensor]
-PathLike = Union[str, Path]
-
 
 @dataclass(frozen=True, slots=True)
 class Prior:
+    """One prior: ``normal`` (``a`` = mean, ``b`` = standard deviation) or
+    ``uniform`` (``a`` = lower, ``b`` = upper bound)."""
+
     kind: str
     a: float
     b: float
@@ -29,26 +31,29 @@ class Prior:
             raise ValueError("Normal prior scale must be positive.")
         if kind == "uniform" and self.a >= self.b:
             raise ValueError("Uniform prior requires lower < upper.")
-
         object.__setattr__(self, "kind", kind)
         object.__setattr__(self, "a", float(self.a))
         object.__setattr__(self, "b", float(self.b))
 
     @property
     def distribution(self) -> Distribution:
+        """The torch distribution."""
         if self.kind == "normal":
             return Normal(self.a, self.b, validate_args=False)
         return Uniform(self.a, self.b, validate_args=False)
 
     @property
     def mean(self) -> float:
+        """Mean of the prior."""
         return self.a if self.kind == "normal" else 0.5 * (self.a + self.b)
 
     @property
     def scale(self) -> float:
+        """Standard deviation."""
         return self.b if self.kind == "normal" else (self.b - self.a) / np.sqrt(12)
 
     def to_dict(self) -> dict[str, float | str]:
+        """Plain mapping, readable by ``Prior(**data)``."""
         data = {"kind": self.kind, "a": self.a, "b": self.b}
         if self.name is not None:
             data["name"] = self.name
@@ -57,7 +62,13 @@ class Prior:
 
 @dataclass(slots=True)
 class Priors:
+    """The priors of all dimensions of a chain, in column order."""
+
     items: list[Prior] = field(default_factory=list)
+    _cache: dict = field(default_factory=dict, init=False, repr=False, compare=False)
+
+    def __repr__(self) -> str:
+        return f"Priors({len(self.items)}: {', '.join(self.names)})"
 
     def __len__(self) -> int:
         return len(self.items)
@@ -65,124 +76,91 @@ class Priors:
     def __iter__(self):
         return iter(self.items)
 
-    def __getitem__(self, idx: int) -> Prior:
-        return self.items[idx]
+    def __getitem__(self, index: int) -> Prior:
+        return self.items[index]
 
     @property
     def names(self) -> list[str]:
+        """Prior names; unnamed priors are ``theta_<column>``."""
         return [prior.name or f"theta_{i}" for i, prior in enumerate(self.items)]
 
     @property
     def distributions(self) -> list[Distribution]:
+        """The torch distributions, in column order."""
         return [prior.distribution for prior in self.items]
 
     @property
     def means(self) -> np.ndarray:
+        """Prior means, shape ``(n_dim,)``."""
         return np.array([prior.mean for prior in self.items], dtype=float)
 
     @property
     def scales(self) -> np.ndarray:
+        """Prior standard deviations, shape ``(n_dim,)``."""
         return np.array([prior.scale for prior in self.items], dtype=float)
 
     def log_prob(self, theta: torch.Tensor) -> torch.Tensor:
+        """Log prior of each row of ``theta``, on the device of ``theta``."""
         if theta.dim() == 1:
             theta = theta.unsqueeze(0)
-        log_probs = [
-            prior.distribution.log_prob(theta[:, i]).to(theta.device)
-            for i, prior in enumerate(self.items)
-        ]
-        return torch.stack(log_probs, dim=1).sum(dim=1)
+        is_normal, a, b = self._tensors(theta.device, theta.dtype)
+        normal = -0.5 * ((theta - a) / b).pow(2) - b.log() - 0.5 * math.log(2 * math.pi)
+        inside = (theta >= a) & (theta <= b)
+        uniform = torch.where(inside, -(b - a).log(), -torch.inf)
+        return torch.where(is_normal, normal, uniform).sum(dim=1)
 
-    def write(
-        self,
-        fn_out: PathLike,
-        *,
-        metadata: Optional[dict] = None,
-    ) -> None:
-        fn_out = Path(fn_out)
-        data = {"priors": [prior.to_dict() for prior in self.items]}
-        if metadata is not None:
-            data["metadata"] = dict(metadata)
-        atomic_torch_save(data, fn_out)
-
-    @classmethod
-    def load(cls, fn_in: PathLike) -> "Priors":
-        raw = torch.load(Path(fn_in), weights_only=False)
-        entries = raw["priors"] if isinstance(raw, dict) and "priors" in raw else raw
-        return cls([cls._coerce_prior(entry) for entry in entries])
-
-    @classmethod
-    def from_any(cls, priors: Union["Priors", PathLike, Iterable]) -> "Priors":
-        if isinstance(priors, cls):
-            return priors
-        if isinstance(priors, (str, Path)):
-            return cls.load(priors)
-        return cls([cls._coerce_prior(entry) for entry in priors])
-
-    @staticmethod
-    def _coerce_prior(entry) -> Prior:
-        if isinstance(entry, Prior):
-            return entry
-
-        if isinstance(entry, Distribution):
-            name = type(entry).__name__.lower()
-            if name == "normal":
-                return Prior("normal", float(entry.mean), float(entry.scale))
-            if name == "uniform":
-                return Prior("uniform", float(entry.low), float(entry.high))
-            raise ValueError(f"Unsupported distribution type: {name}")
-
-        if isinstance(entry, dict):
-            return Prior(
-                kind=entry["kind"],
-                a=entry["a"],
-                b=entry["b"],
-                name=entry.get("name"),
+    def _tensors(self, device, dtype):
+        key = (str(device), dtype)
+        if key not in self._cache:
+            self._cache[key] = (
+                torch.tensor([p.kind == "normal" for p in self.items], device=device),
+                torch.tensor([p.a for p in self.items], device=device, dtype=dtype),
+                torch.tensor([p.b for p in self.items], device=device, dtype=dtype),
             )
+        return self._cache[key]
 
-        raise TypeError(f"Unsupported prior entry type: {type(entry)}")
+    def to_dicts(self) -> list[dict[str, float | str]]:
+        """One :meth:`Prior.to_dict` per column."""
+        return [prior.to_dict() for prior in self.items]
+
+    @classmethod
+    def from_dicts(cls, records: Sequence[dict]) -> Priors:
+        """Inverse of :meth:`to_dicts`."""
+        return cls([Prior(**record) for record in records])
 
     @classmethod
     def from_bounds(
         cls,
-        bounds: ArrayLike,
+        bounds: np.ndarray,
         dist_type: str = "normal",
-        n_nuisance: int = 0,
         names: Optional[Sequence[str]] = None,
-        nuisance_names: Optional[Sequence[str]] = None,
-    ) -> "Priors":
-        bounds = np.asarray(bounds, dtype=float)
-        dist_type = dist_type.lower()
+        nuisance_names: Sequence[str] = (),
+    ) -> Priors:
+        """Priors over parameter bounds, then a normal prior of -2 +- 2 (a
+        log standard deviation) for each nuisance parameter.
 
+        ``normal`` priors are centred on each interval with a standard
+        deviation of a fifth of its width; ``uniform`` priors cover it.
+        """
+        bounds = np.asarray(bounds, dtype=float).reshape(-1, 2)
+        dist_type = dist_type.lower()
         if names is None:
             names = [None] * len(bounds)
         elif len(names) != len(bounds):
             raise ValueError("names must match the number of parameter priors.")
-
         if dist_type == "normal":
-            centers = bounds.mean(axis=1)
-            widths = 0.2 * (bounds[:, 1] - bounds[:, 0])
             items = [
-                Prior("normal", center, width, name=name)
-                for center, width, name in zip(centers, widths, names)
+                Prior("normal", 0.5 * (lower + upper), 0.2 * (upper - lower), name)
+                for (lower, upper), name in zip(bounds, names)
             ]
         elif dist_type == "uniform":
             items = [
-                Prior("uniform", lower, upper, name=name)
+                Prior("uniform", lower, upper, name)
                 for (lower, upper), name in zip(bounds, names)
             ]
         else:
             raise ValueError(
                 f'Unknown prior type "{dist_type}". Options are "normal" or "uniform".'
             )
-
-        nuisance_names = nuisance_names or [f"nuisance_{i}" for i in range(n_nuisance)]
-        items.extend(Prior("normal", -2.0, 2.0, name=name) for name in nuisance_names)
+        items += [Prior("normal", -2.0, 2.0, name) for name in nuisance_names]
         return cls(items)
-
-
-def log_prior(
-    theta: torch.Tensor,
-    priors: Union[Priors, Sequence[Distribution]],
-) -> torch.Tensor:
-    return Priors.from_any(priors).log_prob(theta)

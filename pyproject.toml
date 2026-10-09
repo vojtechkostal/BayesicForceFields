@@ -1,6 +1,6 @@
 [project]
 name = "bfflearn"
-version = "0.4.2"
+version = "0.5.0"
 description = "Bayesian workflows for fixed-charge molecular force fields"
 authors = [
   { name="Vojtech Kostal", email="vojtakostal8@gmail.com" }
@@ -10,7 +10,7 @@ requires-python = ">=3.10"
 license = "GPL-3.0-only"
 license-files = ["LICENSE"]
 dependencies = [
-  "gmxtopology>=0.1.1",
+  "gmxtopology==0.3.0",
   "matplotlib>=3.8",
   "MDAnalysis>=2.7",
   "numpy>=1.26",
@@ -81,6 +81,7 @@ include = ["bff*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["slow: small end-to-end runs of several stages"]
 
 [tool.ruff]
 line-length = 88

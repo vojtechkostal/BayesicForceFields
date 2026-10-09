@@ -1,22 +1,16 @@
-.PHONY: docs docs-build docs-strict lint test check
+.PHONY: docs lint test check
 
 docs:
 	mkdocs serve
-
-docs-build:
-	mkdocs build
-
-docs-strict:
-	mkdocs build --strict
 
 lint:
 	ruff check .
 
 test:
-	pytest
+	python -m pytest -q
 
 check:
-	python -m compileall bff
+	python -m compileall -q bff
 	ruff check .
-	pytest
+	python -m pytest -q
 	mkdocs build --strict

@@ -1,3 +1,5 @@
+"""Proposal mechanisms of the MCMC sampler."""
+
 from typing import Optional
 
 import torch
@@ -56,7 +58,7 @@ class AdaptiveGaussianProposal(Proposal):
         Whether to adapt the proposal during warmup.
     adapt_start : int, default=100
         First warmup step at which adaptation is allowed.
-    adapt_interval : int, default=100
+    adapt_interval : int, default=10
         Adaptation frequency in number of warmup steps.
     target_acceptance : float, default=0.234
         Target acceptance rate used for multiplicative scale adaptation.
@@ -113,7 +115,8 @@ class AdaptiveGaussianProposal(Proposal):
         x : torch.Tensor
             Walker positions with shape ``(n_walkers, n_dim)``.
         """
-        x = self._to_tensor(x)
+        # Moments are accumulated in float64: sum_xx - n*mean^2 cancels badly.
+        x = x.to(device=self.device, dtype=torch.float64)
         self.n += x.shape[0]
         self.sum_x += x.sum(dim=0)
         self.sum_xx += x.T @ x
@@ -133,7 +136,7 @@ class AdaptiveGaussianProposal(Proposal):
             Returns the identity matrix if fewer than two samples have been seen.
         """
         if self.n < 2:
-            return torch.eye(self.n_dim, device=self.device, dtype=self.dtype)
+            return torch.eye(self.n_dim, device=self.device, dtype=torch.float64)
         mean = self.sum_x / self.n
         return (self.sum_xx - self.n * torch.outer(mean, mean)) / (self.n - 1)
 
@@ -160,8 +163,10 @@ class AdaptiveGaussianProposal(Proposal):
         self.L = torch.linalg.cholesky(cov)
 
         self.n = 0
-        self.sum_x = torch.zeros(n_dim, device=self.device, dtype=self.dtype)
-        self.sum_xx = torch.zeros((n_dim, n_dim), device=self.device, dtype=self.dtype)
+        self.sum_x = torch.zeros(n_dim, device=self.device, dtype=torch.float64)
+        self.sum_xx = torch.zeros(
+            (n_dim, n_dim), device=self.device, dtype=torch.float64
+        )
 
     def propose(self, x: torch.Tensor, rng: torch.Generator) -> torch.Tensor:
         """
@@ -225,9 +230,9 @@ class AdaptiveGaussianProposal(Proposal):
         ).item()
 
         cov = (2.38**2 / self.n_dim) * self.cov
-        unit_matrix = torch.eye(self.n_dim, device=self.device, dtype=self.dtype)
+        unit_matrix = torch.eye(self.n_dim, device=self.device, dtype=torch.float64)
         cov = cov + self.eps * unit_matrix
-        self.L = torch.linalg.cholesky((self.scale**2) * cov)
+        self.L = torch.linalg.cholesky((self.scale**2) * cov).to(self.dtype)
 
     def state_dict(self) -> dict:
         return {
@@ -247,8 +252,8 @@ class AdaptiveGaussianProposal(Proposal):
         )
         self.n = state["n"]
         self.sum_x = None if state["sum_x"] is None else state["sum_x"].to(
-            self.device, self.dtype
+            self.device, torch.float64
         )
         self.sum_xx = None if state["sum_xx"] is None else (
-            state["sum_xx"].to(self.device, self.dtype)
+            state["sum_xx"].to(self.device, torch.float64)
         )

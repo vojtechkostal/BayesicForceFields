@@ -16,7 +16,6 @@ The upstream tutorial accompanies:
 The committed files under `upstream/` were copied verbatim from LGPMD commit
 `e2787cf0d830758f65f133fd1d2f7258a2ad3dee`. See `SOURCE.md` for the precise
 file list and license information.
-Fitting and learning use CUDA when available and otherwise run on CPU.
 
 ## Run
 
@@ -34,19 +33,9 @@ cd examples/neon-mie-lgpmd
 jupyter lab
 ```
 
-The notebook:
-
-1. loads the LGPMD simulation and experimental RDF files;
-2. interpolates them onto the 73-bin grid used by the upstream tutorial;
-3. retains rows inside the declared physical inference domain;
-4. converts the data into a BFF `QoIDataset`;
-5. fits and validates a BFF local Gaussian-process surrogate with a
-   notebook-local Mie PMF mean;
-6. estimates the effective number of resolved RDF features;
-7. infers the Mie `epsilon`, `lambda`, and `sigma` parameters together with
-   the RDF discrepancy;
-8. reports physical-unit posterior samples and writes the posterior,
-   QoI-attributed marginal, and RDF plots.
-
-Generated datasets, models, posterior files, logs, and plots are written under
-`generated/` and ignored by git.
+The notebook loads the LGPMD data, fits a local-GP surrogate whose mean is the
+RDF implied by the Mie potential, checks it on LGPMD's held-out simulations,
+infers `epsilon`, `lambda`, and `sigma` together with the RDF discrepancy, and
+plots the posterior and the surrogate RDF at the posterior mean and the MAP.
+Fitting runs on the CPU; learning uses CUDA when available. Results are written
+to `generated/` (ignored by git).

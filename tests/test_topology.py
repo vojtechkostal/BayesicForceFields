@@ -6,11 +6,27 @@ import pytest
 from gmxtopology import Topology
 
 from bff.domain.specs import Specs
-from bff.topology import TopologyModifier, load_residue_template, prepare_universe
-from bff.workflows.md.main import modify_topology
+from bff.topology import TopologyModifier, prepare_universe
+from bff.workflows.campaign.job import write_sample_topology
 
 ROOT = Path(__file__).parents[1]
-ACE_TOP = ROOT / "examples/acetate/inputs/common/topol.top"
+ACE_TOP = ROOT / "examples/acetate/inputs/acetate.top"
+
+
+def test_write_sample_topology_overwrites_a_stale_file(tmp_path: Path) -> None:
+    """A restart with no checkpoint yet (stopped before production started,
+    e.g. during minimization) may still have a topology from that earlier,
+    never-checkpointed attempt; writing it again must not fail."""
+    specs = Specs({
+        "bounds": {"dihedraltype9_6_180": [0.0, 10.0]},
+        "charge_constraints": [],
+    })
+    fn_out = tmp_path / "topology.top"
+    fn_out.write_text("stale\n")
+
+    write_sample_topology(ACE_TOP, specs, [4.2], fn_out)
+
+    assert Topology(fn_out).moleculetypes[0].dihedrals
 
 
 def test_prepare_universe_suppresses_expected_topology_only_warnings() -> None:
@@ -19,34 +35,6 @@ def test_prepare_universe_suppresses_expected_topology_only_warnings() -> None:
         prepare_universe(ACE_TOP)
 
     assert caught == []
-
-
-def test_load_residue_template_accepts_arbitrary_monoatomic_residue() -> None:
-    residue = SimpleNamespace(
-        name="SOD",
-        atoms=[SimpleNamespace(name="SOD", mass=22.98977)],
-    )
-
-    template = load_residue_template(residue, {})
-
-    assert template.positions.tolist() == [[0.0, 0.0, 0.0]]
-    assert template.real_mask.tolist() == [True]
-
-
-def test_load_residue_template_accepts_common_water_residue_alias() -> None:
-    residue = SimpleNamespace(
-        name="TIP3",
-        atoms=[
-            SimpleNamespace(name="OH2", mass=15.9994),
-            SimpleNamespace(name="H1", mass=1.008),
-            SimpleNamespace(name="H2", mass=1.008),
-        ],
-    )
-
-    template = load_residue_template(residue, {})
-
-    assert template.positions.shape == (3, 3)
-    assert template.real_mask.tolist() == [True, True, True]
 
 
 def test_dihedraltype9_parameter_uses_multiplicity_and_phase_suffix() -> None:
@@ -74,7 +62,7 @@ def test_modify_topology_updates_all_matching_gromacs_dihedrals(
     })
     fn_out = tmp_path / "modified.top"
 
-    modify_topology(ACE_TOP, specs, [4.2], True, fn_out)
+    write_sample_topology(ACE_TOP, specs, [4.2], fn_out)
 
     ace = Topology(fn_out).moleculetypes[0]
     dihedrals = [dihedral for dihedral in ace.dihedrals if dihedral.func == 9]
@@ -100,3 +88,17 @@ def test_dihedraltype9_parameter_rejects_missing_term() -> None:
 
     with pytest.raises(ValueError, match="not found"):
         modifier.apply_parameters({"dihedraltype9_3_180": 4.2})
+
+
+def test_guess_elements_keeps_name_based_element_for_unmatched_masses() -> None:
+    import MDAnalysis as mda
+
+    from bff.topology import guess_elements
+
+    universe = mda.Universe.empty(3)
+    universe.add_TopologyAttr("masses", [15.999, 2.014, 3.024])
+    universe.add_TopologyAttr("elements", ["X", "H", "H"])
+
+    guess_elements(universe)
+
+    assert universe.atoms.elements.tolist() == ["O", "H", "H"]

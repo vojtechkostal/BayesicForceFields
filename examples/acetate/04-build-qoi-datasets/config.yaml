@@ -1,0 +1,36 @@
+# Turn the reference and every sample into one dataset per QoI:
+#   rdf  acetate-water RDFs from the acetate trajectories (built-in routine)
+#   pmf  the Ca-C2 PMF of calcium acetate (custom routine, ../inputs/pmf.py)
+training_samples:
+  manifest: ../03-sample-parameters/samples.yaml
+  systems:
+    - system_id: acetate
+    - system_id: calcium-acetate
+
+reference:
+  systems:
+    # The reference trajectory must match the vsite-free topology and
+    # coordinates that bff build wrote: same atoms in the same order.
+    - system_id: acetate
+      inputs:
+        topology: ../01-build/systems/acetate/reference/topology.top
+        coordinates: ../01-build/systems/acetate/reference/coordinates.gro
+        trajectory: ../02-reference-md/acetate.xtc
+    - system_id: calcium-acetate
+      inputs:
+        pmf: ../02-reference-md/calcium-acetate.pmf
+
+routines:
+  - name: rdf
+    type: rdf
+    systems: [acetate]
+    selections:
+      group_a: resname ACE and name O1 O2 H1 H2 H3
+      group_b: resname SOL and name O*
+    options: {range: [1.0, 7.0]}  # angstrom
+
+  - name: pmf
+    callable: ../inputs/pmf.py:read_pmf
+    systems: [calcium-acetate]
+    inputs: [pmf]  # samples: production.pmf, stored by sample-parameters
+    options: {range: [0.27, 0.65], points: 39}  # nm

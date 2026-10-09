@@ -1,102 +1,44 @@
-from dataclasses import InitVar, dataclass, field
+"""Parameter specification: bounds and the charge equations of implicit charges.
+
+``specs.yaml`` holds the bounds of every parameter and one linear equation per
+charge constraint (see :mod:`bff.domain.charge_constraints`)::
+
+    bounds: {charge C1: [-1, 0.3], charge C2: [0, 1], ...}
+    charge_constraints:
+      - {selection: resname ACE, target: -0.8, scope: residue,
+         implicit: charge C2, coefficients: {...}, fixed_charge: 0.0}
+
+Parameters are the *sampled* (explicit) ones plus the *implicit* charges that
+the equations compute from them. All name tuples are sorted by name; arrays of
+parameter values have one column per name of ``names`` (all parameters) or
+``explicit_names`` (sampled parameters only).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Mapping, Optional, Sequence, Tuple, Union
+from typing import Any, Mapping, Sequence, Union
 
 import numpy as np
+import torch
 from scipy.optimize import linprog
 from scipy.stats.qmc import LatinHypercube
 
 from ..io.utils import load_yaml, save_yaml
 
-try:
-    import torch
-except ModuleNotFoundError:
-    torch = None
-
-
 PathLike = Union[str, Path]
-ArrayLike = Union[np.ndarray, Any]
 
 
-def _is_torch_tensor(values: object) -> bool:
-    return torch is not None and isinstance(values, torch.Tensor)
-
-
-@dataclass(frozen=True)
-class Bounds:
-    """Named parameter bounds with a stable sorted order."""
-
-    by_name: Mapping[str, Tuple[float, float]]
-    _items: tuple[tuple[str, tuple[float, float]], ...] = field(
-        init=False,
-        repr=False,
-    )
-
-    def __post_init__(self) -> None:
-        items = tuple(sorted(self.by_name.items()))
-        for name, (lower, upper) in items:
-            if lower > upper:
-                raise ValueError(
-                    f"Lower bound {lower} is greater than upper bound {upper} "
-                    f"for parameter {name!r}."
-                )
-        object.__setattr__(self, "_items", items)
-
-    @property
-    def names(self) -> np.ndarray:
-        return np.array([name for name, _ in self._items], dtype=str)
-
-    @property
-    def array(self) -> np.ndarray:
-        return np.asarray(
-            [bounds for _, bounds in self._items],
-            dtype=float,
-        ).reshape(-1, 2)
-
-    @property
-    def lower(self) -> np.ndarray:
-        return self.array[:, 0]
-
-    @property
-    def upper(self) -> np.ndarray:
-        return self.array[:, 1]
-
-    @property
-    def n_params(self) -> int:
-        return len(self._items)
-
-    def get(self, name: str) -> tuple[float, float]:
-        return self.by_name[name]
-
-    def index(self, name: str) -> int:
-        names = self.names
-        mask = names == name
-        if not np.any(mask):
-            raise ValueError(f"Parameter {name!r} not found in bounds.")
-        return int(np.argwhere(mask).ravel()[0])
-
-    def without(self, name: str) -> "Bounds":
-        items = {
-            key: value for key, value in self.by_name.items() if key != name
-        }
-        return Bounds(items)
-
-    def without_names(self, names: Sequence[str]) -> "Bounds":
-        excluded = set(names)
-        return Bounds({
-            key: value for key, value in self.by_name.items() if key not in excluded
-        })
-
-    def to_dict(self) -> dict[str, list[float]]:
-        return {
-            name: [float(lower), float(upper)]
-            for name, (lower, upper) in self._items
-        }
+def parameter_kind(name: str) -> str:
+    """Kind of a parameter label: charge, sigma, epsilon, dihedraltype9, define."""
+    head = name.split()[0]
+    return "dihedraltype9" if head.startswith("dihedraltype9") else head
 
 
 @dataclass(frozen=True)
 class ChargeConstraintSpec:
-    """One compiled charge equation stored in ``specs.yaml``."""
+    """One charge equation: ``sum(coefficients * charges) + fixed = target``."""
 
     selection: str
     target: float
@@ -106,39 +48,31 @@ class ChargeConstraintSpec:
     fixed_charge: float = 0.0
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "ChargeConstraintSpec":
+    def from_dict(cls, data: Mapping[str, Any]) -> ChargeConstraintSpec:
+        """Validate and read a ``charge_constraints`` entry of ``specs.yaml``."""
         required = {"selection", "target", "scope", "implicit", "coefficients"}
         missing = required - set(data)
         if missing:
             fields = ", ".join(sorted(repr(key) for key in missing))
+            raise ValueError(f"Charge constraint is missing field(s): {fields}")
+        if data["scope"] not in {"system", "residue"}:
             raise ValueError(
-                f"Charge constraint is missing required field(s): {fields}"
-            )
-        scope = str(data["scope"])
-        if scope not in {"system", "residue"}:
-            raise ValueError(
-                f"Unsupported charge-constraint scope {scope!r}; "
+                f"Unsupported charge-constraint scope {data['scope']!r}; "
                 "expected 'system' or 'residue'."
             )
-        coefficients = data["coefficients"]
-        if not isinstance(coefficients, Mapping):
+        if not isinstance(data["coefficients"], Mapping):
             raise ValueError("Charge-constraint 'coefficients' must be a mapping.")
         return cls(
             selection=str(data["selection"]),
             target=float(data["target"]),
-            scope=scope,
+            scope=str(data["scope"]),
             implicit=str(data["implicit"]),
-            coefficients={
-                str(name): float(value) for name, value in coefficients.items()
-            },
+            coefficients={str(k): float(v) for k, v in data["coefficients"].items()},
             fixed_charge=float(data.get("fixed_charge", 0.0)),
         )
 
-    @property
-    def adjusted_target(self) -> float:
-        return self.target - self.fixed_charge
-
     def to_dict(self) -> dict[str, Any]:
+        """The ``charge_constraints`` entry of ``specs.yaml``."""
         return {
             "selection": self.selection,
             "target": self.target,
@@ -149,153 +83,116 @@ class ChargeConstraintSpec:
         }
 
 
-@dataclass(frozen=True)
 class Specs:
-    """Force-field parameters and compiled charge reconstruction rules."""
+    """Bounds of all parameters and the equations that fix the implicit charges.
 
-    source: InitVar[dict[str, Any] | PathLike]
+    ``source`` is a mapping or a ``specs.yaml`` path with ``bounds`` (name to
+    ``[lower, upper]``) and ``charge_constraints`` (a list of equations, see
+    :class:`ChargeConstraintSpec`).
 
-    bounds: Bounds = field(init=False)
-    charge_constraints: tuple[ChargeConstraintSpec, ...] = field(init=False)
-    implicit_params: tuple[str, ...] = field(init=False)
-    reconstruction_order: tuple[int, ...] = field(init=False)
+    Attributes
+    ----------
+    bounds : dict
+        ``name -> (lower, upper)``, sorted by name.
+    names : tuple of str
+        All parameters (``bounds`` keys).
+    explicit_names, implicit_names : tuple of str
+        Sampled parameters and the charges the constraints solve for.
+    charge_constraints : tuple of ChargeConstraintSpec
+    """
 
-    def __post_init__(self, source: dict[str, Any] | PathLike) -> None:
+    def __init__(self, source: dict[str, Any] | PathLike) -> None:
         if isinstance(source, dict):
             data = dict(source)
         elif isinstance(source, (str, Path)):
             data = load_yaml(source)
         else:
-            raise TypeError(f"Unsupported source type: {type(source)}")
-
-        required = {"bounds", "charge_constraints"}
-        missing = required - set(data)
+            raise TypeError(f"Unsupported specs source: {type(source)}")
+        missing = {"bounds", "charge_constraints"} - set(data)
         if missing:
             fields = ", ".join(sorted(repr(key) for key in missing))
             raise ValueError(f"Missing required specs field(s): {fields}")
-
-        raw_constraints = data["charge_constraints"]
-        if not isinstance(raw_constraints, list):
+        if not isinstance(data["charge_constraints"], list):
             raise ValueError("'charge_constraints' must be a list.")
-        if not all(isinstance(item, Mapping) for item in raw_constraints):
-            raise ValueError("Each charge constraint must be a mapping.")
 
-        bounds = Bounds(data["bounds"])
-        constraints = tuple(
-            ChargeConstraintSpec.from_dict(item) for item in raw_constraints
+        bounds = {}
+        for name, (lower, upper) in data["bounds"].items():
+            if lower > upper:
+                raise ValueError(
+                    f"Lower bound {lower} is greater than upper bound {upper} "
+                    f"for parameter {name!r}."
+                )
+            bounds[str(name)] = (float(lower), float(upper))
+        self.bounds: dict[str, tuple[float, float]] = dict(sorted(bounds.items()))
+        self.charge_constraints = tuple(
+            ChargeConstraintSpec.from_dict(item) for item in data["charge_constraints"]
         )
-        implicit_params = tuple(constraint.implicit for constraint in constraints)
-        if len(implicit_params) != len(set(implicit_params)):
+
+        self.names = tuple(self.bounds)
+        self.implicit_names = tuple(c.implicit for c in self.charge_constraints)
+        self.explicit_names = tuple(
+            name for name in self.names if name not in self.implicit_names
+        )
+        self._check_equations()
+        self._explicit = [self.names.index(name) for name in self.explicit_names]
+        self._implicit = [self.names.index(name) for name in self.implicit_names]
+        self._matrix = np.asarray(
+            [[c.coefficients.get(name, 0.0) for name in self.names]
+             for c in self.charge_constraints],
+            dtype=float,
+        ).reshape(len(self.charge_constraints), len(self.names))
+        self._targets = np.asarray(
+            [c.target - c.fixed_charge for c in self.charge_constraints], dtype=float
+        )
+        self._bounds_array = np.asarray(list(self.bounds.values()), dtype=float)
+        self._bounds_array = self._bounds_array.reshape(-1, 2)
+        self._cache: dict = {}
+        self._check_solvable()
+
+    def _check_equations(self) -> None:
+        if len(self.implicit_names) != len(set(self.implicit_names)):
             raise ValueError(
                 "Each charge constraint must own a distinct implicit parameter."
             )
-
-        bound_names = set(bounds.names)
-        for constraint in constraints:
-            if constraint.implicit not in bound_names:
+        for c in self.charge_constraints:
+            if c.implicit not in self.bounds:
                 raise ValueError(
-                    f"Implicit parameter {constraint.implicit!r} is not defined "
-                    "in bounds."
+                    f"Implicit parameter {c.implicit!r} is not defined in bounds."
                 )
-            if not constraint.implicit.startswith("charge "):
-                raise ValueError(
-                    f"Implicit parameter {constraint.implicit!r} is not a charge "
-                    "parameter."
-                )
-            unknown = set(constraint.coefficients) - bound_names
+            unknown = sorted(set(c.coefficients) - set(self.bounds))
             if unknown:
-                names = ", ".join(sorted(repr(name) for name in unknown))
                 raise ValueError(
-                    f"Charge constraint {constraint.selection!r} references "
-                    f"unknown bounded parameter(s): {names}."
+                    f"Charge constraint {c.selection!r} references unknown bounded "
+                    f"parameter(s): {', '.join(map(repr, unknown))}."
                 )
-            invalid = [
-                name
-                for name in constraint.coefficients
-                if not name.startswith("charge ")
-            ]
-            if invalid:
-                names = ", ".join(sorted(repr(name) for name in invalid))
+            not_charges = [n for n in c.coefficients if parameter_kind(n) != "charge"]
+            if not_charges or parameter_kind(c.implicit) != "charge":
                 raise ValueError(
-                    f"Charge constraint {constraint.selection!r} references "
-                    f"non-charge parameter(s): {names}."
+                    f"Charge constraint {c.selection!r} may only involve charge "
+                    f"parameters, got {not_charges or [c.implicit]}."
                 )
-            if np.isclose(constraint.coefficients.get(constraint.implicit, 0.0), 0.0):
+            if np.isclose(c.coefficients.get(c.implicit, 0.0), 0.0):
                 raise ValueError(
-                    f"Implicit parameter {constraint.implicit!r} is not selected by "
-                    f"its owning constraint {constraint.selection!r}."
+                    f"Implicit parameter {c.implicit!r} is not selected by its "
+                    f"owning constraint {c.selection!r}."
                 )
 
-        owners = {name: i for i, name in enumerate(implicit_params)}
-        dependencies = {
-            i: {
-                owners[name]
-                for name, coefficient in constraint.coefficients.items()
-                if (
-                    name in owners
-                    and name != constraint.implicit
-                    and not np.isclose(coefficient, 0.0)
-                )
-            }
-            for i, constraint in enumerate(constraints)
-        }
-        order: list[int] = []
-        pending = set(range(len(constraints)))
-        while pending:
-            ready = sorted(i for i in pending if dependencies[i] <= set(order))
-            if not ready:
-                raise ValueError(
-                    "Charge constraints contain a cyclic implicit-parameter dependency."
-                )
-            order.extend(ready)
-            pending.difference_update(ready)
-
-        object.__setattr__(self, "bounds", bounds)
-        object.__setattr__(self, "charge_constraints", constraints)
-        object.__setattr__(self, "implicit_params", implicit_params)
-        object.__setattr__(self, "reconstruction_order", tuple(order))
-        self._check_feasibility()
-
-    @classmethod
-    def load(cls, source: PathLike) -> "Specs":
-        return cls(source)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "bounds": self.bounds.to_dict(),
-            "charge_constraints": [
-                constraint.to_dict() for constraint in self.charge_constraints
-            ],
-        }
-
-    def write(self, fn_out: PathLike) -> None:
-        save_yaml(self.to_dict(), fn_out)
-
-    @property
-    def explicit_bounds(self) -> Bounds:
-        return self.bounds.without_names(self.implicit_params)
-
-    @property
-    def constraint_matrix(self) -> np.ndarray:
-        return np.asarray([
-            [constraint.coefficients.get(name, 0.0) for name in self.bounds.names]
-            for constraint in self.charge_constraints
-        ], dtype=float)
-
-    @property
-    def constraint_targets(self) -> np.ndarray:
-        return np.asarray([
-            constraint.adjusted_target for constraint in self.charge_constraints
-        ], dtype=float)
-
-    def _check_feasibility(self) -> None:
-        if not self.charge_constraints:
+    def _check_solvable(self) -> None:
+        """The equations must fix the implicit charges, within the bounds."""
+        n = len(self.charge_constraints)
+        if not n:
             return
+        if np.linalg.matrix_rank(self._matrix[:, self._implicit]) < n:
+            raise ValueError(
+                "The charge constraints do not determine their implicit "
+                "parameters uniquely; give each constraint an implicit atom that "
+                "the other constraints do not fix as well."
+            )
         result = linprog(
-            np.zeros(self.bounds.n_params),
-            A_eq=self.constraint_matrix,
-            b_eq=self.constraint_targets,
-            bounds=self.bounds.array,
+            np.zeros(len(self.names)),
+            A_eq=self._matrix,
+            b_eq=self._targets,
+            bounds=self._bounds_array,
             method="highs",
         )
         if not result.success:
@@ -304,217 +201,153 @@ class Specs:
                 f"configured bounds: {result.message}"
             )
 
-    def parameter_names(self, *, explicit_only: bool = False) -> tuple[str, ...]:
-        bounds = self.explicit_bounds if explicit_only else self.bounds
-        return tuple(str(name) for name in bounds.names)
+    # -- serialization -------------------------------------------------------
 
-    def parameter_dict(
-        self,
-        values: Sequence[float] | np.ndarray | Any,
-        *,
-        explicit_only: bool = False,
-    ) -> dict[str, float]:
-        array = (
-            values.detach().cpu().numpy()
-            if _is_torch_tensor(values)
-            else np.asarray(values, dtype=float)
-        ).reshape(-1)
-        names = self.parameter_names(explicit_only=explicit_only)
-        if array.size != len(names):
-            raise ValueError(
-                f"Expected {len(names)} parameter values, got {array.size}."
-            )
-        return {name: float(value) for name, value in zip(names, array)}
-
-    def with_implicit_charges(
-        self,
-        values: Sequence[float] | np.ndarray | Any,
-    ) -> np.ndarray:
-        array = (
-            values.detach().cpu().numpy()
-            if _is_torch_tensor(values)
-            else np.asarray(values, dtype=float)
-        )
-        array = np.atleast_2d(array)
-        n_explicit = self.explicit_bounds.n_params
-        if array.shape[1] < n_explicit:
-            raise ValueError(
-                f"Expected at least {n_explicit} explicit parameter columns, "
-                f"got {array.shape[1]}."
-            )
-
-        names = self.bounds.names.tolist()
-        full = np.zeros((len(array), self.bounds.n_params), dtype=float)
-        explicit_indices = [names.index(name) for name in self.explicit_bounds.names]
-        full[:, explicit_indices] = array[:, :n_explicit]
-        for index in self.reconstruction_order:
-            constraint = self.charge_constraints[index]
-            implicit_index = names.index(constraint.implicit)
-            coefficient = constraint.coefficients[constraint.implicit]
-            full[:, implicit_index] = (
-                constraint.adjusted_target - full @ self.constraint_matrix[index]
-            ) / coefficient
-
-        return np.concatenate([full, array[:, n_explicit:]], axis=1)
-
-
-@dataclass(frozen=True)
-class ChargeConstraint:
-    """Charge-aware validity check derived from ``Specs``."""
-
-    specs: Specs
-
-    def __init__(self, specs: Specs | dict[str, Any] | PathLike) -> None:
-        object.__setattr__(
-            self,
-            "specs",
-            specs if isinstance(specs, Specs) else Specs(specs),
+    def __repr__(self) -> str:
+        return (
+            f"Specs({len(self.names)} parameters: {len(self.explicit_names)} "
+            f"sampled, {len(self.implicit_names)} implicit)"
         )
 
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self.specs, name)
+    @classmethod
+    def load(cls, source: PathLike) -> Specs:
+        """Read a ``specs.yaml`` file."""
+        return cls(source)
+
+    def to_dict(self) -> dict[str, Any]:
+        """The mapping :class:`Specs` is built from."""
+        return {
+            "bounds": {name: list(bounds) for name, bounds in self.bounds.items()},
+            "charge_constraints": [c.to_dict() for c in self.charge_constraints],
+        }
+
+    def write(self, fn_out: PathLike) -> None:
+        """Write ``specs.yaml``."""
+        save_yaml(self.to_dict(), fn_out)
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, Specs) and self.to_dict() == other.to_dict()
+
+    __hash__ = None  # type: ignore[assignment]
+
+    # -- parameter values ----------------------------------------------------
 
     @property
     def explicit_bounds(self) -> np.ndarray:
-        return self.specs.explicit_bounds.array
+        """Bounds of the sampled parameters, shape ``(n_explicit, 2)``."""
+        return self._bounds_array[self._explicit]
 
-    @property
-    def explicit_parameter_names(self) -> list[str]:
-        return self.specs.explicit_bounds.names.tolist()
+    def complete(self, X: Any) -> Any:
+        """Add the implicit charges to sampled parameter vectors.
 
-    @property
-    def n_params(self) -> int:
-        return self.specs.explicit_bounds.n_params
-
-    @staticmethod
-    def _to_2d_array(values: ArrayLike) -> np.ndarray:
-        if _is_torch_tensor(values):
-            arr = values.detach().cpu().numpy()
-        else:
-            arr = np.asarray(values, dtype=float)
-        return np.atleast_2d(arr)
-
-    def is_valid(self, values: ArrayLike) -> np.ndarray:
-        x = self._to_2d_array(values)
-        if x.shape[1] != self.n_params:
+        ``X`` has one row per vector and one column per ``explicit_names``;
+        the result has one column per ``names``. NumPy input gives NumPy
+        output. A torch tensor is completed where it lives, in its own dtype,
+        without any transfer.
+        """
+        is_torch = isinstance(X, torch.Tensor)
+        x = X if is_torch else torch.as_tensor(np.asarray(X, dtype=float))
+        x = x.reshape(1, -1) if x.dim() < 2 else x
+        if x.shape[1] != len(self._explicit):
             raise ValueError(
-                f"Input array must have shape (n_samples, {self.n_params}), "
-                f"but got {x.shape}."
+                f"Expected {len(self._explicit)} columns for {self.explicit_names}, "
+                f"got shape {tuple(x.shape)}."
             )
+        explicit, implicit, solve, coefficients, targets, _ = self._on(
+            x.device, x.dtype
+        )
+        full = x.new_zeros((len(x), len(self.names)))
+        full[:, explicit] = x
+        if self.charge_constraints:
+            full[:, implicit] = (targets - x @ coefficients.T) @ solve.T
+        return full if is_torch else full.numpy()
 
-        full = self.specs.with_implicit_charges(x)
-        lower, upper = self.specs.bounds.array.T
-        return ((full >= lower) & (full <= upper)).all(axis=1)
-
-    def describe_violations(
-        self,
-        values: ArrayLike,
-        *,
-        max_items: int = 5,
-    ) -> str:
-        """Return a concise human-readable validity report."""
-        x = self._to_2d_array(values)
-        if x.shape[1] != self.n_params:
-            raise ValueError(
-                f"Input array must have shape (n_samples, {self.n_params}), "
-                f"but got {x.shape}."
+    def _on(self, device: torch.device, dtype: torch.dtype) -> tuple:
+        """Index and coefficient tensors for ``device`` and ``dtype``, cached."""
+        key = (str(device), dtype)
+        if key not in self._cache:
+            matrix = torch.as_tensor(self._matrix)
+            solve = (
+                torch.linalg.inv(matrix[:, self._implicit])
+                if self.charge_constraints
+                else torch.empty((0, 0), dtype=matrix.dtype)
             )
+            self._cache[key] = tuple(
+                tensor.to(device, dtype if tensor.is_floating_point() else None)
+                for tensor in (
+                    torch.tensor(self._explicit, dtype=torch.long),
+                    torch.tensor(self._implicit, dtype=torch.long),
+                    solve,
+                    matrix[:, self._explicit],
+                    torch.as_tensor(self._targets),
+                    torch.as_tensor(self._bounds_array),
+                )
+            )
+        return self._cache[key]
 
-        full = self.specs.with_implicit_charges(x)
-        lower, upper = self.specs.bounds.array.T
-        names = self.specs.parameter_names()
-        messages: list[str] = []
-        for sample_index, row in enumerate(full[:, :self.specs.bounds.n_params]):
-            for param_index, value in enumerate(row):
-                if lower[param_index] <= value <= upper[param_index]:
-                    continue
-                side = "below" if value < lower[param_index] else "above"
+    def is_valid(self, X: Any) -> Any:
+        """Whether each sampled vector keeps every parameter, implicit charges
+        included, within its bounds. Returns a mask of the type and device of
+        ``X``."""
+        full = self.complete(X)
+        is_torch = isinstance(full, torch.Tensor)
+        full = full if is_torch else torch.as_tensor(full)
+        bounds = self._on(full.device, full.dtype)[5]
+        valid = ((full >= bounds[:, 0]) & (full <= bounds[:, 1])).all(dim=1)
+        return valid if is_torch else valid.numpy()
+
+    def violations(self, X: Any, max_items: int = 5) -> str:
+        """Which parameters of which vectors leave their bounds."""
+        X = X.detach().cpu() if isinstance(X, torch.Tensor) else X
+        full = np.asarray(self.complete(X))
+        lower, upper = self._bounds_array.T
+        messages = []
+        for i, row in enumerate(full):
+            for j in np.flatnonzero((row < lower) | (row > upper)):
+                side = "below" if row[j] < lower[j] else "above"
                 messages.append(
-                    f"sample {sample_index}: {names[param_index]}={value:.8g} "
-                    f"is {side} [{lower[param_index]:.8g}, "
-                    f"{upper[param_index]:.8g}]"
+                    f"sample {i}: {self.names[j]}={row[j]:.8g} is {side} "
+                    f"[{lower[j]:.8g}, {upper[j]:.8g}]"
                 )
                 if len(messages) >= max_items:
                     return "; ".join(messages)
-        return "; ".join(messages) if messages else "all samples satisfy bounds"
+        return "; ".join(messages) or "all samples satisfy bounds"
 
-    def __call__(self, values: ArrayLike) -> np.ndarray | Any:
-        valid = self.is_valid(values)
-        if _is_torch_tensor(values):
-            return torch.as_tensor(valid, device=values.device)
-        return valid
+    def as_dict(self, values: Sequence[float] | np.ndarray) -> dict[str, float]:
+        """Name every value of one vector with all ``names``."""
+        values = np.asarray(values, dtype=float).reshape(-1)
+        if values.size != len(self.names):
+            raise ValueError(f"Expected {len(self.names)} values, got {values.size}.")
+        return dict(zip(self.names, map(float, values)))
 
 
-class RandomParamsGenerator:
-    """Latin-hypercube parameter generator with optional validity filter."""
+def latin_hypercube(
+    specs: Specs, n: int, seed: int | np.random.Generator | None = None
+) -> np.ndarray:
+    """``n`` valid sampled parameter vectors from one Latin hypercube.
 
-    def __init__(
-        self,
-        bounds: np.ndarray,
-        constraint: Optional[Callable[[ArrayLike], np.ndarray]] = None,
-        random_state: Optional[int | np.random.Generator] = None,
-    ) -> None:
-        if bounds.ndim != 2 or bounds.shape[1] != 2:
-            raise ValueError("Bounds must have shape (n_params, 2).")
-
-        self.bounds = np.asarray(bounds, dtype=float)
-        self.constraint = constraint
-        self.n_generated = 0
-        self.rng = (
-            random_state
-            if isinstance(random_state, np.random.Generator)
-            else np.random.default_rng(random_state)
-        )
-        self.sampler = (
-            None
-            if self.bounds.shape[0] == 0
-            else LatinHypercube(self.bounds.shape[0], seed=self.rng)
-        )
-
-    def __call__(self, n: int) -> np.ndarray:
-        if n < 0:
-            raise ValueError("Number of samples must be non-negative.")
-        if n == 0:
-            return np.empty((0, self.bounds.shape[0]), dtype=float)
-        if self.bounds.shape[0] == 0:
-            samples = np.empty((n, 0), dtype=float)
-            if self.constraint is not None and not np.asarray(
-                self.constraint(samples),
-                dtype=bool,
-            ).all():
-                raise RuntimeError("Fully constrained parameter values are invalid.")
-            self.n_generated += n
-            return samples
-
-        lower, upper = self.bounds.T
-        if self.constraint is None:
-            assert self.sampler is not None
-            unit_samples = self.sampler.random(n)
-            self.n_generated += n
-            return unit_samples * (upper - lower) + lower
-
-        collected: list[np.ndarray] = []
-        n_valid = 0
-        attempts = 0
-        while n_valid < n:
-            assert self.sampler is not None
-            batch_size = max(2 * (n - n_valid), 1)
-            unit_samples = self.sampler.random(batch_size)
-            self.n_generated += batch_size
-            attempts += 1
-
-            samples = unit_samples * (upper - lower) + lower
-            mask = np.asarray(self.constraint(samples), dtype=bool).reshape(-1)
-            valid = samples[mask]
-            if valid.size > 0:
-                collected.append(valid)
-                n_valid += len(valid)
-                attempts = 0
-
-            if attempts >= 1000:
-                raise RuntimeError(
-                    "Failed to generate valid parameter samples within 1000 "
-                    "consecutive Latin-hypercube batches."
-                )
-
-        return np.vstack(collected)[:n]
+    Vectors whose implicit charges would leave their bounds are redrawn.
+    Columns follow ``specs.explicit_names``.
+    """
+    if n < 0:
+        raise ValueError("Number of samples must be non-negative.")
+    lower, upper = specs.explicit_bounds.T
+    if lower.size == 0:
+        if n and not specs.is_valid(np.empty((n, 0))).all():
+            raise RuntimeError("Fully constrained parameter values are invalid.")
+        return np.empty((n, 0))
+    sampler = LatinHypercube(lower.size, seed=seed)
+    collected: list[np.ndarray] = []
+    n_valid = failures = 0
+    while n_valid < n:
+        batch = sampler.random(max(2 * (n - n_valid), 1)) * (upper - lower) + lower
+        valid = batch[specs.is_valid(batch)]
+        failures = 0 if len(valid) else failures + 1
+        if failures >= 1000:
+            raise RuntimeError(
+                "Failed to generate valid parameter samples within 1000 "
+                "consecutive Latin-hypercube batches."
+            )
+        collected.append(valid)
+        n_valid += len(valid)
+    return np.vstack(collected)[:n] if collected else np.empty((0, lower.size))

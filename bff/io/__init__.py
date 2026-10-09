@@ -4,13 +4,10 @@ from importlib import import_module
 
 __all__ = [
     "colvars",
-    "cp2k",
-    "extxyz",
     "logs",
     "mdp",
     "plumed",
     "progress",
-    "schedulers",
     "utils",
 ]
 

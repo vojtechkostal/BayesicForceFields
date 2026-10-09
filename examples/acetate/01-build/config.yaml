@@ -1,0 +1,33 @@
+# Build and equilibrate the two systems. calcium-acetate carries the Colvars
+# bias; it is reused by every later MD stage.
+project:
+  directory: ./
+
+gromacs:
+  command: gmx  # ADAPT: your GROMACS executable (with Colvars, GROMACS >= 2024)
+
+systems:
+  - system_id: acetate
+    system_name: Aqueous acetate
+    topology: ../inputs/acetate.top
+    templates:
+      ACE: ../inputs/ace.gro
+    mdp: &mdp
+      em: ../inputs/mdp/em.mdp
+      npt: ../inputs/mdp/npt.mdp
+      prod: ../inputs/mdp/nvt.mdp
+    nsteps: &nsteps
+      npt: 0
+      prod: 50000  # ADAPT: 100 ps at dt = 2 fs
+    box: [15.7107, 15.7107, 15.7107]  # angstrom
+
+  - system_id: calcium-acetate
+    system_name: Aqueous calcium acetate
+    topology: ../inputs/calcium-acetate.top
+    templates:
+      ACE: ../inputs/ace.gro
+    mdp: *mdp
+    nsteps: *nsteps
+    box: [15.7480, 15.7480, 15.7480]  # angstrom
+    bias:
+      colvars_file: ../inputs/colvars.dat

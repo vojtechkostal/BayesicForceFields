@@ -1,5 +1,8 @@
+"""Gaussian log likelihood of the surrogate predictions against references."""
+
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 import torch
@@ -41,9 +44,9 @@ def _valid_parameter_mask(
     params: torch.Tensor,
     problem: LearningProblem,
 ) -> torch.Tensor:
-    if problem.constraint is None:
+    if problem.specs is None:
         return torch.ones(len(params), dtype=bool, device=params.device)
-    return problem.constraint(params)
+    return problem.specs.is_valid(params)
 
 
 def loo_log_likelihood(
@@ -74,48 +77,32 @@ def loo_log_likelihood(
         Shape: (n_samples,).
     """
 
-    # Ensure that all the inputs are on the same device
-    device = theta.device
     theta = theta.exp()
-    length = theta[:, :-2][:, None].to(device)
-    width = theta[:, -2][:, None, None].to(device)
-    noise = theta[:, -1][:, None, None].to(device)
+    length, amplitude, noise = theta[:, :-2], theta[:, -2], theta[:, -1]
+    n_samples, n_y = len(X), y.shape[1]
+    identity = torch.eye(n_samples, dtype=theta.dtype, device=theta.device)
 
-    # Check the dimensions of X and y
-    n_batch = len(theta)
-    n_samples = len(X)
-    n_y = y.shape[1]
-    X = X.unsqueeze(0).repeat(n_batch, 1, 1).to(device)
-
-    identity = torch.eye(n_samples, device=device).expand(n_batch, n_samples, n_samples)
-
-    # Compute the kernel matrix and its inverse
-    Kdd = gaussian_kernel(X, X, length, width) + identity * noise
+    Kdd = gaussian_kernel(X, X, length, amplitude) + noise[:, None, None] * identity
     Kdd = 0.5 * (Kdd + Kdd.transpose(1, 2))
     L, info = torch.linalg.cholesky_ex(Kdd)
-    jitter = torch.finfo(Kdd.dtype).eps
-    for _ in range(6):
-        if not torch.any(info):
-            break
-        L, info = torch.linalg.cholesky_ex(Kdd + jitter * identity)
-        jitter *= 10
-    if torch.any(info):
-        raise torch.linalg.LinAlgError("Could not stabilize the GP covariance matrix.")
+    failed = info > 0
+    if failed.any():
+        # Hyperparameters whose covariance is not positive definite are
+        # impossible: -inf likelihood, and a harmless matrix in their place.
+        L, _ = torch.linalg.cholesky_ex(
+            torch.where(failed[:, None, None], identity, Kdd)
+        )
     Kdd_inv = torch.cholesky_inverse(L)
     Kdd_inv_diagonal = torch.diagonal(Kdd_inv, 0, dim1=1, dim2=2)
     log_Kdd_inv_ii = torch.log(Kdd_inv_diagonal)
 
-    # Compute the terms for the log likelihood
     norm = torch.sqrt(Kdd_inv_diagonal).unsqueeze(1)
     term_1 = (Kdd_inv @ y).transpose(1, 2) / norm
     term_1 = 1 / (2 * n_samples) * torch.sum(term_1**2, dim=(1, 2))
-
     term_2 = n_y / (2 * n_samples) * torch.sum(log_Kdd_inv_ii, dim=1)
+    term_3 = (n_y / 2) * math.log(2 * math.pi)
 
-    pi_tensor = torch.tensor(torch.pi, device=device)
-    term_3 = (n_y / 2) * torch.log(2 * pi_tensor)
-
-    return - (term_1 - term_2 + term_3)
+    return torch.where(failed, -torch.inf, -(term_1 - term_2 + term_3))
 
 
 def gaussian_log_likelihood(
@@ -131,7 +118,7 @@ def gaussian_log_likelihood(
         Parameters of the surrogate model, shape (n_samples, n_params + n_sigma).
     problem : LearningProblem
         Complete inference problem including surrogates, observations,
-        and the optional parameter constraint.
+        and the optional parameter specification.
 
     Returns
     -------
@@ -149,27 +136,19 @@ def gaussian_log_likelihood_by_qoi(
 ) -> dict[str, torch.Tensor]:
     """Compute one Gaussian log-likelihood contribution per QoI."""
     params, sigmas = _split_parameters_and_sigmas(theta, problem)
-    mask = _valid_parameter_mask(params, problem)
-    params = params[mask]
-    sigmas = sigmas[mask]
+    valid = _valid_parameter_mask(params, problem)
 
     contributions = {}
     for (qoi, model), sigma in zip(problem.models.items(), sigmas.T):
-        contribution = torch.full(
-            (len(theta),),
-            -torch.inf,
-            device=theta.device,
-            dtype=theta.dtype,
-        )
-        if mask.any():
-            y_trial = model.predict(params)
-            diff = problem.observations[qoi] - y_trial
-            mse = torch.mean(diff**2, dim=1)
-            n_eff = float(model.n_eff)
-            contribution[mask] = (
-                -0.5 * n_eff * mse / sigma**2
-                - n_eff * torch.log(sigma)
-            )
-        contributions[qoi] = contribution
+        # Every row is evaluated and the invalid ones masked afterwards, so
+        # nothing depends on the values on the device.
+        diff = problem.observations[qoi] - model.predict(params)
+        mse = torch.mean(diff**2, dim=1)
+        n_eff = float(model.n_eff)
+        # The learned noise sigma and the accepted deviation (tolerance)
+        # add up to the variance of each effective observation.
+        variance = sigma**2 + float(model.tolerance) ** 2
+        value = -0.5 * n_eff * mse / variance - 0.5 * n_eff * torch.log(variance)
+        contributions[qoi] = torch.where(valid, value, -torch.inf)
 
     return contributions

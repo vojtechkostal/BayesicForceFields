@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
 
 PathLike = str | Path
 
@@ -53,73 +52,6 @@ class BiasSpec:
 
         object.__setattr__(self, "colvars_file", colvars_file)
         object.__setattr__(self, "plumed_file", plumed_file)
-
-    @classmethod
-    def from_any(
-        cls,
-        value: "BiasSpec | Mapping[str, Any] | PathLike | None",
-        *,
-        base_dir: Path | None = None,
-    ) -> "BiasSpec":
-        """Normalize a raw config value into a ``BiasSpec``.
-
-        Parameters
-        ----------
-        value
-            Existing ``BiasSpec`` instance, raw mapping, or ``None``.
-        base_dir
-            Base directory used to resolve relative COLVARS file paths.
-
-        Returns
-        -------
-        BiasSpec
-            Normalized bias specification.
-        """
-        if isinstance(value, cls):
-            return value
-        if value is None:
-            return cls()
-        if isinstance(value, (str, Path)):
-            if base_dir is not None:
-                value = Path(value)
-                if not value.is_absolute():
-                    value = (base_dir / value).resolve()
-            return cls.load(value)
-        if not isinstance(value, Mapping):
-            raise ValueError(f"Invalid bias specification: {value!r}")
-        unknown = set(value) - {"kind", "colvars_file", "plumed_file"}
-        if unknown:
-            raise ValueError(
-                "Bias specification contains unsupported key(s): "
-                + ", ".join(sorted(unknown))
-            )
-
-        colvars_raw = value.get("colvars_file")
-        plumed_raw = value.get("plumed_file")
-        colvars_file = None
-        plumed_file = None
-        if colvars_raw is not None:
-            colvars_file = Path(colvars_raw)
-            if base_dir is not None and not colvars_file.is_absolute():
-                colvars_file = (base_dir / colvars_file).resolve()
-        if plumed_raw is not None:
-            plumed_file = Path(plumed_raw)
-            if base_dir is not None and not plumed_file.is_absolute():
-                plumed_file = (base_dir / plumed_file).resolve()
-
-        if value.get("kind") is not None:
-            kind = str(value["kind"])
-        elif colvars_file is not None:
-            kind = "colvars"
-        elif plumed_file is not None:
-            kind = "plumed"
-        else:
-            kind = "none"
-        return cls(
-            kind=kind,
-            colvars_file=colvars_file,
-            plumed_file=plumed_file,
-        )
 
     @property
     def is_biased(self) -> bool:

@@ -1,19 +1,18 @@
-from pathlib import Path
-from typing import Callable, Sequence, Tuple, Union
+"""Tensor checks, walker initialization, and numerical helpers."""
 
+from pathlib import Path
+from typing import Union
+
+import numpy as np
 import torch
-from torch.autograd.functional import hessian
 
 PathLike = Union[str, Path]
 
 
 def smape(y_true: torch.Tensor, y_pred: torch.Tensor) -> float:
     """Compute the symmetric mean absolute percentage error."""
-
-    device = y_true.device if isinstance(y_true, torch.Tensor) else 'cpu'
-
-    y_true = check_tensor(y_true, device=device)
-    y_pred = check_tensor(y_pred, device=device)
+    y_pred = torch.as_tensor(y_pred)
+    y_true = torch.as_tensor(y_true).to(y_pred)
     if y_true.ndim == 1:
         y_true = y_true.unsqueeze(-1)
     if y_pred.ndim == 1:
@@ -25,347 +24,59 @@ def smape(y_true: torch.Tensor, y_pred: torch.Tensor) -> float:
         )
 
     abs_diff = torch.sum(torch.abs(y_true - y_pred), dim=1)
-    y_true_abs = torch.sum(torch.abs(y_true), dim=1)
-    y_pred_abs = torch.sum(torch.abs(y_pred), dim=1)
-    norm = y_true_abs + y_pred_abs
-
+    norm = torch.sum(torch.abs(y_true), dim=1) + torch.sum(torch.abs(y_pred), dim=1)
     ratios = torch.where(norm > 0, abs_diff / norm, torch.zeros_like(norm))
     return float(torch.mean(ratios).item())
+
+
+def evenly_spaced_indices(n: int, max_n: int | None) -> np.ndarray:
+    """Indices of at most ``max_n`` evenly spaced items out of ``n``."""
+    if max_n is None or max_n < 0 or n <= max_n:
+        return np.arange(n)
+    return np.linspace(0, n - 1, max_n, dtype=int)
 
 
 def initialize_walkers(
     priors,
     n_walkers: int,
-    constraint: Callable = None,
-    max_attempts: int | None = None,
+    specs=None,
+    max_attempts: int = 1000,
 ) -> torch.Tensor:
+    """Draw ``n_walkers`` starting points from the ``priors``.
 
-    """
-    Initialize walkers for the MCMC sampler.
-
-    Parameters
-    ----------
-    priors : dict
-        Dict of prior distributions for each parameter.
-    n_walkers : int
-        Number of walkers to initialize.
-    specs : object, optional
-        Specifications object containing bounds and constraints.
-        If provided, walkers will be initialized within the bounds.
-
-    Returns
-    -------
-    torch.Tensor
-        A tensor of shape (n_walkers, n_params) containing the initial positions
-        of the walkers, sampled from the prior distributions.
+    With ``specs``, only points whose sampled parameters keep every parameter
+    within its bounds are kept.
     """
 
-    if constraint is None:
-        means = torch.tensor([p.mean for p in priors], dtype=torch.float32)
-        stds = torch.tensor([p.scale for p in priors], dtype=torch.float32)
-        p0 = torch.normal(means.expand(n_walkers, -1), stds.expand(n_walkers, -1))
-    else:
-        n_params = constraint.n_params
-        n_dim = len(priors)
-        max_attempts = max_attempts or (1000 * n_walkers)
+    def draw(n: int) -> torch.Tensor:
+        columns = [prior.distribution.sample((n,)) for prior in priors]
+        return torch.stack(columns, dim=1).float()
 
-        p0 = torch.empty((n_walkers, n_dim))
-        count = 0
-        attempts = 0
-        while count < n_walkers and attempts < max_attempts:
-            p0_trial = torch.tensor([p.sample().item() for p in priors])
-            if constraint(p0_trial[:n_params]):
-                p0[count] = p0_trial
-                count += 1
-            attempts += 1
-        if count < n_walkers:
-            raise RuntimeError(
-                "Failed to initialize constrained walkers from the priors. "
-                f"Accepted {count}/{n_walkers} samples after {attempts} attempts."
-            )
-    return p0
+    if specs is None:
+        return draw(n_walkers)
+    n_explicit = len(specs.explicit_names)
+    accepted: list[torch.Tensor] = []
+    n_accepted = 0
+    for _ in range(max_attempts):
+        trial = draw(2 * (n_walkers - n_accepted))
+        valid = trial[specs.is_valid(trial[:, :n_explicit])]
+        accepted.append(valid)
+        n_accepted += len(valid)
+        if n_accepted >= n_walkers:
+            return torch.cat(accepted)[:n_walkers]
+    raise RuntimeError(
+        "Failed to initialize constrained walkers from the priors. "
+        f"Accepted {n_accepted}/{n_walkers} samples after {max_attempts} batches."
+    )
 
 
-def check_tensor(
-    x: Union[torch.Tensor, float, int, list, tuple],
-    device: str,
-    dtype: torch.dtype = torch.float32
-) -> torch.Tensor:
-    """Convert input to a torch tensor on the specified device."""
-    if not isinstance(x, torch.Tensor):
-        return torch.as_tensor(x, device=device, dtype=dtype)
-    return x.to(device, dtype=dtype)
-
-
-def check_device(device: str) -> None:
-    """Check if the specified device is available."""
-    if device.startswith("cuda"):
-        if not torch.cuda.is_available():
-            raise RuntimeError("CUDA is not available.")
-    elif device.startswith("mps"):
-        if not torch.mps.is_available():
-            raise RuntimeError("MPS is not available.")
-
-
-@torch.no_grad()
-def nearest_positive_definite(A: torch.Tensor) -> torch.Tensor:
-    """Find the nearest positive definite matrix to A."""
-    # Symmetrize
-    A_sym = (A + A.T) / 2
-
-    # Check if already PD
-    if torch.all(torch.linalg.eigvalsh(A_sym) > 0):
-        return A_sym
-
-    # Eigen-decomposition
-    eigenvalues, eigenvectors = torch.linalg.eigh(A_sym)
-
-    # Shift eigenvalues minimally
-    min_eig = eigenvalues.min()
-    eps = 1e-8  # small positive shift
-
-    if min_eig < eps:
-        eigenvalues = eigenvalues - min_eig + eps
-
-    A_pd = (eigenvectors @ torch.diag(eigenvalues)) @ eigenvectors.T
-    return A_pd
-
-
-def train_test_split(
-    X: torch.Tensor, y: torch.Tensor, test_fraction: float = 0.2
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Split the dataset into training and testing sets."""
-
-    device = X.device if isinstance(X, torch.Tensor) else "cpu"
-    X = check_tensor(X, device=device)
-    y = check_tensor(y, device=device)
-    n = len(X)
-    if n != len(y):
-        raise ValueError("X and y must have the same length.")
-    if not (0 < test_fraction < 1):
-        raise ValueError("test_fraction must be between 0 and 1.")
-    if n < 2:
-        raise ValueError("X and y must have at least 2 samples.")
-
-    indices = torch.randperm(n, device=X.device)
-    test_size = min(max(int(n * test_fraction), 1), n - 1)
-    idx_train = indices[test_size:]
-    idx_test = indices[:test_size]
-    return X[idx_train], X[idx_test], y[idx_train], y[idx_test]
-
-
-# Global toggle for manual squared distance
-_MANUAL_MODE = False
-
-
-class enable_manual_dist:
-    """Enable Hessian-safe manual pairwise distances within a context."""
-    def __enter__(self) -> None:
-        global _MANUAL_MODE
-        self._prev = _MANUAL_MODE
-        _MANUAL_MODE = True
-
-    def __exit__(self, *args) -> None:
-        global _MANUAL_MODE
-        _MANUAL_MODE = self._prev
-
-
-def with_manual_sqdist_flag(fn: Callable) -> Callable:
-    """Inject the global manual-distance flag into kernel call sites."""
-    def wrapper(*args, manual_sqdist=False, **kwargs):
-        return fn(*args, manual_sqdist=manual_sqdist or _MANUAL_MODE, **kwargs)
-    return wrapper
-
-
-def find_max_stable_lr(
-    fn: Callable,
-    p0: torch.Tensor,
-    learning_rates: (
-        Sequence[Union[float, torch.Tensor]] | float | torch.Tensor | None
-    ) = None,
-    max_iter: int = 100,
-    param_bounds: Tuple[float, float] = (-7, 7),
-) -> Union[float, None]:
-    """Find the largest stable learning rate for gradient-based optimization.
-
-    Parameters
-    ----------
-    fn : Callable
-        Objective function returning a scalar tensor.
-    p0 : torch.Tensor
-        Initial parameter vector.
-    learning_rates : iterable of float, optional
-        Learning rates to test. Defaults to log-spaced values.
-    max_iter : int
-        Number of steps to test for each learning rate.
-    param_bounds : tuple of float
-        Bounds beyond which parameters are considered unstable.
-
-    Returns
-    -------
-    float or None
-        The largest stable learning rate found, or None if none were stable.
-    """
-    if learning_rates is None:
-        learning_rates = 10 ** torch.linspace(-1, -6, 6)
-    elif isinstance(learning_rates, torch.Tensor) and learning_rates.ndim == 0:
-        learning_rates = [float(learning_rates.item())]
-    elif isinstance(learning_rates, (int, float)):
-        learning_rates = [float(learning_rates)]
-    else:
-        learning_rates = list(learning_rates)
-    lower, upper = param_bounds
-    # Log-scale hyperparameters can legitimately start outside the generic
-    # stability window when the underlying data are very small or very large.
-    # Preserve the explosion guard while always admitting the supplied start.
-    lower = min(lower, float(p0.min()) - 1.0)
-    upper = max(upper, float(p0.max()) + 1.0)
-    for lr in learning_rates:
-        x = p0.clone().detach().requires_grad_(True)
-        opt = torch.optim.SGD([x], lr=lr)
-
-        for i in range(max_iter):
-            if torch.any(x < lower) or torch.any(x > upper):
-                break
-            opt.zero_grad()
-            loss = -fn(x)
-            loss.backward()
-            opt.step()
-        else:
-            # Only gets executed if inner loop did not break (i.e., stable)
-            return lr
-
-
-def find_map(
-    fn: Callable,
-    x0: torch.Tensor,
-    lr: Union[float, torch.Tensor] = None,
-    max_iter: int = 10000,
-    tol_grad: float = 1e-2,
-    device: str = 'cpu',
-    logger: Callable = None
-) -> torch.Tensor:
-
-    """Find the maximum a posteriori (MAP) estimate
-    using gradient-based optimization.
-
-    Parameters
-    ----------
-    fn : Callable
-        Objective function to maximize (log-posterior).
-    x0 : torch.Tensor
-        Initial parameter vector.
-    lr : float or torch.Tensor, optional
-        Learning rate for optimization. If None, it will be determined by a search.
-    max_iter : int
-        Maximum number of optimization iterations.
-    tol_grad : float
-        Gradient norm threshold for convergence.
-    device : str
-        Device to perform computations on.
-    logger : Callable, optional
-        Logger for progress updates. Should accept a string and a level argument.
-
-    Returns
-    -------
-    torch.Tensor
-        The MAP estimate found by optimization.
-    """
-
-    if logger is not None:
-        logger.status(
-            "Learning-rate search",
-            "in progress...",
-            level=2,
-            overwrite=True,
-        )
-
-    lr_opt = find_max_stable_lr(fn, x0, learning_rates=lr)
-    if lr_opt is not None:
-        lr_opt = 0.5 * lr_opt
-        if logger is not None:
-            logger.done(
-                "Learning-rate search",
-                detail=f"lr = {lr_opt:.1e}",
-                level=2,
-            )
-    else:
-        raise ValueError("No stable learning rate found.")
-
-    x0 = x0.clone().detach().to(device).requires_grad_(True)
-    optimizer = torch.optim.SGD([x0], lr=lr_opt)
-    iter_width = len(str(max_iter))
-    tol_grad_text = f"{tol_grad:g}"
-    best_value = -torch.inf
-    best_x = x0.detach().clone()
-
-    for i in range(max_iter):
-        optimizer.zero_grad()
-        loss = -fn(x0)
-        value = -loss.detach()
-        if torch.isfinite(value) and value > best_value:
-            best_value = value
-            best_x = x0.detach().clone()
-        loss.backward()
-        grad_norm = x0.grad.norm().item()
-        if i % 100 == 0 and logger is not None:
-            logger.status(
-                "MAP search",
-                (
-                    f"it. {i:>{iter_width}d}/{max_iter:<{iter_width}d} | "
-                    f"loss: {loss.item():>10.3f} | "
-                    f"grad: {grad_norm:>8.3f}/{tol_grad_text}"
-                ),
-                level=2,
-                overwrite=True,
-            )
-        optimizer.step()
-        if grad_norm < tol_grad:
-            if logger is not None:
-                logger.done("MAP search", level=2)
-            break
-
-    else:
-        if logger is not None:
-            logger.warn(
-                "MAP search reached the maximum iterations without convergence.",
-                level=2,
-            )
-
-    return best_x
-
-
-def laplace_approximation(
-    fn: Callable,
-    map_theta: torch.Tensor,
-    device: str = 'cpu'
-) -> torch.Tensor:
-    """
-    Perform Laplace approximation around MAP estimate.
-
-    Parameters
-    ----------
-    fn : Callable
-        Objective function to approximate (log-posterior).
-    map_theta : torch.Tensor
-        MAP estimate around which to perform the approximation.
-    device : str
-        Device to perform computations on.
-
-    Returns
-    -------
-    cov : torch.Tensor
-        The approximate posterior covariance (inverse Hessian).
-    """
-
-    map_theta = check_tensor(map_theta, device=device)
-    with enable_manual_dist():
-        H = -hessian(lambda th: fn(th).sum(), map_theta)
-
-    reg_eye = 1e-6 * torch.eye(H.shape[0], device=H.device)
-    cov = torch.linalg.inv(H + reg_eye)
-
-    # symmerize covariance matrix
-    cov = (cov + cov.T) / 2
-
-    return cov
+def resolve_device(device: str) -> str:
+    """The device a stage works on, decided once: ``auto`` is ``cuda`` when
+    available and ``cpu`` otherwise; an explicit unavailable device raises."""
+    if device == "auto":
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    if device.startswith("cuda") and not torch.cuda.is_available():
+        raise RuntimeError("CUDA is not available.")
+    if device.startswith("mps") and not torch.mps.is_available():
+        raise RuntimeError("MPS is not available.")
+    return device

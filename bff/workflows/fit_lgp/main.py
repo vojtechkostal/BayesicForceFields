@@ -4,14 +4,14 @@ import time
 from pathlib import Path
 
 from ...io.logs import Logger
-from ...qoi.data import QoIDataset
+from ...qoi.dataset import QoIDataset
 from .config import FitLGPConfig
 
 
 def main(fn_config: str | Path) -> None:
     workflow_start = time.perf_counter()
     try:
-        from ...bayes.learning import fit_surrogates
+        from ...bayes.fit import fit_surrogates
     except ModuleNotFoundError as exc:
         if exc.name == "torch":
             raise RuntimeError(
@@ -33,27 +33,31 @@ def main(fn_config: str | Path) -> None:
         dataset.nuisance = dataset_config.nuisance
         datasets.append(dataset)
     model_paths = {dataset.name: dataset.fn_model for dataset in config.datasets}
-    y_means = {dataset.name: dataset.mean for dataset in config.datasets}
+    means = {dataset.name: dataset.mean for dataset in config.datasets}
     config.fit.model_dir.mkdir(parents=True, exist_ok=True)
 
-    logger.section("LGP Surrogate Fitting")
+    logger.section("Fit LGP")
     logger.kv("Config", Path(fn_config).resolve())
-    logger.kv("Log file", config.log.resolve())
-    logger.kv("Datasets", len(datasets))
-    logger.kv("Model directory", config.fit.model_dir.resolve())
-    logger.kv("Device", config.fit.device)
+    logger.kv(
+        "Datasets",
+        ", ".join(f"{data.name} ({data.n_samples} samples)" for data in datasets),
+    )
+    logger.kv("Models", config.fit.model_dir.resolve())
+    logger.kv("Device", "cpu (float64)")
     logger.blank()
     fit_surrogates(
         datasets,
-        y_means=y_means,
+        means=means,
         model_paths=model_paths,
         reuse_models=config.fit.reuse_models,
         n_hyper_max=config.fit.n_hyper_max,
         committee_size=config.fit.committee_size,
         test_fraction=config.fit.test_fraction,
-        device=config.fit.device,
         logger=logger,
         **config.fit.opt_kwargs,
     )
     elapsed = time.perf_counter() - workflow_start
-    logger.done("LGP fitting", detail=f"finished in {elapsed:.2f}s", level=1)
+    logger.done(
+        "Fit LGP",
+        detail=f"{len(datasets)} model(s) | {elapsed:.1f} s | {config.fit.model_dir}",
+    )

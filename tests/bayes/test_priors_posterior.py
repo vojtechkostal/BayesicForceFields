@@ -1,11 +1,9 @@
-from pathlib import Path
-
 import numpy as np
 import pytest
 import torch
 
 from bff.bayes.posterior import log_posterior
-from bff.bayes.priors import Prior, Priors, log_prior
+from bff.bayes.priors import Prior, Priors
 
 
 def test_prior_validation_and_properties() -> None:
@@ -26,31 +24,35 @@ def test_prior_validation_and_properties() -> None:
     assert uniform.scale == pytest.approx(2.0 / np.sqrt(12))
 
 
-def test_priors_from_bounds_names_nuisance_and_round_trip(tmp_path: Path) -> None:
+def test_priors_from_bounds_names_nuisance_and_round_trip() -> None:
     priors = Priors.from_bounds(
         np.array([[-1.0, 1.0], [2.0, 4.0]]),
         dist_type="uniform",
-        n_nuisance=1,
         names=["a", "b"],
-        nuisance_names=["log_sigma_qoi"],
+        nuisance_names=["log noise qoi"],
     )
 
-    assert priors.names == ["a", "b", "log_sigma_qoi"]
+    assert priors.names == ["a", "b", "log noise qoi"]
     assert len(priors) == 3
 
-    path = tmp_path / "priors.pt"
-    priors.write(path)
-    loaded = Priors.load(path)
+    loaded = Priors.from_dicts(priors.to_dicts())
 
     assert loaded.names == priors.names
-    assert [item.to_dict() for item in loaded] == [item.to_dict() for item in priors]
+    assert loaded.to_dicts() == priors.to_dicts()
 
 
-def test_log_prior_accepts_vector_and_batch() -> None:
+def test_normal_priors_from_bounds_cover_the_interval() -> None:
+    priors = Priors.from_bounds(np.array([[0.0, 1.0]]), names=["x"])
+
+    assert priors[0].mean == 0.5
+    assert priors[0].scale == pytest.approx(0.2)
+
+
+def test_priors_log_prob_accepts_vector_and_batch() -> None:
     priors = Priors([Prior("normal", 0.0, 1.0), Prior("uniform", -1.0, 1.0)])
 
-    vector = log_prior(torch.tensor([0.0, 0.0]), priors)
-    batch = log_prior(torch.tensor([[0.0, 0.0], [1.0, 0.5]]), priors)
+    vector = priors.log_prob(torch.tensor([0.0, 0.0]))
+    batch = priors.log_prob(torch.tensor([[0.0, 0.0], [1.0, 0.5]]))
 
     assert vector.shape == (1,)
     assert batch.shape == (2,)
@@ -67,19 +69,16 @@ def test_log_posterior_handles_shapes_nan_and_output_type() -> None:
         torch.tensor([[0.0, 0.0], [1.0, 0.0]]),
         priors,
         likelihood,
-        device="cpu",
-        numpy_output=False,
     )
 
     assert out.shape == (2,)
     assert torch.isfinite(out[0])
     assert torch.isneginf(out[1])
 
-    nan_out = log_posterior(
-        torch.tensor([[float("nan"), 0.0]]),
+    mixed = log_posterior(
+        torch.tensor([[float("nan"), 0.0], [0.0, 0.0]]),
         priors,
         likelihood,
-        device="cpu",
     )
-    assert isinstance(nan_out, np.ndarray)
-    assert float(nan_out) == -1e10
+    assert torch.isneginf(mixed[0])
+    assert torch.isfinite(mixed[1])

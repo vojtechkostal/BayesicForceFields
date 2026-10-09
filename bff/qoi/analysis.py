@@ -1,219 +1,164 @@
-"""Analyze reference and sampled systems with the same execution path."""
+"""Analyze samples in parallel: one worker process per sample.
+
+Within a sample the systems are analyzed one after another; each system's
+trajectory is opened once and every routine of that system runs on it. The
+reference is analyzed the same way, as one sample.
+
+A sample that fails (for example on a corrupted trajectory) is reported with
+its error instead of stopping the other samples.
+"""
 
 from __future__ import annotations
 
 import multiprocessing as mp
 import os
-import warnings
+from collections.abc import Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor
-from contextlib import contextmanager, nullcontext
+from concurrent.futures.process import BrokenProcessPool
 from functools import partial
-from pathlib import Path
-from typing import Any, Iterator, Mapping, Sequence
-
-import MDAnalysis as mda
+from typing import Any
 
 from ..io.logs import Logger
 from ..io.progress import iter_progress
-from ..tools import _normalized_dimensions
-from ..topology import prepare_universe
-from .data import QoI
-from .routines import AnalysisRoutineConfig, run_analysis_routine
+from .dataset import QoI
+from .routines import AnalysisRoutineConfig, run_routine
+from .trajectory import open_trajectory
 
+# (sample_id, {system_id: {role: path}})
 AnalysisTask = tuple[str, dict[str, dict[str, Any]]]
-AnalysisResults = dict[str, dict[str, dict[str, QoI]]]
-
-
-@contextmanager
-def _trajectory_context(
-    inputs: Mapping[str, Any],
-    *,
-    system_id: str,
-    sample_id: str,
-    start: int,
-    stop: int | None,
-    step: int,
-    in_memory: bool,
-) -> Iterator[tuple[mda.Universe, tuple[int, int | None, int]]]:
-    """Load, prepare, and close one system trajectory."""
-    paths: dict[str, Path] = {}
-    for role in ("topology", "coordinates", "trajectory"):
-        value = inputs.get(role)
-        if not isinstance(value, Path):
-            raise ValueError(
-                f"System {system_id!r}, sample {sample_id!r}, input role "
-                f"{role!r}: expected one path, got {value!r}."
-            )
-        paths[role] = value
-
-    universe = prepare_universe(
-        str(paths["topology"]),
-        str(paths["coordinates"]),
-        dt=1,
-    )
-    try:
-        default_dimensions = _normalized_dimensions(universe.dimensions)
-        trajectory = paths["trajectory"]
-        universe.load_new(str(trajectory))
-        universe._bff_default_dimensions = default_dimensions
-
-        effective_stop = stop
-        if stop is None:
-            frame_count = len(universe.trajectory)
-            if start >= frame_count:
-                raise ValueError(
-                    f"System {system_id!r}, sample {sample_id!r}: frame start "
-                    f"{start} is outside trajectory {trajectory}, which reports "
-                    f"{frame_count} frames."
-                )
-            last_frame = start + ((frame_count - 1 - start) // step) * step
-            requested_last_frame = last_frame
-            while last_frame >= start:
-                try:
-                    universe.trajectory[last_frame]
-                    break
-                except (EOFError, OSError):
-                    last_frame -= step
-            if last_frame < start:
-                raise OSError(
-                    f"System {system_id!r}, sample {sample_id!r}: no readable "
-                    f"frames remain in trajectory {trajectory} from frame {start}."
-                )
-            effective_stop = last_frame + 1
-            if last_frame < requested_last_frame:
-                warnings.warn(
-                    f"System {system_id!r}, sample {sample_id!r}: ignoring an "
-                    f"unreadable trailing record in trajectory {trajectory}; "
-                    f"using all readable frames through frame {last_frame}.",
-                    RuntimeWarning,
-                    stacklevel=3,
-                )
-
-        frames = (start, effective_stop, step)
-        if in_memory:
-            universe.transfer_to_memory(start=start, stop=effective_stop, step=step)
-            if default_dimensions is not None:
-                for timestep in universe.trajectory:
-                    if timestep.dimensions is None:
-                        timestep.dimensions = default_dimensions
-            frames = (0, None, 1)
-        yield universe, frames
-    finally:
-        close = getattr(universe.trajectory, "close", None)
-        if callable(close):
-            close()
+# {system_id: {routine name: QoI}}
+SampleResult = dict[str, dict[str, QoI]]
 
 
 def analyze_sample(
     task: AnalysisTask,
     *,
     routines_by_system: Mapping[str, Sequence[AnalysisRoutineConfig]],
-    start: int,
-    stop: int | None,
-    step: int,
+    frames: slice,
     in_memory: bool,
-) -> tuple[str, dict[str, dict[str, QoI]]]:
-    """Analyze every configured system belonging to one sample or reference."""
+    memory_limit: int | None,
+) -> tuple[str, SampleResult | str]:
+    """Run every routine on every system of one sample; return an error text
+    instead of the results if anything fails."""
     sample_id, systems = task
-    sample_results: dict[str, dict[str, QoI]] = {}
-
-    for system_id, inputs in systems.items():
-        routines = tuple(routines_by_system[system_id])
-        trajectory_context = (
-            _trajectory_context(
-                inputs,
-                system_id=system_id,
-                sample_id=sample_id,
-                start=start,
-                stop=stop,
-                step=step,
-                in_memory=in_memory,
-            )
-            if any(routine.uses_trajectory for routine in routines)
-            else nullcontext((None, (start, stop, step)))
-        )
-        with trajectory_context as (universe, frames):
-            sample_results[system_id] = {
-                routine.name: run_analysis_routine(
-                    routine,
-                    universe=universe,
-                    inputs=inputs,
-                    system_id=system_id,
-                    sample_id=sample_id,
-                    start=frames[0],
-                    stop=frames[1],
-                    step=frames[2],
+    results: SampleResult = {}
+    try:
+        for system_id, inputs in systems.items():
+            routines = routines_by_system[system_id]
+            universe = None
+            system_frames = frames
+            if any(routine.uses_trajectory for routine in routines):
+                universe, system_frames = open_trajectory(
+                    inputs,
+                    start=frames.start,
+                    stop=frames.stop,
+                    step=frames.step,
+                    in_memory=in_memory,
+                    memory_limit=memory_limit,
+                    context=f"System {system_id!r}, sample {sample_id!r}",
                 )
-                for routine in routines
-            }
+            try:
+                results[system_id] = {
+                    routine.name: run_routine(
+                        routine,
+                        universe=universe,
+                        frames=system_frames,
+                        inputs=inputs,
+                        system_id=system_id,
+                        sample_id=sample_id,
+                    )
+                    for routine in routines
+                }
+            finally:
+                if universe is not None:
+                    universe.trajectory.close()
+    except Exception as exc:  # one broken sample must not stop the others
+        return sample_id, f"{type(exc).__name__}: {exc}"
+    return sample_id, results
 
-    return sample_id, sample_results
+
+def _available_memory() -> int | None:
+    """Memory available to this job in bytes: the free physical memory, capped
+    by the Slurm allocation, which is far less than the node's on a shared node.
+    """
+    limits = []
+    try:
+        limits.append(os.sysconf("SC_AVPHYS_PAGES") * os.sysconf("SC_PAGE_SIZE"))
+    except (AttributeError, ValueError, OSError):
+        pass
+    per_node = os.environ.get("SLURM_MEM_PER_NODE")
+    per_cpu = os.environ.get("SLURM_MEM_PER_CPU")
+    cpus = os.environ.get("SLURM_CPUS_ON_NODE")
+    if per_node:
+        limits.append(int(per_node) * 2**20)
+    elif per_cpu and cpus:
+        limits.append(int(per_cpu) * int(cpus) * 2**20)
+    return min(limits) if limits else None
 
 
 def analyze_samples(
     tasks: Sequence[AnalysisTask],
     *,
     routines_by_system: Mapping[str, Sequence[AnalysisRoutineConfig]],
-    start: int,
-    stop: int | None,
-    step: int,
+    frames: slice,
     workers: int,
-    progress_stride: int,
-    progress_label: str,
-    logger: Logger,
     in_memory: bool,
-) -> AnalysisResults:
-    """Analyze complete samples, optionally in parallel."""
-    if workers == 0 or workers < -1:
-        raise ValueError("workers must be a positive integer or -1.")
-    if not tasks:
-        return {}
+    logger: Logger,
+    label: str,
+) -> tuple[dict[str, SampleResult], dict[str, str]]:
+    """Analyze samples, ``workers`` at a time (``-1``: every CPU).
 
+    Returns the results of the samples that succeeded and the error of each
+    sample that failed.
+    """
     if workers == -1:
-        worker_count = (
+        workers = (
             len(os.sched_getaffinity(0))
             if hasattr(os, "sched_getaffinity")
             else mp.cpu_count()
         )
-    else:
-        worker_count = workers
-    worker_count = min(worker_count, len(tasks))
+    workers = max(1, min(workers, len(tasks)))
     logger.status(
-        progress_label,
-        "in progress...",
-        detail=f"{len(tasks)} sample(s), {worker_count} worker(s)",
-        level=1,
+        label, "started", detail=f"{len(tasks)} sample(s), {workers} worker(s)"
     )
+    available = _available_memory()
+    # In-memory trajectories may use half the available memory, shared by
+    # the workers; larger ones are read from disk.
+    memory_limit = None if available is None else available // (2 * workers)
     analyze_one = partial(
         analyze_sample,
         routines_by_system=routines_by_system,
-        start=start,
-        stop=stop,
-        step=step,
+        frames=frames,
         in_memory=in_memory,
+        memory_limit=memory_limit,
     )
+    if workers == 1:
+        outcomes = map(analyze_one, tasks)
+        return _collect(outcomes, len(tasks), logger, label)
+    with ProcessPoolExecutor(
+        max_workers=workers, mp_context=mp.get_context("spawn")
+    ) as executor:
+        outcomes = executor.map(analyze_one, tasks, chunksize=1)
+        try:
+            return _collect(outcomes, len(tasks), logger, label)
+        except BrokenProcessPool as exc:
+            raise RuntimeError(
+                "An analysis worker was killed, most likely for running out of "
+                "memory; lower training_samples.workers or set run.in_memory: "
+                "false."
+            ) from exc
 
-    pool_context = (
-        nullcontext(None)
-        if worker_count == 1
-        else ProcessPoolExecutor(
-            max_workers=worker_count,
-            mp_context=mp.get_context("spawn"),
-        )
-    )
-    with pool_context as executor:
-        analyzed = (
-            map(analyze_one, tasks)
-            if executor is None
-            else executor.map(analyze_one, tasks, chunksize=1)
-        )
-        return {
-            sample_id: sample_results
-            for sample_id, sample_results in iter_progress(
-                analyzed,
-                total=len(tasks),
-                stride=progress_stride,
-                logger=logger,
-                label=progress_label,
-            )
-        }
+
+def _collect(
+    outcomes: Any, total: int, logger: Logger, label: str
+) -> tuple[dict[str, SampleResult], dict[str, str]]:
+    results: dict[str, SampleResult] = {}
+    failures: dict[str, str] = {}
+    for sample_id, outcome in iter_progress(
+        outcomes, total=total, logger=logger, label=label
+    ):
+        if isinstance(outcome, str):
+            failures[sample_id] = outcome
+        else:
+            results[sample_id] = outcome
+    return results, failures

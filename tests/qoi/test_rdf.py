@@ -1,13 +1,20 @@
+from pathlib import Path
+
 import MDAnalysis as mda
 import numpy as np
 import pytest
 
-from bff.qoi import rdf
+from bff.qoi.rdf import rdf
+
+REFERENCE = np.load(Path(__file__).with_name("reference_values.npz"))
 
 
-def _trajectory_universe() -> mda.Universe:
+def _rdf(universe, **options):
+    return rdf(universe, frames=slice(None), options=options)
+
+
+def _three_atoms() -> mda.Universe:
     universe = mda.Universe.empty(3, trajectory=True)
-    universe.add_TopologyAttr("names", ["O1", "H1", "OW"])
     universe.add_TopologyAttr("types", ["O", "H", "OW"])
     universe.add_TopologyAttr("masses", [16.0, 1.0, 16.0])
     universe.load_new(
@@ -29,156 +36,83 @@ def _trajectory_universe() -> mda.Universe:
 
 
 @pytest.mark.parametrize("smooth", [False, True])
-def test_compute_rdf_accepts_atomgroups(smooth: bool) -> None:
-    universe = _trajectory_universe()
-
-    centers, values = rdf.compute_rdf(
-        universe,
-        universe.atoms[:2],
-        universe.atoms[1:],
-        distance_range=(0.0, 5.0),
-        bins=20,
-        pbc=True,
+def test_rdf_reproduces_reference_values(solvated, smooth: bool) -> None:
+    qoi = _rdf(
+        solvated,
+        group_a="resname LIG",
+        group_b="type OW",
+        range=[0.0, 8.0],
+        bins=40,
         smooth=smooth,
     )
-
-    assert centers.shape == (20,)
-    assert values.shape == (20,)
-    assert np.all(np.isfinite(values))
-
-
-def test_compute_rdf_rejects_frames_without_non_self_pairs() -> None:
-    universe = _trajectory_universe()
-    atom = universe.atoms[:1]
-
-    with pytest.raises(ValueError, match="no non-self atom pairs"):
-        rdf.compute_rdf(universe, atom, atom, pbc=False)
-
-
-def test_compute_rdf_rejects_empty_frame_slice() -> None:
-    universe = _trajectory_universe()
-
-    with pytest.raises(ValueError, match="selects no trajectory frames"):
-        rdf.compute_rdf(
-            universe,
-            universe.atoms[:1],
-            universe.atoms[2:],
-            start=2,
-        )
+    assert qoi.labels == tuple(REFERENCE["rdf_labels"])
+    assert qoi.values_per_label == 40
+    np.testing.assert_array_equal(qoi.values, REFERENCE[f"rdf_smooth_{smooth}"])
+    assert qoi.settings == {
+        "group_a": "resname LIG",
+        "group_b": "type OW",
+        "range": (0.0, 8.0),
+        "bins": 40,
+        "pbc": True,
+        "update_selections": False,
+        "smooth": smooth,
+    }
 
 
-def test_compute_rdf_qoi_passes_typed_centers_and_shared_neighbors(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    universe = _trajectory_universe()
-    received: list[tuple[mda.AtomGroup, mda.AtomGroup]] = []
-
-    def capture_groups(
-        universe: mda.Universe,
-        atoms_a: mda.AtomGroup,
-        atoms_b: mda.AtomGroup,
-        **options,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        received.append((atoms_a, atoms_b))
-        bins = options["bins"]
-        return np.arange(bins, dtype=float), np.ones(bins, dtype=float)
-
-    monkeypatch.setattr(rdf, "compute_rdf", capture_groups)
-
-    qoi = rdf.compute_rdf_qoi(
-        universe,
-        group_a="index 0 1",
-        group_b="index 2",
-        bins=10,
-    )
-
-    assert qoi.labels == ("H", "O")
-    assert [set(group.types) for group, _ in received] == [{"H"}, {"O"}]
-    assert received[0][1] is received[1][1]
-    assert received[0][1].indices.tolist() == [2]
-
-
-def test_compute_rdf_qoi_preserves_updating_typed_centers(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    universe = mda.Universe.empty(4, trajectory=True)
-    universe.add_TopologyAttr("names", ["O1", "O2", "H1", "OW"])
-    universe.add_TopologyAttr("types", ["O", "O", "H", "OW"])
-    universe.add_TopologyAttr("masses", [16.0, 16.0, 1.0, 16.0])
-    universe.load_new(
-        np.asarray(
-            [
-                [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [3.0, 0.0, 0.0], [4.0, 0.0, 0.0]],
-                [[2.0, 0.0, 0.0], [0.0, 0.0, 0.0], [3.0, 0.0, 0.0], [4.0, 0.0, 0.0]],
-            ]
-        ),
-        format="MEMORY",
-    )
-    center_indices: list[tuple[int, ...]] = []
-
-    def capture_updates(
-        universe: mda.Universe,
-        atoms_a: mda.AtomGroup,
-        atoms_b: mda.AtomGroup,
-        **options,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        for _ in universe.trajectory:
-            center_indices.append(tuple(atoms_a.indices))
-        bins = options["bins"]
-        return np.arange(bins, dtype=float), np.ones(bins, dtype=float)
-
-    monkeypatch.setattr(rdf, "compute_rdf", capture_updates)
-
-    qoi = rdf.compute_rdf_qoi(
-        universe,
-        group_a="type O and prop x < 1",
-        group_b="index 3",
-        bins=10,
-        pbc=False,
+def test_rdf_with_updating_selections_reproduces_reference_values(solvated) -> None:
+    qoi = _rdf(
+        solvated,
+        group_a="resname LIG and around 4 type OW",
+        group_b="type OW",
+        range=[0.0, 8.0],
+        bins=40,
         update_selections=True,
     )
+    assert qoi.labels == tuple(REFERENCE["rdf_updating_labels"])
+    np.testing.assert_array_equal(qoi.values, REFERENCE["rdf_updating"])
 
-    assert qoi.labels == ("O",)
-    assert center_indices == [(0,), (1,)]
 
-
-def test_compute_rdf_qoi_excludes_massless_centers(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    universe = _trajectory_universe()
+def test_rdf_excludes_massless_centers() -> None:
+    universe = _three_atoms()
     universe.atoms[1].mass = 0.0
-    received_types: list[tuple[str, ...]] = []
-
-    def capture_types(
-        universe: mda.Universe,
-        atoms_a: mda.AtomGroup,
-        atoms_b: mda.AtomGroup,
-        **options,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        received_types.append(tuple(atoms_a.types))
-        bins = options["bins"]
-        return np.arange(bins, dtype=float), np.ones(bins, dtype=float)
-
-    monkeypatch.setattr(rdf, "compute_rdf", capture_types)
-
-    qoi = rdf.compute_rdf_qoi(
-        universe,
-        group_a="index 0 1",
-        group_b="index 2",
-        bins=10,
-    )
-
+    qoi = _rdf(universe, group_a="index 0 1", group_b="index 2", bins=10)
     assert qoi.labels == ("O",)
-    assert received_types == [("O",)]
 
 
-def test_compute_rdf_qoi_requires_masses() -> None:
+def test_rdf_rejects_frames_without_non_self_pairs() -> None:
+    universe = _three_atoms()
+    with pytest.raises(ValueError, match="no non-self atom pairs"):
+        _rdf(universe, group_a="index 0", group_b="index 0", pbc=False)
+
+
+def test_rdf_rejects_empty_frame_slice() -> None:
+    universe = _three_atoms()
+    with pytest.raises(ValueError, match="selects no trajectory frames"):
+        rdf(
+            universe,
+            frames=slice(2, None),
+            options={"group_a": "index 0", "group_b": "index 2"},
+        )
+
+
+@pytest.mark.parametrize(
+    ("options", "message"),
+    [
+        ({"group_a": "index 0"}, "requires selection"),
+        ({"group_a": "index 0", "group_b": "index 2", "binz": 3}, "unsupported"),
+        ({"group_a": "index 0", "group_b": "index 2", "range": [5, 1]}, "range"),
+        ({"group_a": "index 0", "group_b": "index 2", "bins": 0}, "bins"),
+        ({"group_a": "index 0", "group_b": "index 2", "pbc": "yes"}, "booleans"),
+        ({"group_a": "type XX", "group_b": "index 2"}, "empty"),
+    ],
+)
+def test_rdf_validates_its_options(options, message) -> None:
+    with pytest.raises(ValueError, match=message):
+        _rdf(_three_atoms(), **options)
+
+
+def test_rdf_requires_masses() -> None:
     universe = mda.Universe.empty(2, trajectory=True)
     universe.add_TopologyAttr("types", ["O", "OW"])
-
     with pytest.raises(ValueError, match="requires topology masses"):
-        rdf.compute_rdf_qoi(
-            universe,
-            group_a="index 0",
-            group_b="index 1",
-        )
+        _rdf(universe, group_a="index 0", group_b="index 1")

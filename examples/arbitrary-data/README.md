@@ -12,44 +12,19 @@ three observables:
 - self-diffusion coefficient
 
 The values are realistic synthetic data, intended to stand in for simulation
-results and experimental targets produced outside BFF. Fitting and learning
-use CUDA when available and otherwise run on CPU.
+results and experimental targets produced outside BFF.
 
 ## Run
 
-Install the optional notebook tools once:
-
-```bash
-pip install "bfflearn[notebook]"
-```
-
-Start Jupyter from this directory and run `arbitrary-data.ipynb` from top to
-bottom:
-
-```bash
-cd examples/arbitrary-data
-jupyter lab
-```
-
-The notebook:
-
-1. loads `raw-data/simulation-results.dat` and
-   `raw-data/experimental-targets.dat`;
-2. converts each observable into a BFF `QoIDataset`;
-3. fits one local Gaussian-process surrogate per observable;
-4. learns the posterior distribution of `epsilon O` and `sigma O`;
-5. writes the posterior summary, standard marginals, and
-   `qoi-marginals.pdf`.
-
-Generated datasets, models, posterior files, logs, and plots are written under
-`generated/` and ignored by git.
+Install the optional notebook tools once (`pip install "bfflearn[notebook]"`),
+then run `arbitrary-data.ipynb` from top to bottom in this directory. The
+notebook loads the two tables in `raw-data/`, builds one `QoIDataset` per
+observable, fits a local-GP surrogate for each (on the CPU), and learns the
+posterior of `epsilon O` and `sigma O`; learning uses CUDA when available.
+Results are written to `generated/` (ignored by git).
 
 ## Adapt It
 
-Replace the two `.dat` files with your own data, update the `observable_columns`
-mapping in the notebook, and edit the inline `Specs` dictionary to describe your
-parameter bounds.
-
-The rows in the simulation table are arbitrary training samples. Each output
-column can be a scalar property or can be replaced with a vector-valued
-observable when constructing `QoIDataset`.
+Replace the two `.dat` files with your own data, change the inline `Specs`
+bounds, and adapt the `QoIDataset` construction: the output of an observable
+can be a scalar or a vector (a curve).

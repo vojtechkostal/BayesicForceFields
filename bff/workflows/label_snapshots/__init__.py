@@ -1,1 +1,0 @@
-"""Reference-snapshot labeling workflow."""

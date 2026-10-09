@@ -18,10 +18,12 @@ class FakeModel:
         *,
         nuisance: float | None = None,
         n_eff: float = 2.0,
+        tolerance: float = 0.0,
     ) -> None:
         self.prediction = prediction
         self.nuisance = nuisance
         self.n_eff = n_eff
+        self.tolerance = tolerance
 
     def predict(self, params: torch.Tensor) -> torch.Tensor:
         return self.prediction[: len(params)].to(params.device)
@@ -46,7 +48,7 @@ def test_loo_log_likelihood_returns_one_value_per_theta() -> None:
 def test_gaussian_log_likelihood_uses_free_and_fixed_nuisance() -> None:
     problem = SimpleNamespace(
         n_params=1,
-        constraint=None,
+        specs=None,
         observations={
             "free": torch.tensor([1.0, 2.0]),
             "fixed": torch.tensor([0.0, 1.0]),
@@ -69,13 +71,13 @@ def test_gaussian_log_likelihood_uses_free_and_fixed_nuisance() -> None:
 
 
 def test_gaussian_log_likelihood_masks_invalid_parameters() -> None:
-    class Constraint:
-        def __call__(self, params: torch.Tensor) -> torch.Tensor:
+    class Specification:
+        def is_valid(self, params: torch.Tensor) -> torch.Tensor:
             return params[:, 0] >= 0.0
 
     problem = SimpleNamespace(
         n_params=1,
-        constraint=Constraint(),
+        specs=Specification(),
         observations={"qoi": torch.tensor([0.0])},
         models={"qoi": FakeModel(torch.tensor([[0.0], [0.0]]), nuisance=1.0)},
     )
@@ -94,7 +96,7 @@ def test_gaussian_log_likelihood_scales_complete_term_by_n_eff(
     sigma = 0.5
     problem = SimpleNamespace(
         n_params=1,
-        constraint=None,
+        specs=None,
         observations={"qoi": torch.tensor([1.0, 3.0])},
         models={
             "qoi": FakeModel(
@@ -120,7 +122,7 @@ def test_gaussian_log_likelihood_is_invariant_to_duplicated_bins() -> None:
     theta = torch.tensor([[0.0]])
     base = SimpleNamespace(
         n_params=1,
-        constraint=None,
+        specs=None,
         observations={"qoi": torch.tensor([1.0, 3.0])},
         models={
             "qoi": FakeModel(
@@ -132,7 +134,7 @@ def test_gaussian_log_likelihood_is_invariant_to_duplicated_bins() -> None:
     )
     duplicated = SimpleNamespace(
         n_params=1,
-        constraint=None,
+        specs=None,
         observations={"qoi": torch.tensor([1.0, 3.0, 1.0, 3.0])},
         models={
             "qoi": FakeModel(
@@ -147,3 +149,27 @@ def test_gaussian_log_likelihood_is_invariant_to_duplicated_bins() -> None:
         gaussian_log_likelihood(theta, base),
         gaussian_log_likelihood(theta, duplicated),
     )
+
+
+@pytest.mark.parametrize("tolerance", [0.0, 0.3])
+def test_tolerance_adds_to_the_variance_of_each_observation(
+    tolerance: float,
+) -> None:
+    sigma = 0.5
+    problem = SimpleNamespace(
+        n_params=1,
+        specs=None,
+        observations={"qoi": torch.tensor([1.0, 3.0])},
+        models={
+            "qoi": FakeModel(
+                torch.tensor([[0.0, 1.0]]), n_eff=4.0, tolerance=tolerance
+            )
+        },
+    )
+    theta = torch.tensor([[0.0, np.log(sigma)]], dtype=torch.float32)
+
+    result = gaussian_log_likelihood(theta, problem)
+
+    variance = sigma**2 + tolerance**2
+    expected = -0.5 * 4.0 * 2.5 / variance - 0.5 * 4.0 * np.log(variance)
+    assert result.item() == pytest.approx(expected)

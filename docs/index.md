@@ -1,91 +1,82 @@
 # Bayesic Force Fields
 
-<img src="assets/bff-logo.svg" alt="BFF logo" width="300">
+<img src="assets/bff-logo.svg" alt="BFF logo" width="260">
 
-Bayesic Force Fields (BFF) is a command-line workflow for learning
-fixed-charge molecular force fields from trajectory observables.
+Bayesic Force Fields (BFF) learns fixed-charge force-field parameters for
+GROMACS by Bayesian inference. It runs classical MD for many sampled
+parameter sets, compares quantities of interest (QoIs) such as RDFs or free
+energy profiles with a reference simulation, fits Gaussian-process surrogates
+to them, and samples the posterior distribution of the parameters.
 
-Publication:
-[Bayesian Learning for Accurate and Robust Biomolecular Force Fields](https://pubs.acs.org/doi/10.1021/acs.jctc.5c02051)
+Paper: [Bayesian Learning for Accurate and Robust Biomolecular Force Fields](https://pubs.acs.org/doi/10.1021/acs.jctc.5c02051),
+*J. Chem. Theory Comput.* 2026 ([arXiv:2511.05398](https://arxiv.org/abs/2511.05398)).
+The code used for the paper is archived as the Git tag `v0.0.1`.
 
-Preprint:
-[arXiv:2511.05398](https://arxiv.org/abs/2511.05398)
-
-For exact reproduction of the published paper data, use the archived Git tag
-`v0.0.1`. The current `bfflearn` package is the refactored workflow.
-See the [changelog](changelog.md) for post-publication highlights.
-
-## What BFF Does
-
-BFF uses labeling as an MLIP handoff alongside its parameter-learning workflow:
+## Workflow
 
 ```text
-build -> label-snapshots -> external MLIP workflow
-      -> sample-parameters -> build-qoi-datasets -> fit-lgp -> learn -> validate
+  bff build                 build and equilibrate the GROMACS systems
+      │
+      ▼
+  reference MD              outside BFF: AIMD or an MLIP
+      │
+      ▼
+  bff sample-parameters     draw parameter sets, run classical MD for each
+      │
+      ▼
+  bff build-qoi-datasets    compute the QoIs of every sample and of the reference
+      │
+      ▼
+  bff fit-lgp               fit a Gaussian-process surrogate per QoI
+      │
+      ▼
+  bff learn                 sample the posterior of the parameters (MCMC)
+      │
+      ▼
+  bff validate              rerun MD with posterior parameters
 ```
 
-- `build`: equilibrate systems and run seeded production trajectories
-- `label-snapshots`: extract trajectory frames and label them with CP2K
-- `sample-parameters`: run sampled force-field MD campaigns
-- `build-qoi-datasets`: compute quantities of interest from sample and reference data
-- `fit-lgp`: train fingerprinted surrogate models
-- `learn`: infer posterior force-field parameters
-- `validate`: rerun selected posterior samples
+!!! note "BFF does not generate the reference data"
+    You run the reference simulation yourself. We recommend ab initio MD or a
+    machine-learned interatomic potential (MLIP), ideally a foundation model
+    fine-tuned for your system. For fine-tuning, the repository provides a
+    CP2K labeling script that is not installed by `pip`; see
+    [Reference data](reference-trajectories.md).
 
-## Supported Learned Parameters
+[How BFF works](workflow.md) describes what each stage reads and writes.
 
-BFF currently learns GROMACS partial charges, Lennard-Jones sigma and epsilon,
-and function-9 dihedral force constants. A single bound can tie multiple atom
-names or atom types to one learned value. Charge parameters also support
-hierarchical residue- or system-level constraints.
-
-See the [sample configuration reference](configuration/sample-parameters.md#parameter-labels)
-for the accepted labels, matching rules, and examples.
-
-## Quick Start
-
-Install BFF, copy the example tree, then run the acetate walkthrough:
+## Quick start
 
 ```bash
 mamba create -n bfflearn python=3.10 pip
 mamba activate bfflearn
+pip install torch     # the build for your machine: https://pytorch.org/get-started/locally/
 pip install bfflearn
 
 bff examples
 cd examples/acetate
 ```
 
-!!! warning
-    Install the PyTorch build that matches your machine separately before
-    fitting or learning. Use the
-    [official PyTorch selector](https://pytorch.org/get-started/locally/) for
-    CPU or CUDA installation commands.
+Each stage of the [acetate example](examples/acetate.md) is a directory with
+its config; run `bff <stage> config.yaml` inside it.
 
-Each example stage has config templates. Copy the needed files into the stage
-directory, edit them there, and run BFF from that directory:
+## Learned parameters
 
-```bash
-mkdir -p 01-build
-cp configs/01-build-colvars.yaml 01-build/config.yaml
-cd 01-build
-bff build config.yaml
-cd ..
+| Parameter | Label in `bounds` |
+| --- | --- |
+| Partial charge | `charge O1 O2` |
+| Lennard-Jones sigma | `sigma OW` |
+| Lennard-Jones epsilon | `epsilon OW` |
+| Function-9 dihedral force constant | `dihedraltype9_3_180` |
 
-mkdir -p 02-reference-snapshots
-cp configs/02-reference-snapshots-local.yaml 02-reference-snapshots/config.yaml
-cd 02-reference-snapshots
-bff label-snapshots config.yaml
-```
+Names in one label share one value; charges can be tied by
+[charge constraints](configuration/sample-parameters.md#charge-constraints).
+See [parameter labels](configuration/sample-parameters.md#parameter-labels).
 
-Continue with the stages in the [acetate example](examples/acetate.md).
-
-## Where To Go Next
+## Where to go next
 
 - [Installation](installation.md)
-- [Architecture](architecture.md)
-- [Command-line interface](cli.md)
-- [Examples overview](examples/index.md)
-- [Configuration reference](configuration/build.md)
+- [How BFF works](workflow.md)
+- [All settings](configuration/index.md), stage by stage
+- [Examples](examples/index.md)
 - [Development](development.md)
-- [Contributing](https://github.com/vojtechkostal/BayesicForceFields/blob/main/CONTRIBUTING.md)
-- [Support](https://github.com/vojtechkostal/BayesicForceFields/blob/main/SUPPORT.md)

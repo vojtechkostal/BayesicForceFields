@@ -1,14 +1,11 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Literal
 
-from .._shared.config import (
-    PathLike,
-    SimulationCampaignConfig,
-    _load_campaign_common,
-    _validate_bounds,
-)
+from ..campaign.config import SimulationCampaignConfig, load_campaign_config
+from ..config import ConfigSection, PathLike
 
 
 @dataclass(frozen=True)
@@ -19,118 +16,86 @@ class ChargeConstraintConfig:
     implicit: str
 
 
+def _load_bounds(config: ConfigSection) -> dict[str, tuple[float, float]]:
+    bounds: dict[str, tuple[float, float]] = {}
+    for name, value in config.mapping("bounds").items():
+        field = f"bounds.{name}"
+        if not (
+            isinstance(value, list)
+            and len(value) == 2
+            and all(
+                isinstance(x, (int, float)) and not isinstance(x, bool)
+                and math.isfinite(x)
+                for x in value
+            )
+            and value[0] < value[1]
+        ):
+            raise ValueError(
+                f"{field} must be [lower, upper] with finite lower < upper, "
+                f"got {value!r}."
+            )
+        bounds[str(name)] = (float(value[0]), float(value[1]))
+    if not bounds:
+        raise ValueError("bounds must define at least one parameter.")
+    return bounds
+
+
 @dataclass(frozen=True, kw_only=True)
 class SampleParametersConfig(SimulationCampaignConfig):
     bounds: dict[str, tuple[float, float]]
     charge_constraints: tuple[ChargeConstraintConfig, ...]
     n_samples: int
+    seed: int | None = None
 
     @classmethod
-    def load(cls, fn_config: PathLike) -> 'SampleParametersConfig':
-        _, _, config, common = _load_campaign_common(fn_config)
-
-        allowed = {
-            'campaign_dir',
-            'log',
-            'gmx_cmd',
-            'job_scheduler',
-            'source',
-            'systems',
-            'dispatch',
-            'compress',
-            'cleanup',
-            'store',
-            'slurm',
-            'bounds',
-            'charge_constraints',
-            'n_samples',
-        }
-        unknown = set(config) - allowed
-        if unknown:
-            raise ValueError(
-                'Sample-parameters configuration contains unsupported key(s): '
-                + ', '.join(sorted(unknown))
-            )
-
-        required = [
-            'bounds',
-            'charge_constraints',
-            'n_samples',
-        ]
-        missing = [key for key in required if key not in config]
-        if missing:
-            raise ValueError(
-                'Sample-parameters workflow requires configuration key(s): '
-                + ', '.join(repr(key) for key in missing)
-            )
-
-        bounds = _validate_bounds(config['bounds'])
-        raw_constraints = config['charge_constraints']
-        if not isinstance(raw_constraints, list):
-            raise ValueError("'charge_constraints' must be a list.")
-        charge_constraints: list[ChargeConstraintConfig] = []
-        for index, constraint in enumerate(raw_constraints):
-            if not isinstance(constraint, dict):
-                raise ValueError(f"charge_constraints[{index}] must be a mapping.")
-            unknown_constraint = set(constraint) - {
-                'selection',
-                'target',
-                'scope',
-                'implicit',
-            }
-            if unknown_constraint:
-                raise ValueError(
-                    f'charge_constraints[{index}] contains unsupported key(s): '
-                    + ', '.join(sorted(unknown_constraint))
-                )
-            missing = [
-                key
-                for key in ('selection', 'target', 'scope', 'implicit')
-                if key not in constraint
+    def load(cls, fn_config: PathLike) -> SampleParametersConfig:
+        config, common = load_campaign_config(
+            fn_config,
+            stage="sample-parameters",
+            stage_keys={"bounds", "charge_constraints", "n_samples", "seed"},
+            stage_required=("bounds", "n_samples"),
+        )
+        bounds = _load_bounds(config)
+        constraints: list[ChargeConstraintConfig] = []
+        keys = ("selection", "target", "scope", "implicit")
+        raw_constraints = (
+            config.sections("charge_constraints", allowed=keys, required=keys)
+            if config.get("charge_constraints")
+            else []
+        )
+        for raw in raw_constraints:
+            # The implicit atom (name or type) selects the charge parameter
+            # that is solved from the constraint instead of being sampled.
+            atom = raw.string("implicit")
+            labels = [
+                label
+                for label in bounds
+                if label.startswith("charge ") and atom in label.split()[1:]
             ]
-            if missing:
+            if len(labels) != 1:
                 raise ValueError(
-                    f"charge_constraints[{index}] is missing required key(s): "
-                    + ', '.join(repr(key) for key in missing)
+                    f"{raw.field('implicit')} must be an atom name or type of "
+                    f"exactly one 'charge ...' parameter in bounds, got {atom!r}."
                 )
-            scope = str(constraint['scope'])
-            if scope not in {'system', 'residue'}:
-                raise ValueError(
-                    f"charge_constraints[{index}].scope must be 'system' or "
-                    f"'residue', got {scope!r}."
-                )
-            implicit = str(constraint['implicit'])
-            if implicit not in bounds:
-                raise ValueError(
-                    f"charge_constraints[{index}].implicit ({implicit!r}) must "
-                    "match a parameter defined in 'bounds'."
-                )
-            if not implicit.startswith('charge '):
-                raise ValueError(
-                    f"charge_constraints[{index}].implicit must be a charge "
-                    f"parameter, got {implicit!r}."
-                )
-            charge_constraints.append(
+            implicit = labels[0]
+            constraints.append(
                 ChargeConstraintConfig(
-                    selection=str(constraint['selection']),
-                    target=float(constraint['target']),
-                    scope=scope,
+                    selection=raw.string("selection"),
+                    target=raw.number("target"),
+                    scope=raw.string("scope", choices=("system", "residue")),
                     implicit=implicit,
                 )
             )
-        implicit_params = [constraint.implicit for constraint in charge_constraints]
+        implicit_params = [constraint.implicit for constraint in constraints]
         if len(implicit_params) != len(set(implicit_params)):
             raise ValueError(
-                "Each charge constraint must define a distinct implicit parameter."
+                "charge_constraints must each solve a different charge parameter; "
+                f"implicit atoms resolve to {implicit_params}."
             )
-
-        n_samples = int(config['n_samples'])
-        if n_samples <= 0:
-            raise ValueError("'n_samples' must be a positive integer.")
-
         return cls(
             **common,
             bounds=bounds,
-            charge_constraints=tuple(charge_constraints),
-            n_samples=n_samples,
+            charge_constraints=tuple(constraints),
+            n_samples=config.integer("n_samples", minimum=1),
+            seed=config.integer("seed", None, minimum=0),
         )

@@ -4,7 +4,6 @@
 
 - Python 3.10 or newer
 - GROMACS available as `gmx` for `build`, `sample-parameters`, and `validate`
-- CP2K only for `label-snapshots`
 - PLUMED only for PLUMED-biased systems
 
 ## Recommended User Install

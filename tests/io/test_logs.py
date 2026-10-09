@@ -1,11 +1,11 @@
+import io
+import sys
 from pathlib import Path
-from types import SimpleNamespace
 
-import numpy as np
+import pytest
 
 from bff.io.logs import Logger
 from bff.io.progress import iter_progress
-from bff.workflows._shared.campaign import run_campaign
 
 
 def test_logger_writes_colored_console_and_plain_file(
@@ -39,18 +39,41 @@ def test_logger_progress_status_right_aligns_percentage(capsys) -> None:
 def test_iter_progress_prints_pytest_style_summary(capsys) -> None:
     logger = Logger("test", color=False, width=50)
 
-    assert list(iter_progress(range(3), total=3, logger=logger, label="items")) == [
-        0,
-        1,
-        2,
-    ]
+    items = iter_progress(range(3), total=3, logger=logger, label="items", log_every=1)
+    assert list(items) == [0, 1, 2]
 
     out = capsys.readouterr().out
     assert "[ 33%]" in out
     assert "[100%]" not in out
-    assert "\r" not in out
-    assert "Done. Finished in" in out
+    assert "items: Done. | 3/3 in 0s" in out
     assert "===" not in out
+
+
+def test_iter_progress_logs_every_n_items_and_the_console_follows(
+    tmp_path: Path, capsys
+) -> None:
+    log = tmp_path / "workflow.log"
+    logger = Logger("test", fn_log=log, mode="w", color=False)
+
+    list(iter_progress(range(250), total=250, logger=logger, label="items"))
+
+    lines = log.read_text().splitlines()
+    assert [line.split("|")[0].strip() for line in lines[:2]] == [
+        "> items: 100/250",
+        "> items: 200/250",
+    ]
+    assert "items: Done. | 250/250" in lines[2]
+    # Not a terminal: the console shows the same lines, not one per item.
+    assert capsys.readouterr().out.count("items:") == 3
+
+
+def test_iter_progress_rejects_a_bad_stride() -> None:
+    with pytest.raises(ValueError, match="log_every"):
+        list(
+            iter_progress(
+                range(3), total=3, logger=Logger("t"), label="x", log_every=0
+            )
+        )
 
 
 def test_status_can_be_console_only(tmp_path: Path, capsys) -> None:
@@ -63,86 +86,10 @@ def test_status_can_be_console_only(tmp_path: Path, capsys) -> None:
     assert log.read_text() == ""
 
 
-def test_campaign_progress_is_visible_but_not_written_to_physical_log(
-    tmp_path: Path,
-    capsys,
-) -> None:
-    log = tmp_path / "campaign.log"
-    specs = tmp_path / "specs.yaml"
-    specs.write_text("bounds: {}\ncharge_constraints: []\n")
-    config = SimpleNamespace(
-        campaign_dir=tmp_path / "campaign",
-        dispatch=False,
-        job_scheduler="local",
-        gmx_cmd="gmx",
-        store=(),
-        cleanup=False,
-        compress=False,
-        slurm=None,
-    )
-    logger = Logger(
-        "sample-parameters",
-        fn_log=log,
-        mode="w",
-        color=False,
-    )
-
-    run_campaign(
-        config=config,
-        fn_specs=specs,
-        systems=[],
-        parameter_samples=np.array([[1.0], [2.0]]),
-        logger=logger,
-    )
-
-    console = capsys.readouterr().out
-    assert "Staging jobs: 0/2" in console
-    assert "[  0%]" in console
-    assert "Staging jobs: 1/2" in console
-    assert "[ 50%]" in console
-    assert "Staging jobs: Done. | 2/2 [100%]" in console
-
-    text = log.read_text()
-    assert "Staging jobs: 0/2" not in text
-    assert "Staging jobs: 1/2" not in text
-    assert "Staging jobs: Done. | 2/2 [100%]" in text
-
-
-def test_single_local_campaign_shows_progress_while_md_runs(
-    tmp_path: Path,
-    capsys,
-    monkeypatch,
-) -> None:
-    specs = tmp_path / "specs.yaml"
-    specs.write_text("bounds: {}\ncharge_constraints: []\n")
-    config = SimpleNamespace(
-        campaign_dir=tmp_path / "campaign",
-        dispatch=True,
-        job_scheduler="local",
-        gmx_cmd="gmx",
-        store=(),
-        cleanup=False,
-        compress=False,
-        slurm=None,
-    )
-    logger = Logger("validate", color=False, width=50)
-    output_before_run = []
-
-    def fake_run(*args, **kwargs):
-        output_before_run.append(capsys.readouterr().out)
-        return SimpleNamespace(returncode=0)
-
-    monkeypatch.setattr("subprocess.run", fake_run)
-
-    run_campaign(
-        config=config,
-        fn_specs=specs,
-        systems=[],
-        parameter_samples=np.array([[1.0]]),
-        logger=logger,
-    )
-
-    assert len(output_before_run) == 1
-    assert "Running MD: 0/1" in output_before_run[0]
-    assert "[  0%]" in output_before_run[0]
-    assert "Running MD: Done. | 1/1 [100%]" in capsys.readouterr().out
+def test_non_tty_progress_does_not_overwrite_lines(monkeypatch) -> None:
+    stream = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", stream)
+    logger = Logger("sample")
+    logger.status("Work", "1/2", overwrite=True)
+    logger.done("Work")
+    assert "\r" not in stream.getvalue()

@@ -1,0 +1,4 @@
+# Fit one local-GP surrogate per QoI dataset (CPU).
+datasets:
+  rdf: {data: ../04-build-qoi-datasets/qoi/rdf.pt, mean: sigmoid}
+  pmf: {data: ../04-build-qoi-datasets/qoi/pmf.pt, mean: 0}  # PMFs have zero mean

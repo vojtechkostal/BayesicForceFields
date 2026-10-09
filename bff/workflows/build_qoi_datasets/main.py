@@ -8,12 +8,11 @@ from typing import Any
 
 import numpy as np
 
-from ...domain.sample import SampleSet
+from ...domain.samples import SampleSet
 from ...io.logs import Logger
-from ...io.utils import save_json
 from ...qoi.analysis import AnalysisTask, analyze_samples
-from ...qoi.data import QoI, QoIDataset
-from .config import BuildQoIDatasetsConfig
+from ...qoi.dataset import QoI, QoIDataset
+from .config import BuildQoIDatasetsConfig, required_input_roles
 
 
 def _validate_qoi_blocks(blocks: list[QoI], *, context: str) -> None:
@@ -67,154 +66,174 @@ def _shared_block_metadata(
     return shared_settings, shared_metadata
 
 
-def _training_tasks(
-    sample_set: SampleSet,
-    selected_ids: tuple[str, ...],
-) -> list[AnalysisTask]:
-    campaign_ids = [system.system_id for system in sample_set.systems]
-    missing = sorted(set(selected_ids) - set(campaign_ids))
-    if missing:
-        raise ValueError(
-            f"training_samples.systems requests IDs absent from "
-            f"{sample_set.campaign_dir / 'samples.yaml'}: {missing}."
-        )
-    tasks: list[AnalysisTask] = []
-    for sample in sample_set.samples:
-        by_id = dict(zip(sample.system_ids, sample.input_roles))
-        systems: dict[str, dict[str, Any]] = {}
-        for system_id in selected_ids:
-            if system_id not in by_id:
-                raise ValueError(
-                    f"Sample {sample.sample_id!r} is missing system {system_id!r}."
-                )
-            systems[system_id] = dict(by_id[system_id])
-        tasks.append((sample.sample_id, systems))
-    return tasks
+def _mismatch(reference: QoI, block: QoI) -> str | None:
+    """How a sample's QoI differs from the reference's, if it does."""
+    if block.settings != reference.settings:
+        return f"settings {block.settings!r} differ from {reference.settings!r}"
+    if block.labels != reference.labels:
+        return f"labels {block.labels!r} differ from {reference.labels!r}"
+    if block.n_values != reference.n_values:
+        return f"{block.n_values} values instead of {reference.n_values}"
+    if block.values_per_label != reference.values_per_label:
+        return "values_per_label differs from the reference"
+    return None
 
 
 def main(fn_config: str | Path) -> None:
     started = time.perf_counter()
     config = BuildQoIDatasetsConfig.load(fn_config)
     training = config.training_samples
-    selected_ids = training.system_ids
-    config.output.directory.mkdir(parents=True, exist_ok=True)
-    logger = Logger("build-qoi-datasets", str(config.output.log), mode="w")
-    sample_set = SampleSet.from_dir(
-        training.manifest.parent, manifest=training.manifest
-    )
+    system_ids = training.system_ids
+    sample_set = SampleSet.from_manifest(training.manifest)
+    absent = sorted(set(system_ids) - set(sample_set.system_ids))
+    if absent:
+        raise ValueError(
+            f"training_samples.systems lists {absent}, which the campaign "
+            f"{training.manifest} does not contain."
+        )
     routines_by_system = {
         system_id: tuple(
             routine for routine in config.routines if system_id in routine.systems
         )
-        for system_id in selected_ids
+        for system_id in system_ids
     }
-    reference_by_id = {
+
+    config.output.directory.mkdir(parents=True, exist_ok=True)
+    logger = Logger("build-qoi-datasets", str(config.output.log), mode="w")
+    logger.section("Build QoI Datasets")
+    logger.kv("Config", config.fn_config)
+    logger.kv("Campaign", training.manifest)
+    logger.kv("Systems", ", ".join(system_ids))
+    logger.kv(
+        "Samples",
+        f"{len(sample_set.samples)} completed, {training.workers} worker(s)"
+        if training.workers != -1
+        else f"{len(sample_set.samples)} completed, all CPUs",
+    )
+    logger.kv("Routines", ", ".join(routine.name for routine in config.routines))
+    logger.kv("Output", config.output.directory)
+    logger.blank()
+
+    # Samples are skipped, not fatal: missing files, missing roles, failed
+    # analysis, or QoIs that do not match the reference.
+    skipped: dict[str, str] = dict(sample_set.unusable)
+    tasks: list[AnalysisTask] = []
+    for sample in sample_set.samples:
+        inputs = {system_id: sample.inputs[system_id] for system_id in system_ids}
+        missing = {
+            system_id: sorted(
+                required_input_roles(routines_by_system[system_id])
+                - set(inputs[system_id])
+            )
+            for system_id in system_ids
+        }
+        missing = {key: value for key, value in missing.items() if value}
+        if missing:
+            skipped[sample.sample_id] = (
+                f"no {missing} output; store it in the campaign (trajectory: xtc)"
+            )
+            continue
+        tasks.append((sample.sample_id, inputs))
+
+    reference_inputs = {
         system.system_id: dict(system.inputs.inputs)
         for system in config.reference.systems
     }
-    reference_tasks: list[AnalysisTask] = [
-        (
-            "reference",
-            {system_id: reference_by_id[system_id] for system_id in selected_ids},
-        )
-    ]
-    training_tasks = _training_tasks(sample_set, selected_ids)
-
-    logger.section("Build QoI Datasets")
-    logger.kv("Config", config.fn_config)
-    logger.kv("Sample manifest", training.manifest)
-    logger.kv("Systems", ", ".join(selected_ids))
-    logger.kv("Samples", sample_set.n_samples)
-    logger.kv("Routines", len(config.routines))
-    logger.kv("Output directory", config.output.directory)
-    logger.blank()
-
     ref_frames = config.reference.frames
-    reference_results = analyze_samples(
-        reference_tasks,
+    reference_results, reference_failures = analyze_samples(
+        [("reference", reference_inputs)],
         routines_by_system=routines_by_system,
-        start=ref_frames.start,
-        stop=ref_frames.stop,
-        step=ref_frames.step,
+        frames=slice(ref_frames.start, ref_frames.stop, ref_frames.step),
         workers=1,
-        progress_stride=1,
-        progress_label="Reference QoI",
-        logger=logger,
         in_memory=config.in_memory,
-    )
-    logger.blank()
-    train_frames = training.frames
-    training_results = analyze_samples(
-        training_tasks,
-        routines_by_system=routines_by_system,
-        start=train_frames.start,
-        stop=train_frames.stop,
-        step=train_frames.step,
-        workers=training.workers,
-        progress_stride=training.progress_stride,
-        progress_label="Training QoI",
         logger=logger,
-        in_memory=config.in_memory,
+        label="Reference",
     )
-    logger.blank()
-
-    sample_ids = sample_set.sample_ids
-    raw: dict[str, Any] = {"reference": {}, "samples": {}}
-    for routine in config.routines:
-        system_ids = routine.systems
-        ref_blocks = [
-            reference_results["reference"][system_id][routine.name]
-            for system_id in system_ids
-        ]
-        _validate_qoi_blocks(
-            ref_blocks, context=f"Reference routine {routine.name!r}"
+    if reference_failures:
+        raise ValueError(
+            f"Reference analysis failed: {reference_failures['reference']}"
         )
-        sample_blocks = {
-            sample_id: [
-                training_results[sample_id][system_id][routine.name]
-                for system_id in system_ids
-            ]
-            for sample_id in sample_ids
-        }
-        for sample_id, blocks in sample_blocks.items():
-            _validate_qoi_blocks(
-                ref_blocks + blocks,
-                context=f"Routine {routine.name!r}, sample {sample_id!r}",
-            )
+    reference = reference_results["reference"]
+    for routine in config.routines:
+        _validate_qoi_blocks(
+            [reference[system_id][routine.name] for system_id in routine.systems],
+            context=f"Reference routine {routine.name!r}",
+        )
+
+    train_frames = training.frames
+    results, failures = analyze_samples(
+        tasks,
+        routines_by_system=routines_by_system,
+        frames=slice(train_frames.start, train_frames.stop, train_frames.step),
+        workers=training.workers,
+        in_memory=config.in_memory,
+        logger=logger,
+        label="Samples",
+    )
+    skipped |= failures
+    for sample_id, result in list(results.items()):
+        for routine in config.routines:
+            for system_id in routine.systems:
+                problem = _mismatch(
+                    reference[system_id][routine.name], result[system_id][routine.name]
+                )
+                if problem and sample_id in results:
+                    skipped[sample_id] = f"{routine.name} of {system_id}: {problem}"
+                    del results[sample_id]
+    for sample_id in sorted(skipped):
+        logger.warn(f"Sample {sample_id} skipped: {skipped[sample_id]}")
+    samples = [sample for sample in sample_set.samples if sample.sample_id in results]
+    if not samples:
+        raise ValueError(
+            "No sample could be analyzed; the reasons are listed in "
+            f"{config.output.log}."
+        )
+
+    logger.blank()
+    sample_ids = [sample.sample_id for sample in samples]
+    X = np.asarray([sample.params for sample in samples], dtype=float)
+    for routine in config.routines:
+        ref_blocks = [
+            reference[system_id][routine.name]
+            for system_id in routine.systems
+        ]
         settings, metadata = _shared_block_metadata(ref_blocks)
-        metadata["system_ids"] = list(system_ids)
+        metadata["system_ids"] = list(routine.systems)
         dataset = QoIDataset(
             name=routine.name,
-            inputs=sample_set.inputs,
-            outputs=np.asarray(
+            X=X,
+            y=np.asarray(
                 [
-                    np.concatenate([block.values for block in blocks])
-                    for blocks in sample_blocks.values()
+                    np.concatenate(
+                        [
+                            results[sample_id][system_id][routine.name].values
+                            for system_id in routine.systems
+                        ]
+                    )
+                    for sample_id in sample_ids
                 ],
                 dtype=float,
             ),
-            outputs_ref=np.concatenate([block.values for block in ref_blocks]),
-            labels=_labels(ref_blocks, system_ids),
+            y_ref=np.concatenate([block.values for block in ref_blocks]),
+            labels=_labels(ref_blocks, routine.systems),
             values_per_label=ref_blocks[0].values_per_label,
             settings=settings,
             metadata=metadata,
+            sample_ids=sample_ids,
+            parameter_names=sample_set.parameter_names,
         )
         fn_dataset = config.output.directory / f"{routine.name}.pt"
         dataset.write(fn_dataset)
-        raw["reference"][routine.name] = [block.to_dict() for block in ref_blocks]
-        raw["samples"][routine.name] = {
-            sample_id: [block.to_dict() for block in blocks]
-            for sample_id, blocks in sample_blocks.items()
-        }
-        logger.done("QoI dataset", detail=str(fn_dataset), level=1)
+        logger.done(
+            routine.name,
+            detail=f"{dataset.n_samples} samples x {dataset.y.shape[1]} values"
+            f" | {fn_dataset}",
+        )
 
-    if config.output.write_raw:
-        fn_raw = config.output.directory / "raw.json"
-        save_json(raw, fn_raw)
-        logger.done("Raw QoI data", detail=str(fn_raw), level=1)
     logger.blank()
+    total = len(sample_set.samples) + len(sample_set.unusable)
     logger.done(
-        "Analysis",
-        detail=f"finished in {time.perf_counter() - started:.2f}s",
-        level=1,
+        "Build QoI Datasets",
+        detail=f"{len(samples)} of {total} samples, {len(config.routines)} "
+        f"dataset(s) | {time.perf_counter() - started:.1f} s",
     )

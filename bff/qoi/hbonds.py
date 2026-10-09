@@ -1,233 +1,214 @@
-"""Explicit-selection hydrogen-bond quantities of interest."""
+"""Built-in solute-water hydrogen-bond routine."""
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from typing import Any
 
 import MDAnalysis as mda
 import numpy as np
 from MDAnalysis.exceptions import NoDataError
 from MDAnalysis.lib.distances import calc_angles, capped_distance
 
-from .data import QoI
-from .rdf import _box_and_volume, _select_group
+from .dataset import QoI
+from .trajectory import get_unitcell, select_atoms
 
-__all__ = ["compute_hydrogen_bond_qoi"]
+OPTIONS = {
+    "selection",
+    "water_selection",
+    "elements",
+    "donor_acceptor_cutoff",
+    "angle_cutoff",
+    "pbc",
+    "update_selections",
+}
 
 
-def validate_hydrogen_bond_options(
-    options: Mapping[str, Any],
+def _site_keys(atoms: mda.AtomGroup) -> tuple[np.ndarray, np.ndarray]:
+    """Return unique ``resname(type)`` keys and each atom's index into them."""
+    keys = [
+        f"{resname}({atom_type})"
+        for resname, atom_type in zip(atoms.resnames, atoms.types)
+    ]
+    return np.unique(np.asarray(keys, dtype=str), return_inverse=True)
+
+
+def hydrogen_bonds(
+    universe: mda.Universe,
     *,
-    context: str = "Hydrogen-bond options",
-) -> set[str]:
-    """Validate hydrogen-bond options and return canonical heavy elements."""
-    if not isinstance(options.get("pbc", True), bool) or not isinstance(
-        options.get("update_selections", False), bool
-    ):
-        raise ValueError(f"{context}: boolean options must be true or false.")
+    frames: slice,
+    options: dict[str, Any],
+) -> QoI:
+    """Average number of hydrogen bonds per frame between a solute and water.
 
+    Options: ``selection`` (solute, required), ``water_selection`` (default
+    ``"resname SOL HOH WAT"``), ``elements`` (heavy-atom sites, default
+    ``[O, N, S]``), ``donor_acceptor_cutoff`` (3.5 Angstrom), ``angle_cutoff``
+    (150 degrees), ``pbc`` (true), and ``update_selections`` (false).
+
+    Donor hydrogens come from topology bonds. Both solute-to-water and
+    water-to-solute bonds are counted, one value per
+    ``"donor_resname(type) to acceptor_resname(type)"`` label.
+    """
+    unknown = set(options) - OPTIONS
+    if unknown:
+        raise ValueError(
+            f"unsupported hydrogen-bond option(s): {', '.join(sorted(unknown))}."
+        )
+    if "selection" not in options:
+        raise ValueError("Hydrogen bonds require the 'selection' option.")
+    selection = options["selection"]
+    water_selection = options.get("water_selection", "resname SOL HOH WAT")
+    elements = options.get("elements", ("O", "N", "S"))
     distance_cutoff = options.get("donor_acceptor_cutoff", 3.5)
+    angle_cutoff = options.get("angle_cutoff", 150.0)
+    pbc = options.get("pbc", True)
+    update_selections = options.get("update_selections", False)
+    if not isinstance(pbc, bool) or not isinstance(update_selections, bool):
+        raise ValueError(
+            "Hydrogen-bond options pbc and update_selections must be booleans."
+        )
     if (
         not isinstance(distance_cutoff, (int, float))
         or isinstance(distance_cutoff, bool)
         or distance_cutoff <= 0
     ):
         raise ValueError(
-            f"{context}.donor_acceptor_cutoff must be positive, "
-            f"got {distance_cutoff!r}."
+            f"donor_acceptor_cutoff must be positive, got {distance_cutoff!r}."
         )
-    angle_cutoff = options.get("angle_cutoff", 150.0)
     if (
         not isinstance(angle_cutoff, (int, float))
         or isinstance(angle_cutoff, bool)
         or not 0 < angle_cutoff <= 180
     ):
-        raise ValueError(
-            f"{context}.angle_cutoff must be in (0, 180], got {angle_cutoff!r}."
-        )
-
-    elements = options.get("elements", ("O", "N", "S"))
+        raise ValueError(f"angle_cutoff must be in (0, 180], got {angle_cutoff!r}.")
     if not (
         isinstance(elements, (list, tuple))
         and elements
         and all(isinstance(element, str) and element for element in elements)
     ):
-        raise ValueError(f"{context}.elements must be a non-empty string list.")
-    allowed_elements = {element.capitalize() for element in elements}
-    if "H" in allowed_elements:
-        raise ValueError(f"{context}.elements must contain heavy atoms, not H.")
-    return allowed_elements
+        raise ValueError("Hydrogen-bond elements must be a non-empty string list.")
+    elements = tuple(sorted({element.capitalize() for element in elements}))
+    if "H" in elements:
+        raise ValueError("Hydrogen-bond elements must be heavy atoms, not H.")
 
-
-def _donor_hydrogen_pairs(
-    universe: mda.Universe,
-    sites: mda.AtomGroup,
-    *,
-    frame_index: int,
-) -> tuple[mda.AtomGroup, mda.AtomGroup]:
-    paired_donors: list[int] = []
-    paired_hydrogens: list[int] = []
+    solute = select_atoms(
+        universe, selection, updating=update_selections, field="selection"
+    )
+    water = select_atoms(
+        universe, water_selection, updating=update_selections, field="water_selection"
+    )
     try:
-        for donor in sites:
-            for bonded in donor.bonded_atoms:
-                if bonded.element == "H":
-                    paired_donors.append(donor.index)
-                    paired_hydrogens.append(bonded.index)
+        bonds = universe.bonds.indices
+        is_hydrogen = universe.atoms.elements == "H"
     except NoDataError as exc:
         raise ValueError(
-            "Hydrogen-bond analysis requires topology bond information; "
-            f"none is available at frame {frame_index}."
+            "Hydrogen-bond analysis requires topology bond and element information."
         ) from exc
-    if not paired_donors:
-        empty = universe.atoms[np.asarray([], dtype=int)]
-        return empty, empty
-    return (
-        universe.atoms[np.asarray(paired_donors, dtype=int)],
-        universe.atoms[np.asarray(paired_hydrogens, dtype=int)],
+    # Every (heavy atom, bonded hydrogen) pair of the topology.
+    donor_hydrogen = np.concatenate(
+        [bonds[is_hydrogen[bonds[:, 1]]], bonds[is_hydrogen[bonds[:, 0]]][:, ::-1]]
     )
-
-
-def _label(donor: Any, acceptor: Any) -> str:
-    return (
-        f"{donor.resname}({donor.type}) to "
-        f"{acceptor.resname}({acceptor.type})"
-    )
-
-
-def compute_hydrogen_bond_qoi(
-    universe: mda.Universe,
-    *,
-    selection: str,
-    water_selection: str = "resname SOL HOH WAT",
-    elements: tuple[str, ...] | list[str] = ("O", "N", "S"),
-    donor_acceptor_cutoff: float = 3.5,
-    angle_cutoff: float = 150.0,
-    pbc: bool = True,
-    update_selections: bool = False,
-    start: int = 0,
-    stop: int | None = None,
-    step: int = 1,
-) -> QoI:
-    """Count all solute-water hydrogen bonds for selected heavy-atom sites."""
-    allowed_elements = validate_hydrogen_bond_options(
-        {
-            "elements": elements,
-            "donor_acceptor_cutoff": donor_acceptor_cutoff,
-            "angle_cutoff": angle_cutoff,
-            "pbc": pbc,
-            "update_selections": update_selections,
-        }
-    )
-
-    solute_group = _select_group(
-        universe,
-        selection,
-        updating=update_selections,
-        field="selections.selection",
-    )
-    water_group = _select_group(
-        universe,
-        water_selection,
-        updating=update_selections,
-        field="selections.water_selection",
-    )
-    counts: dict[str, int] = {}
-    possible_labels: set[str] = set()
-    n_frames = 0
     angle_threshold = np.deg2rad(angle_cutoff)
-    directions: list[tuple[mda.AtomGroup, mda.AtomGroup, mda.AtomGroup]] | None = (
-        None
-    )
 
-    for frame_index, ts in enumerate(
-        universe.trajectory[slice(start, stop, step)], start=start
-    ):
-        box = None
-        if pbc:
-            box, _ = _box_and_volume(
-                ts, context=f"Hydrogen-bond frame {frame_index}"
-            )
+    possible_labels: set[str] = set()
+    counts: dict[str, int] = {}
+    directions: list[dict[str, Any]] = []
+    n_frames = 0
+    for ts in universe.trajectory[frames]:
+        box = get_unitcell(universe, ts) if pbc else None
 
-        if directions is None or update_selections:
-            for field, selection_text, group in (
-                ("selection", selection, solute_group),
-                ("water_selection", water_selection, water_group),
+        if n_frames == 0 or update_selections:
+            for field, text, group in (
+                ("selection", selection, solute),
+                ("water_selection", water_selection, water),
             ):
                 if len(group) == 0:
                     raise ValueError(
-                        f"Hydrogen-bond selection {field} became empty at frame "
-                        f"{frame_index}: {selection_text!r}."
+                        f"Hydrogen-bond {field} became empty at frame {ts.frame}: "
+                        f"{text!r}."
                     )
-            try:
-                solute_sites = solute_group[
-                    np.isin(solute_group.elements, tuple(allowed_elements))
-                ]
-                water_sites = water_group[
-                    np.isin(water_group.elements, tuple(allowed_elements))
-                ]
-            except NoDataError as exc:
-                raise ValueError(
-                    "Hydrogen-bond analysis requires topology element information."
-                ) from exc
-            if len(solute_sites) == 0:
-                raise ValueError(
-                    f"Hydrogen-bond selection contains no "
-                    f"{sorted(allowed_elements)} sites: {selection!r}."
-                )
-            if len(water_sites) == 0:
-                raise ValueError(
-                    "Hydrogen-bond water_selection contains no "
-                    f"{sorted(allowed_elements)} sites: {water_selection!r}."
-                )
+            solute_sites = solute[np.isin(solute.elements, elements)]
+            water_sites = water[np.isin(water.elements, elements)]
+            for field, text, sites in (
+                ("selection", selection, solute_sites),
+                ("water_selection", water_selection, water_sites),
+            ):
+                if len(sites) == 0:
+                    raise ValueError(
+                        f"Hydrogen-bond {field} contains no {list(elements)} "
+                        f"sites: {text!r}."
+                    )
 
             directions = []
-            for donor_sites, acceptor_sites in (
+            for donor_sites, acceptors in (
                 (solute_sites, water_sites),
                 (water_sites, solute_sites),
             ):
-                paired_donors, paired_hydrogens = _donor_hydrogen_pairs(
-                    universe,
-                    donor_sites,
-                    frame_index=frame_index,
-                )
+                pairs = donor_hydrogen[
+                    np.isin(donor_hydrogen[:, 0], donor_sites.indices)
+                ]
+                donors = universe.atoms[pairs[:, 0]]
+                donor_keys, donor_codes = _site_keys(donors)
+                acceptor_keys, acceptor_codes = _site_keys(acceptors)
+                pair_labels = [
+                    f"{donor_key} to {acceptor_key}"
+                    for donor_key in donor_keys
+                    for acceptor_key in acceptor_keys
+                ]
+                # A label is possible unless its only donor/acceptor is one atom.
+                donor_atoms = [
+                    set(donors.indices[donor_codes == i])
+                    for i in range(len(donor_keys))
+                ]
+                acceptor_atoms = [
+                    set(acceptors.indices[acceptor_codes == j])
+                    for j in range(len(acceptor_keys))
+                ]
+                for code, label in enumerate(pair_labels):
+                    i, j = divmod(code, len(acceptor_keys))
+                    if len(donor_atoms[i]) > 1 or donor_atoms[i] != acceptor_atoms[j]:
+                        possible_labels.add(label)
                 directions.append(
-                    (paired_donors, paired_hydrogens, acceptor_sites)
+                    {
+                        "donors": donors,
+                        "hydrogens": universe.atoms[pairs[:, 1]],
+                        "acceptors": acceptors,
+                        "donor_codes": donor_codes * len(acceptor_keys),
+                        "acceptor_codes": acceptor_codes,
+                        "pair_labels": pair_labels,
+                    }
                 )
-                for donor in paired_donors:
-                    for acceptor in acceptor_sites:
-                        if donor.index != acceptor.index:
-                            possible_labels.add(_label(donor, acceptor))
 
-        for paired_donors, paired_hydrogens, acceptor_sites in directions:
-            if len(paired_donors) == 0:
+        for direction in directions:
+            donors = direction["donors"]
+            acceptors = direction["acceptors"]
+            if len(donors) == 0:
                 continue
-
             pairs = capped_distance(
-                paired_donors.positions,
-                acceptor_sites.positions,
-                max_cutoff=float(donor_acceptor_cutoff),
+                donors.positions,
+                acceptors.positions,
+                max_cutoff=float(distance_cutoff),
                 box=box,
                 return_distances=False,
             )
-            if pairs.size:
-                nonself = (
-                    paired_donors.indices[pairs[:, 0]]
-                    != acceptor_sites.indices[pairs[:, 1]]
-                )
-                pairs = pairs[nonself]
-            if pairs.size:
-                donor_atoms = paired_donors[pairs[:, 0]]
-                hydrogen_atoms = paired_hydrogens[pairs[:, 0]]
-                acceptor_atoms = acceptor_sites[pairs[:, 1]]
-                angles = calc_angles(
-                    donor_atoms.positions,
-                    hydrogen_atoms.positions,
-                    acceptor_atoms.positions,
-                    box=box,
-                )
-                for index in np.flatnonzero(angles >= angle_threshold):
-                    label = _label(donor_atoms[index], acceptor_atoms[index])
-                    counts[label] = counts.get(label, 0) + 1
+            pairs = pairs[donors.indices[pairs[:, 0]] != acceptors.indices[pairs[:, 1]]]
+            if len(pairs) == 0:
+                continue
+            angles = calc_angles(
+                donors.positions[pairs[:, 0]],
+                direction["hydrogens"].positions[pairs[:, 0]],
+                acceptors.positions[pairs[:, 1]],
+                box=box,
+            )
+            pairs = pairs[angles >= angle_threshold]
+            label_counts = np.bincount(
+                direction["donor_codes"][pairs[:, 0]]
+                + direction["acceptor_codes"][pairs[:, 1]],
+                minlength=len(direction["pair_labels"]),
+            )
+            for code in np.flatnonzero(label_counts):
+                label = direction["pair_labels"][code]
+                counts[label] = counts.get(label, 0) + int(label_counts[code])
         n_frames += 1
 
     if n_frames == 0:
@@ -237,17 +218,16 @@ def compute_hydrogen_bond_qoi(
         raise ValueError(
             "Hydrogen-bond selections contain no non-self donor/acceptor pairs."
         )
-    values = np.asarray([counts.get(label, 0) / n_frames for label in labels])
     return QoI(
         name="hydrogen_bonds",
-        values=values,
+        values=np.asarray([counts.get(label, 0) / n_frames for label in labels]),
         labels=labels,
         values_per_label=1,
         settings={
             "selection": selection,
             "water_selection": water_selection,
-            "elements": tuple(sorted(allowed_elements)),
-            "donor_acceptor_cutoff": float(donor_acceptor_cutoff),
+            "elements": elements,
+            "donor_acceptor_cutoff": float(distance_cutoff),
             "angle_cutoff": float(angle_cutoff),
             "pbc": pbc,
             "update_selections": update_selections,

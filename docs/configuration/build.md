@@ -4,7 +4,8 @@ Source code:
 
 - `bff/workflows/build/config.py`
 - `bff/workflows/build/main.py`
-- `bff/topology.py`
+- `bff/workflows/build/box.py`
+- `bff/gromacs.py`
 
 ## Purpose
 
@@ -16,7 +17,6 @@ coordinate pair with virtual sites removed.
 - seeded production outputs under each stable system-ID directory
 - `systems/<system_id>/reference/{topology.top,coordinates.gro}` for reference
   trajectories and QoI construction
-- metadata-only `system.yaml` files colocated with each system
 
 ## Minimal Example
 
@@ -31,81 +31,62 @@ gromacs:
 systems:
   - system_id: acetate
     system_name: Aqueous acetate
-    topology: ../inputs/common/topol.top
+    topology: ../inputs/acetate.top
     templates:
-      ACE: ../inputs/common/ace.gro
+      ACE: ../inputs/ace.gro
     mdp:
-      em: ../inputs/common/mdp/em.mdp
-      npt: ../inputs/common/mdp/npt.mdp
-      prod: ../inputs/common/mdp/nvt.mdp
-    charge: -1
-    multiplicity: 1
+      em: ../inputs/mdp/em.mdp
+      npt: ../inputs/mdp/npt.mdp
+      prod: ../inputs/mdp/nvt.mdp
     nsteps:
       npt: 0
       prod: 100000
     box: [15.7107, 15.7107, 15.7107, 90, 90, 90]
 ```
 
-## Top-Level Keys
+## Options
 
-- `project`
-  Project output settings. A string is accepted as shorthand for `project.directory`.
-- `project.directory`
-  Output directory for `equilibration/` and `systems/`.
-- `project.log`
-  Optional workflow log file.
-- `gromacs.command`
-  GROMACS executable, usually `gmx`.
-- `systems`
-  Non-empty list of systems to build.
+General rules for all options are on the
+[conventions page](index.md).
 
-## `systems[]` Keys
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `project.directory` | path | *required* | Output directory for `equilibration/` and `systems/`; created if missing. |
+| `project.log` | path | `<project.directory>/build.log` | Workflow log file. |
+| `gromacs.command` | string | *required* | GROMACS executable, for example `gmx`. |
+| `systems` | list | *required* | Systems to build; see below. |
 
-- `system_id`
-  Required lowercase file-safe ID matching `[a-z0-9][a-z0-9._-]*`.
-- `system_name`
-  Optional display-only name; never used for matching or paths.
-- `topology`
-  GROMACS topology describing residue counts.
-- `templates`
-  Optional mapping from residue name to coordinate template file for
-  non-standard residues. Omit it when the system only contains built-in water
-  or monoatomic-ion residues.
-- `charge`
-  Total system charge for staged CP2K reference inputs.
-- `multiplicity`
-  Spin multiplicity for staged CP2K reference inputs.
-- `box`
-  Optional box dimensions. Accepts 3 values or full 6-value triclinic format.
-- `bias`
-  Optional opaque bias specification. Use either `plumed_file` or `colvars_file`.
-- `nsteps.npt`
-  Required per-system NpT equilibration length. Use `0` to skip NpT.
-- `nsteps.prod`
-  Required per-system seeded production run length. The seed trajectory is
-  used later by `bff label-snapshots`.
-- `mdp.em`
-  Energy minimization MDP file.
-- `mdp.npt`
-  NpT equilibration MDP file.
-- `mdp.prod`
-  Production MDP file used for the seeded run and downstream FFMD assets.
+### `systems[]`
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `system_id` | ID | *required* | Stable system ID used by every later stage. |
+| `system_name` | string | none | Display name shown in the log; never used for matching or paths. |
+| `topology` | path | *required* | GROMACS topology; its molecule counts define the box contents. |
+| `templates` | mapping | `{}` | Residue name to coordinate template file, for residues other than built-in water and monoatomic ions. |
+| `box` | 3 positive numbers | guessed from the heavy-atom count | Box lengths in angstrom. Only rectangular boxes are supported; three angles of 90 may follow. |
+| `bias.colvars_file` | path | none | Colvars input for the production run and for campaigns built on this system; equilibration is unbiased. |
+| `bias.plumed_file` | path | none | PLUMED input; at most one of `colvars_file` and `plumed_file`. |
+| `nsteps.npt` | integer >= 0 | *required* | NpT equilibration steps; `0` skips NpT. |
+| `nsteps.prod` | integer >= 1 | *required* | Seeded production steps; the final frame becomes the `reference/` coordinates. |
+| `mdp.em` | path | *required* | Energy-minimization MDP file. |
+| `mdp.npt` | path | *required* | NpT equilibration MDP file. |
+| `mdp.prod` | path | *required* | Production MDP file, also used by later campaigns. |
 
 ## Outputs
 
 The stage writes `build.log`, `gromacs.log`, and `systems/<system_id>/`.
 Each directory uses fixed filenames for the topology, index, MDPs, optional
-bias, and seeded production outputs. Its `system.yaml` contains only display
-and physical metadata such as charge, multiplicity, box, and production length;
-it contains no file paths or version field.
+bias, and seeded production outputs; the files themselves are the record of
+the build.
 
 The `reference/` pair is always generated from the final `production.gro`.
 Atoms declared by `[ virtual_sites* ]` sections are removed exactly from both
 files; systems without virtual sites still receive the same stable paths. Use
-this topology and coordinate pair when producing an external MLIP trajectory,
-so its atom order matches the inputs later supplied to `build-qoi-datasets`.
+this topology and coordinate pair to start the external reference MD, so its
+atom order matches the inputs later supplied to `build-qoi-datasets`; see
+[Reference trajectories](../reference-trajectories.md).
 
 `bff sample-parameters` and `bff validate` consume this directory directly.
-`bff label-snapshots` accepts its production GRO and trajectory files as
-explicit inputs. `bff build-qoi-datasets` accepts the files under `reference/`
+`bff build-qoi-datasets` accepts the files under `reference/`
 and the externally generated reference trajectory as separate explicit inputs.

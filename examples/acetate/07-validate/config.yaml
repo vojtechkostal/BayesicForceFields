@@ -1,0 +1,20 @@
+# Simulate the posterior mean, the MAP, and 10 posterior draws.
+# Runs locally; for Slurm, copy the commented block of
+# ../03-sample-parameters/config.yaml and set job_scheduler: slurm.
+campaign_dir: ./
+source: ../01-build
+gmx_cmd: gmx  # ADAPT
+job_scheduler: local
+
+systems:  # ADAPT: simulation lengths (dt = 2 fs)
+  - {system_id: acetate, n_steps: 1000000}  # 2 ns
+  - {system_id: calcium-acetate, n_steps: 5000000}  # 10 ns
+
+posterior:
+  file: ../06-learn/outputs/results.pt
+  n_samples: 10
+  include_mean: true
+  include_map: true
+
+store: [xtc, pmf]
+cleanup: true

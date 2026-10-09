@@ -10,9 +10,13 @@ import numpy as np
 import yaml
 
 PathLike = Union[str, Path]
+# libyaml's C implementation is much faster for large manifests; the pure-
+# Python classes behave the same.
+_YAML_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+_YAML_DUMPER = getattr(yaml, "CSafeDumper", yaml.SafeDumper)
 
 
-class NumpyYAMLEncoder(yaml.SafeDumper):
+class NumpyYAMLEncoder(_YAML_DUMPER):
     """YAML encoder for numpy arrays and numpy scalar types."""
 
     def represent_numpy(self, obj):
@@ -42,35 +46,7 @@ def load_yaml(fn: PathLike) -> dict:
     """Load .yaml file into a dictionary"""
     fn = str(fn)
     with open(fn, "r") as f:
-        file = yaml.safe_load(f)
-    return file
-
-
-class NumpyArrayEncoder(json.JSONEncoder):
-    """Lossless JSON encoder for numpy arrays and scalar values."""
-
-    def default(self, obj):
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        elif isinstance(obj, (np.generic, np.number)):
-            return obj.item()
-        elif hasattr(obj, '__dict__'):
-            return obj.__dict__
-        return super().default(obj)
-
-def save_json(data: dict, fn: PathLike) -> None:
-    """Save a dictionary as JSON without changing numeric precision."""
-    fn = str(fn) if isinstance(fn, Path) else fn
-    with open(fn, "w") as f:
-        json.dump(data, f, cls=NumpyArrayEncoder)
-
-
-def load_json(fn: PathLike) -> dict:
-    """Save a dictionary as JSON to a file."""
-    fn = str(fn)
-    with open(fn, "r") as f:
-        file = json.load(f)
-    return file
+        return yaml.load(f, Loader=_YAML_LOADER)
 
 
 def file_sha256(filename: PathLike) -> str:
