@@ -30,10 +30,17 @@ def main(fn_config: str | Path) -> None:
         }
         return latin_hypercube(specs, config.n_samples, seed), provenance
 
+    def extend(n_new: int) -> tuple[np.ndarray, dict[str, Any]]:
+        # A new hypercube of its own: the earlier samples are not redrawn.
+        seed = fresh_seed()
+        return latin_hypercube(specs, n_new, seed), {"seed": seed}
+
     run_campaign(
         config,
         stage="sample-parameters",
         title="Sample Parameters",
         specs=specs,
         draw=draw,
+        n_samples=config.n_samples,
+        extend=extend,
     )

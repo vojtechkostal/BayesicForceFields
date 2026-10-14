@@ -54,6 +54,10 @@ would otherwise be mixed with old results:
   process was killed or samples failed. It reuses the staged parameter samples,
   reruns only samples whose status is not `completed`, and appends to the log.
   The specification, system IDs, and `n_steps` must be unchanged; runtime
-  options such as `gmx_cmd`, `slurm`, or `scratch_dir` may change.
+  options such as `gmx_cmd`, `slurm`, or `scratch_dir` may change. With
+  `bff sample-parameters`, a larger `n_samples` adds the missing samples (a new
+  Latin hypercube of its own, recorded under `extensions` in `provenance`) with
+  the next sample IDs; existing samples are kept, and a smaller `n_samples`
+  removes nothing.
 - `overwrite: true` deletes those campaign files (nothing else in the
   directory) and starts a new campaign.

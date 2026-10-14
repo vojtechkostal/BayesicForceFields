@@ -1,5 +1,15 @@
 # Migration
 
+## From 0.5.0 to 0.5.1
+
+1. `validate` and `sample-parameters` reject a `define <DIRECTIVE>` parameter
+   whose directive no configured topology contains. If a configuration that
+   ran under 0.5.0 now stops with this error, its parameter name did not match
+   the `#define` in the topology (for example `define VSA` against `VSAIN`) and
+   had no effect; rename the parameter to the directive in the topology.
+2. Nothing else needs to change. A campaign staged with 0.5.0 can be resumed
+   with a larger `n_samples` to add samples.
+
 ## From 0.4.2 to 0.5.0
 
 1. Custom QoI routines import from `bff.qoi`: replace

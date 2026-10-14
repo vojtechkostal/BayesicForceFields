@@ -48,3 +48,30 @@ def test_specs_reject_a_constraint_that_changes_meaning_in_a_system() -> None:
     # Without calcium, the same selection sums to a different fixed charge.
     with pytest.raises(ValueError, match="different charge equation"):
         check_specs_topologies(specs, [ACE_TOP])
+
+
+def test_a_define_parameter_must_exist_in_a_topology(tmp_path: Path) -> None:
+    inputs = ACE_TOP.parent
+    top = tmp_path / "with-define.top"
+    top.write_text(
+        "#define VSA 120\n"
+        + "".join(
+            f'#include "{inputs / name}"\n'
+            for name in (
+                "ff/defaults.itp",
+                "ff/ace-atomtypes.itp",
+                "ff/water-atomtypes.itp",
+                "ff/ace.itp",
+                "ff/water.itp",
+            )
+        )
+        + "\n[ system ]\nx\n\n[ molecules ]\nACE 1\nSOL 128\n"
+    )
+    bounds = {"charge C2": [0.0, 1.0], "define VSA": [60.0, 150.0]}
+    constraint = [_constraint("resname ACE", "residue", "charge C2", -0.8)]
+
+    compile_specs(bounds, constraint, [top])
+    with pytest.raises(ValueError, match="#define directive that no configured"):
+        compile_specs(bounds, constraint, [ACE_TOP])
+    with pytest.raises(ValueError, match="define VSA"):
+        check_specs_topologies(compile_specs(bounds, constraint, [top]), [ACE_TOP])
