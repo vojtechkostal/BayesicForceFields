@@ -646,3 +646,42 @@ def test_overwrite_replaces_only_campaign_files(tmp_path: Path) -> None:
     assert sorted(p.name for p in (config.campaign_dir / "samples").iterdir()) == [
         "0"
     ]
+
+
+def test_resume_with_more_samples_appends_and_keeps_existing(
+    tmp_path: Path,
+) -> None:
+    run_campaign(_campaign(tmp_path, dispatch=False), **_empty_draw(3))
+    path = tmp_path / "campaign" / "samples.yaml"
+    first = yaml.safe_load(path.read_text())
+    first["samples"]["1"]["status"] = "completed"
+    path.write_text(yaml.safe_dump(first))
+    calls = []
+
+    def extend(n_new):
+        calls.append(n_new)
+        return np.zeros((n_new, 0)), {"seed": 7}
+
+    run_campaign(
+        _campaign(tmp_path, dispatch=False, resume=True),
+        **_empty_draw(3),
+        n_samples=5,
+        extend=extend,
+    )
+
+    manifest = yaml.safe_load(path.read_text())
+    assert calls == [2]
+    assert list(manifest["samples"]) == ["0", "1", "2", "3", "4"]
+    assert manifest["samples"]["1"]["status"] == "completed"
+    assert manifest["samples"]["4"]["status"] == "staged"
+    assert manifest["provenance"]["n_samples"] == 5
+    assert manifest["provenance"]["extensions"] == [{"n_samples": 2, "seed": 7}]
+
+    run_campaign(
+        _campaign(tmp_path, dispatch=False, resume=True),
+        **_empty_draw(3),
+        n_samples=2,
+        extend=extend,
+    )
+    assert len(yaml.safe_load(path.read_text())["samples"]) == 5
+

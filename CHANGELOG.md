@@ -1,3 +1,19 @@
+## `0.5.1` - 2026-10-14
+
+### Added
+
+- `sample-parameters` with `resume: true` and a larger `n_samples` appends the
+  missing samples to the staged campaign instead of ignoring the new value.
+  The extra samples form a new Latin hypercube of their own and continue the
+  sample IDs; existing samples and their results are untouched.
+
+### Fixed
+
+- A `define <DIRECTIVE>` parameter that no configured topology contains (for
+  example `define VSA` against a topology whose directive is `VSAIN`) was
+  silently ignored, so a validation ran with the wrong geometry. `validate` and
+  `sample-parameters` now stop with an error naming the parameter.
+
 ## `0.5.0` - 2026-10-09
 
 ### Changed

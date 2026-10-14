@@ -49,6 +49,9 @@ OWNED_PATHS = (
 )
 
 ParameterDraw = Callable[[], tuple[np.ndarray, dict[str, Any]]]
+# Draws n more parameter samples for a campaign that is resumed with a larger
+# sample count; returns them with the provenance of this extension.
+ParameterExtension = Callable[[int], tuple[np.ndarray, dict[str, Any]]]
 
 
 def fresh_seed() -> int:
@@ -187,6 +190,36 @@ def _resumed_samples(
     if not samples:
         raise ValueError(f"resume: {campaign_dir / 'samples.yaml'} has no samples.")
     return samples, manifest["provenance"]
+
+
+def _extend_samples(
+    specs: Specs,
+    samples: dict[str, dict[str, Any]],
+    provenance: dict[str, Any],
+    *,
+    n_total: int,
+    extend: ParameterExtension,
+) -> dict[str, Any]:
+    """Append new staged samples up to ``n_total``; existing ones stay as they are.
+
+    New IDs continue the numbering of the staged ones, with at least their width.
+    Returns the provenance with ``n_samples`` raised and the extension recorded
+    under ``extensions``.
+    """
+    parameter_samples, extension = extend(n_total - len(samples))
+    parameter_samples = np.asarray(parameter_samples, dtype=float)
+    check_parameter_samples(specs, parameter_samples)
+    first = max(int(sample_id) for sample_id in samples) + 1
+    width = max(len(sample_id) for sample_id in samples)
+    for index, params in enumerate(parameter_samples, start=first):
+        samples[f"{index:0{width}d}"] = {"params": params.tolist(), "status": "staged"}
+    return dict(provenance) | {
+        "n_samples": n_total,
+        "extensions": [
+            *provenance.get("extensions", []),
+            {"n_samples": len(parameter_samples)} | extension,
+        ],
+    }
 
 
 def _write_manifest(
@@ -334,18 +367,26 @@ def run_campaign(
     title: str,
     specs: Specs,
     draw: ParameterDraw,
+    n_samples: int | None = None,
+    extend: ParameterExtension | None = None,
 ) -> None:
     """Stage and run a campaign over parameter samples, or resume one.
 
     ``draw`` returns the explicit parameter samples and their provenance; it
     is not called when resuming, which reuses the staged samples and runs
-    only those not yet completed.
+    only those not yet completed. When resuming with ``n_samples`` above the
+    staged count, ``extend`` draws the missing samples, which are added to the
+    staged ones; a smaller ``n_samples`` removes nothing.
     """
     started = time.perf_counter()
     campaign_dir = config.campaign_dir
     if config.resume:
         prepare_campaign_dir(config)
         samples, provenance = _resumed_samples(config, specs)
+        if extend is not None and n_samples is not None and n_samples > len(samples):
+            provenance = _extend_samples(
+                specs, samples, provenance, n_total=n_samples, extend=extend
+            )
     else:
         parameter_samples, provenance = draw()
         parameter_samples = np.asarray(parameter_samples, dtype=float)

@@ -123,6 +123,19 @@ def _compile(
                 + "."
             )
 
+    # A define parameter that no topology contains would change nothing.
+    present = {d.directive for modifier in modifiers for d in modifier.defines}
+    missing = sorted(
+        name
+        for name in bounds
+        if name.startswith("define ") and name.split()[1] not in present
+    )
+    if missing:
+        raise ValueError(
+            f"Parameter(s) {missing} name a #define directive that no configured "
+            "topology contains; they would silently change nothing."
+        )
+
     # One equation per selected group: sum(coefficient * charge) + fixed = target.
     compiled: list[dict[str, Any] | None] = []
     for constraint in charge_constraints:
