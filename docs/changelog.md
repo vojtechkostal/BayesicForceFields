@@ -5,6 +5,11 @@ The public reproduction snapshot for the published study is archived as
 Use that tag for exact reproduction of the paper results. The current workflow
 release is `0.5.1`.
 
+## Unreleased
+
+- Add a pinned CALVADOS2 example-data downloader and conversion of M1_24
+  optimization-cycle Rg snapshots into BFF datasets, with provenance checks.
+
 ## `0.5.1` - 2026-10-14
 
 ### Added
