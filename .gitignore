@@ -10,6 +10,11 @@ __pycache__/
 /dist/
 /site/
 
+# Virtual environments and OS cruft
+.venv*/
+venv/
+.DS_Store
+
 # Local scratch artifacts from old/manual test workflow runs
 /.flake8
 /testing-ntb/
