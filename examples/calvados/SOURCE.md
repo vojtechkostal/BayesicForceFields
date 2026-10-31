@@ -16,11 +16,17 @@ pickles; pickle loading is only appropriate for trusted sources.
 
 ## Included files
 
+- `1_chi2.pkl` through `11_chi2.pkl`: 1,318 distinct accepted/initial parameter
+  records, with `chi2_rg`, `chi2_pre`, `theta_prior`, `xi`, and `cost`.
+  These are optimization histories, not posterior samples. The training script
+  uses the parameter vector embedded in each row (not a cycle-end vector),
+  and retains the cycle and iteration in each sample ID.
 - `residues.csv`: 20 residue stickiness parameters and optimization-cycle history.
 - `1_init_proteinsRgs.pkl` through `11_init_proteinsRgs.pkl`: 51 proteins,
   their conditions, experimental targets/errors, mean Rg and per-frame Rg.
-- `selHPS.csv`: original development hydrophobicity scales; downloaded for
-  provenance, not automatically used as a BFF prior.
+- `selHPS.csv`: original development hydrophobicity scales; `prepare_priors.py`
+  uses all 70 scale vectors for the joint KDE and independent beta alternatives.
+  Residue IDs are mapped through `residues.csv` into the original GP column order.
 
 ## Mapping and units
 

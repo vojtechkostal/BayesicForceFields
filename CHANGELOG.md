@@ -1,5 +1,13 @@
 ## Unreleased
 
+- Add reproducible 80/20 training and held-out evaluation of two CALVADOS2
+  aggregate-discrepancy GP surrogates, using direct chi-squared targets.
+  Saved 80/20 models can also be evaluated after excluding test samples with
+  any stickiness parameter within 0.005 of either boundary.
+
+- Prepare CALVADOS stickiness priors: uniform, joint Gaussian KDE, and
+  independent moment-fitted betas from the original 70 hydrophobicity scales.
+
 - Add a pinned CALVADOS2 example-data downloader and conversion of M1_24
   optimization-cycle Rg snapshots into BFF datasets, with provenance checks.
 

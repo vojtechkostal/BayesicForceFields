@@ -1,4 +1,4 @@
-"""Download the pinned CALVADOS2 M1_24 Rg training snapshots."""
+"""Download pinned CALVADOS2 M1_24 snapshots and optimization histories."""
 
 import hashlib
 from pathlib import Path
@@ -11,6 +11,17 @@ BASE_URL = (
 )
 RAW = Path(__file__).resolve().parent / "raw" / "M1_24"
 CHECKSUMS = {
+    "1_chi2.pkl": "23eabbbdda52db158842bbbf7c039087982097d2",
+    "2_chi2.pkl": "405c703dcf84bf7b6f9deb7cbebe3fb1c36cacd6",
+    "3_chi2.pkl": "187359d586d726141b83df8ecea65d55f69bb841",
+    "4_chi2.pkl": "9b398408688b00b80bfec8c03c1b514fa97fc3b3",
+    "5_chi2.pkl": "542a3ab9b01d751b566b15f85d60c722fd242574",
+    "6_chi2.pkl": "3e75a263b0a4dfc7f42fc0a1c6a4d7eb7a266ddc",
+    "7_chi2.pkl": "c84ee207a8a563264891dd5ec3926a4d8cae977b",
+    "8_chi2.pkl": "b685499054c52846ea11f8badc792d4443ac2a82",
+    "9_chi2.pkl": "fb0377f0e5585556c7a42c8bf06b4aaa43e4be54",
+    "10_chi2.pkl": "c2d902124f83cfa6dfb32e995e860a93a34c8c06",
+    "11_chi2.pkl": "264afb4e5424a2c844e657fd580a1de412848235",
     "residues.csv": "e36eeabc8e547c7b8674f6b9490a7f0702cd330f",
     "selHPS.csv": "f354e00f20a72e9d6f4466386054e5bb1fa4c140",
     "1_init_proteinsRgs.pkl": "f34e81d69c2717b15a1f9a30a9f32ada3859e9b5",

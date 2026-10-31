@@ -12,6 +12,24 @@ build_datasets = importlib.import_module(
 fetch_data = importlib.import_module("examples.calvados.fetch_data")
 CHECKSUMS = fetch_data.CHECKSUMS
 verified_bytes = fetch_data.verified_bytes
+history_datasets = importlib.import_module(
+    "examples.calvados.train_discrepancy"
+).history_datasets
+interior_mask = importlib.import_module(
+    "examples.calvados.evaluate_interior_test"
+).interior_mask
+
+
+def test_calvados_interior_test_excludes_any_boundary_parameter():
+    parameters = np.full((6, 20), 0.5)
+    parameters[0, 0] = 0.005
+    parameters[1, -1] = 0.995
+    parameters[2, 10] = 0.001
+    parameters[3, 8] = 0.999
+    parameters[4, :2] = [0.0051, 0.9949]
+    np.testing.assert_array_equal(
+        interior_mask(parameters), [False, False, False, False, True, True]
+    )
 
 
 def training_tables():
@@ -85,3 +103,28 @@ def test_calvados_rejects_changed_download(tmp_path, monkeypatch):
     path.write_bytes(b"changed\n")
     with pytest.raises(ValueError, match="checksum mismatch"):
         verified_bytes(path)
+
+
+def test_calvados_history_pairs_row_parameters_with_direct_discrepancies():
+    parameters = pd.Series(
+        np.linspace(0.1, 0.8, 20), index=list("ACDEFGHIKLMNPQRSTVWY")
+    )
+    history = pd.DataFrame(
+        {
+            "lambdas": [parameters, (parameters + 0.01).iloc[::-1]],
+            "chi2_rg": [4.0, 9.0],
+            "chi2_pre": [100.0, 144.0],
+            "cost": [999.0, 888.0],
+        },
+        index=[0, 17],
+    )
+    rg, pre = history_datasets({3: history})
+    np.testing.assert_allclose(rg.X[1], parameters + 0.01)
+    np.testing.assert_allclose(rg.y[:, 0], [4.0, 9.0])
+    np.testing.assert_allclose(pre.y[:, 0], [100.0, 144.0])
+    assert (rg.name, pre.name) == ("chi2_rg", "chi2_pre")
+    assert rg.metadata["transform"] == "identity"
+    assert rg.sample_ids == ("M1_24_cycle_3_iteration_0", "M1_24_cycle_3_iteration_17")
+    history.at[17, "lambdas"] = parameters
+    with pytest.raises(ValueError, match="duplicate inputs"):
+        history_datasets({3: history})
