@@ -1,0 +1,2 @@
+expected pair energy H-Y at 0.6 nm: 1.56195748 kJ/mol
+(shifted AH + shifted Yukawa; table convention check)

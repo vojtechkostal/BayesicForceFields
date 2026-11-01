@@ -1,0 +1,4 @@
+two-bead check (H-Y at 0.6 nm, no bonds)
+  openmm : 1.54415488 kJ/mol
+  tables : 1.54415593 kJ/mol (build_pilot.py pair math)
+  agreement within 1e-4 kJ/mol

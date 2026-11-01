@@ -1,0 +1,17 @@
+Hst5 Rg comparison (mass-weighted, nm)
+==================================================
+
+ours, M1 starting parameters (engine validation):
+  n_frames 6000, pooled over 3 seeds, 20 ns each (first 5 ns discarded)
+  Rg = 1.3399 +- 0.0154 nm (60 x 1-ns block average)
+  upstream simulated: 1.3236 nm (5000 frames, 18 us, 10 replicas)
+  difference: +0.0163 nm
+  z-score vs upstream per-frame std: +0.07
+  experimental (for reference): 1.38 +- 0.05 nm
+
+ours, CALVADOS2 optimized parameters:
+  n_frames 6000, pooled over 3 seeds, 20 ns each (first 5 ns discarded)
+  Rg = 1.3541 +- 0.0158 nm (60 x 1-ns block average)
+  experimental: 1.38 +- 0.05 nm
+  difference: -0.0259 nm (0.5 sigma)
+  upstream simulated at lambdas_0 (not the same parameters): 1.3236 nm
