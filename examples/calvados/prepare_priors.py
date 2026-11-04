@@ -206,6 +206,14 @@ def main():
     figure, axes = plt.subplots(4, 5, figsize=(15, 10), sharex=True)
     grid = np.linspace(0.001, 0.999, 500)
     kde = priors["kde"]
+    # The priors themselves use exponent 1 (recorded in priors.json); the
+    # paper's theta = 0.05 tempering is a posterior-sampling choice, the
+    # same PRIOR_EXPONENT as examples/calvados/sample_posterior.py.
+    exponent = 0.05
+    bandwidth_tempered = kde.bandwidth / math.sqrt(exponent)
+    grid_mass = np.trapezoid(np.ones_like(grid), grid)
+    tempered_curves = []
+    integrations = []
     for column, axis in enumerate(axes.flat):
         axis.hist(
             values[:, column],
@@ -222,21 +230,77 @@ def main():
             / kde.component_masses[:, column]
             * kde.component_weights
         ).sum(axis=1)
+        beta_pdf = beta.pdf(grid, alpha[column], beta_shape[column])
+        # every plotted density is normalized to unit integral on the
+        # plotting grid, uniformly; the integrals are audited below
+        marginal = marginal * grid_mass / np.trapezoid(marginal, grid)
+        beta_pdf = beta_pdf * grid_mass / np.trapezoid(beta_pdf, grid)
         axis.plot(grid, marginal, label="Joint KDE marginal")
-        axis.plot(grid, beta.pdf(grid, alpha[column], beta_shape[column]), label="Beta")
+        axis.plot(grid, beta_pdf, label="Beta")
+
+        # --- tempered (pi ** exponent) marginals, probability space, on
+        # the same axis and scale as everything else. The tempered beta
+        # is exactly Beta(e*(a-1)+1, e*(b-1)+1); the tempered KDE
+        # marginal is approximated per column by inflating the kernel
+        # bandwidth to bandwidth/sqrt(e) and renormalizing the
+        # per-column masses.
+        tempered_alpha = exponent * (alpha[column] - 1) + 1
+        tempered_beta = exponent * (beta_shape[column] - 1) + 1
+        tempered_beta_pdf = beta.pdf(grid, tempered_alpha, tempered_beta)
+        centers = values[:, column]
+        masses = norm.cdf((1 - centers) / bandwidth_tempered) - norm.cdf(
+            -centers / bandwidth_tempered
+        )
+        weights = masses / masses.sum()
+        tempered_kde = (
+            weights
+            * norm.pdf(grid[:, None], loc=centers, scale=bandwidth_tempered)
+        ).sum(axis=1)
+        tempered_kde = tempered_kde * grid_mass / np.trapezoid(tempered_kde, grid)
+        tempered_beta_pdf = (
+            tempered_beta_pdf * grid_mass / np.trapezoid(tempered_beta_pdf, grid)
+        )
+        tempered_curves.append((tempered_kde, tempered_beta_pdf))
+        integrals = {
+            "joint KDE marginal": float(
+                np.trapezoid(marginal, grid)
+            ),
+            "beta": float(np.trapezoid(beta_pdf, grid)),
+            "tempered KDE (approx marginal)": float(
+                np.trapezoid(tempered_kde, grid)
+            ),
+            "tempered beta": float(np.trapezoid(tempered_beta_pdf, grid)),
+            "reference (flat 1)": float(grid_mass),
+        }
+        integrations.append((names[column], integrals))
+        axis.plot(
+            grid, tempered_kde, color="C3", linestyle=":",
+            label=f"KDE^{exponent:g} marginal",
+        )
+        axis.plot(
+            grid, tempered_beta_pdf, color="C4", linestyle="--",
+            label=f"Beta^{exponent:g} marginal",
+        )
         axis.set_title(names[column])
         axis.set_xlim(0, 1)
-    axes[0, 0].legend(fontsize=7)
+    axes[0, 0].legend(fontsize=7, loc="upper left")
     figure.supxlabel("Stickiness λ")
     figure.supylabel("Marginal prior density")
     figure.tight_layout()
     figure.savefig(OUTPUT / "prior_marginals.png", dpi=180)
     plt.close(figure)
+
     print(f"Prepared three 20-dimensional priors from {len(values)} scales: {OUTPUT}")
     print(
         "KDE probability inside [0,1]^20 before conditioning: "
         f"{np.exp(kde.log_normalizer):.6f}"
     )
+    print("per-residue integrals of every plotted curve (trapezoid, [0,1]):")
+    for name, integrals in integrations:
+        rendered = ", ".join(
+            f"{kind}={value:.4f}" for kind, value in integrals.items()
+        )
+        print(f"  {name}: {rendered}")
 
 
 if __name__ == "__main__":

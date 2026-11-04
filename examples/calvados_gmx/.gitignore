@@ -1,0 +1,18 @@
+# Generated campaign outputs: raw trajectories and per-run artifacts are
+# large and regenerable (see the run scripts); committed are the scripts
+# and the small shared summaries (metrics, curves, designs, Rg series).
+campaign/sobol_*/
+campaign/active/
+campaign/curve_fit_*/
+campaign/shotgun/*/fit_n*/
+campaign/shotgun/*/pt_*/
+campaign/diagnose/
+campaign/sobol_points.txt
+pilot_openmm*/
+pilot/
+validate/
+longrun/**/trajectory.dcd
+longrun/**/final_state.xml
+pilot_openmm*/trajectory.dcd
+*.dcd
+*.gsd
