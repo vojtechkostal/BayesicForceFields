@@ -1,0 +1,8 @@
+A1 Rg (mass-weighted, nm), CALVADOS2 optimized lambdas
+============================================================
+ours: 2.3692 +- 0.0538 nm (50 x 1-ns block average;
+  single 50 ns trajectory, 20 ns equilibration discarded)
+CALVADOS2 reported (cycle-11 snapshot): 2.6365 nm
+  difference: -0.2673 nm
+experiment (SAXS): 2.76 +- 0.02 nm
+  difference: -0.3908 nm (7.3 sigma)
