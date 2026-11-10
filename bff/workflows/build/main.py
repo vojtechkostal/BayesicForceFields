@@ -117,13 +117,31 @@ def equilibrate(
             topology_format="ITP",
             to_guess=("elements", "masses"),
         )
-    # Average the box over the last 80% of the equilibration.
+    # Average the box over the last 80% of the equilibration. ts.dimensions is
+    # a view of a buffer that every frame overwrites, so each box is copied.
     discard = int(universe.trajectory.n_frames * 0.2)
-    boxes = [ts.dimensions for ts in universe.trajectory[discard:]]
+    boxes = [ts.dimensions.copy() for ts in universe.trajectory[discard:]]
     box = np.round(np.mean(boxes, axis=0), 4)
     universe.trajectory.add_transformations(transformations.unwrap(universe.atoms))
     logger.done("NpT equilibration", level=2)
     return EquilibratedTopology(fn_topol, universe, box, maxwarn)
+
+
+def write_coordinates(state: EquilibratedTopology, fn_out: PathLike) -> None:
+    """Write the last equilibration frame, rescaled to the averaged box.
+
+    Each molecule is translated so that its center of mass scales with the
+    box edges; the molecules themselves are not deformed. The equilibration
+    universe unwraps molecules on reading, so they are whole here.
+    """
+    ts = state.universe.trajectory[-1]
+    scale = np.asarray(state.box[:3], dtype=float) / ts.dimensions[:3]
+    if not np.allclose(scale, 1.0):
+        for molecule in state.universe.atoms.split("molecule"):
+            molecule.translate(molecule.center_of_mass() * (scale - 1.0))
+    ts.dimensions = state.box
+    with mda.Writer(str(fn_out), n_atoms=len(state.universe.atoms)) as writer:
+        writer.write(state.universe.atoms)
 
 
 def write_reference_system(
@@ -240,10 +258,7 @@ def main(fn_config: PathLike) -> None:
         shutil.copy2(system.mdp_em_path, system_dir / "em.mdp")
         shutil.copy2(system.mdp_npt_path, system_dir / "npt.mdp")
         shutil.copy2(system.mdp_production_path, fn_mdp_prod)
-        with mda.Writer(fn_coord, "w") as writer:
-            ts = state.universe.trajectory[-1]
-            ts.dimensions = state.box
-            writer.write(state.universe.atoms)
+        write_coordinates(state, fn_coord)
         with SelectionWriter(str(fn_ndx), mode="w") as ndx:
             ndx.write(state.universe.atoms, name="System")
 

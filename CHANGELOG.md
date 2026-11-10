@@ -1,3 +1,24 @@
+## `0.5.2` - 2026-11-10
+
+### Fixed
+
+- `build` averaged the NpT box incorrectly: MDAnalysis reuses one box array
+  for every frame, so the "average" over the last 80 % of the `.xtc` was the
+  box of a single frame. The box is now the true average, and the last frame
+  is rescaled to it before it is written to `systems/<system_id>/coordinates.gro`:
+  every molecule moves with its center of mass, its geometry unchanged.
+  Before, the coordinates of the last frame were written with a different box,
+  leaving a gap or an overlap at the periodic boundary.
+- Figure text scales with the panel size (7-13 pt) instead of a fixed 15 pt,
+  which was unreadable on small corner plots. `plot_corner` makes a figure about
+  7 in wide by default (`figsize=None`: panels of 1.3-2.5 in), takes a
+  `fontsize` for the axis labels, writes each diagonal title on one line as
+  the median with the distances to the outer quantiles, rotates the
+  bottom-row tick labels and keeps ticks off the panel edges, where labels of
+  neighbouring panels collided. The parameter names are the bottom-row axis
+  labels and no longer repeat in the titles. In the marginal plots, rotated
+  tick labels are anchored at their end so that neighbours no longer overlap.
+
 ## `0.5.1` - 2026-10-14
 
 ### Added

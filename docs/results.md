@@ -73,7 +73,7 @@ methods of `Results`.
 | --- | --- |
 | `plot_marginals(results, plot_metadata=None, max_samples=None)` | Prior and posterior marginal of every parameter with its bounds, mode, and MAP. |
 | `plot_qoi_marginals(results, plot_metadata=None, temperature=0.7)` | The posterior marginals colored by the QoI that supports each region (from the stored likelihoods). |
-| `plot_corner(results, names=None, max_samples=None)` | Corner plot of the chosen columns, noise included. |
+| `plot_corner(results, names=None, max_samples=None, figsize=None, fontsize=None)` | Corner plot of the chosen columns, noise included; panel size (inches) and label size (pt) follow the number of columns unless given. |
 
 `plot_metadata` maps parameter names to `{"xlabel": ..., "ylabel": ...}`, as in the
 `plots.plot_metadata` option of the [learn configuration](configuration/learn.md).

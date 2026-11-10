@@ -76,7 +76,7 @@ def test_plot_corner_includes_implicit_charges_and_returns_the_figure() -> None:
     figure = plot_corner(results)
 
     assert isinstance(figure, Figure)
-    assert figure.axes[0].get_title().startswith("charge A")
+    assert [ax.get_xlabel() for ax in figure.axes[2:]] == ["charge A", "charge B"]
     assert figure.axes[2].get_ylabel() == "charge B"
     assert results.plot_corner().axes[2].get_ylabel() == "charge B"
 
@@ -91,12 +91,81 @@ def test_plot_corner_selects_columns_and_includes_noise() -> None:
 
     assert len(plot_corner(results).axes) == 9  # charge A, charge B, noise rdf
     only = plot_corner(results, names=["noise rdf", "charge A"])
-    assert [ax.get_title().split("\n")[0] for ax in only.axes if ax.get_title()] == [
-        "noise rdf",
-        "charge A",
-    ]
+    assert [ax.get_xlabel() for ax in only.axes[2:]] == ["noise rdf", "charge A"]
     with pytest.raises(ValueError, match="Unknown parameter"):
         plot_corner(results, names=["charge Z"])
+
+
+def _corner_results(n_dim: int) -> Results:
+    rng = np.random.default_rng(1)
+    names = [f"sigma long atom type name {i}" for i in range(n_dim)]
+    return make_results(
+        {"bounds": {name: [-1.0, 1.0] for name in names}, "charge_constraints": []},
+        rng.normal(0.0, 0.2, (200, n_dim)),
+    )
+
+
+def test_plot_corner_title_is_one_line_median_and_quantile_distances() -> None:
+    results = _corner_results(2)
+    samples = results.samples[:, 0]
+    low, median, high = np.quantile(samples, (0.16, 0.5, 0.84))
+
+    title = plot_corner(results).axes[0].get_title()
+
+    assert "\n" not in title
+    assert title == (
+        f"${median:.3f}^{{+{high - median:.3f}}}_{{-{median - low:.3f}}}$"
+    )
+
+
+def test_plot_corner_font_sizes_follow_the_panel_size() -> None:
+    small = plot_corner(_corner_results(8))
+    large = plot_corner(_corner_results(3))
+    fixed = plot_corner(_corner_results(3), figsize=2.0, fontsize=9.0)
+
+    def label_size(figure):
+        return figure.axes[-1].xaxis.label.get_fontsize()
+
+    assert label_size(small) < label_size(large) <= 13.0
+    assert label_size(small) >= 7.0
+    assert label_size(fixed) == pytest.approx(9.0)
+    assert fixed.get_size_inches().tolist() == pytest.approx([6.0, 6.0])
+    assert large.get_size_inches()[0] == pytest.approx(7.0)
+
+
+@pytest.mark.parametrize("n_dim", [3, 8])
+def test_plot_corner_text_does_not_overlap(n_dim: int) -> None:
+    figure = plot_corner(_corner_results(n_dim))
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    axes = np.asarray(figure.axes).reshape(n_dim, n_dim)
+
+    titles = [axes[i, i].title.get_window_extent(renderer) for i in range(n_dim)]
+    for i, title in enumerate(titles):
+        assert title.x0 >= 0.0 and title.y1 <= figure.bbox.height
+        # Each title sits in the empty upper triangle, clear of drawn panels.
+        for row in range(i):
+            for column in range(row + 1):
+                assert not title.overlaps(axes[row, column].get_tightbbox(renderer))
+    xlabels = [ax.xaxis.label.get_window_extent(renderer) for ax in axes[-1]]
+    for left, right in zip(xlabels, xlabels[1:]):
+        assert left.x1 < right.x0
+
+
+def test_plot_corner_keeps_ticks_away_from_the_panel_edges() -> None:
+    figure = plot_corner(_corner_results(4))
+    axes = np.asarray(figure.axes).reshape(4, 4)
+
+    for i in range(4):
+        for j in range(i + 1):
+            ax = axes[i, j]
+            pairs = [(ax.get_xticks(), ax.get_xlim())]
+            if i != j:
+                pairs.append((ax.get_yticks(), ax.get_ylim()))
+            for ticks, (low, high) in pairs:
+                assert len(ticks) >= 1
+                margin = 0.1 * (high - low)
+                assert np.all((ticks >= low + margin) & (ticks <= high - margin))
 
 
 def test_plot_corner_limits_samples_used_by_kde(monkeypatch) -> None:

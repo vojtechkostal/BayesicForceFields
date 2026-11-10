@@ -2,10 +2,18 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import MDAnalysis as mda
+import numpy as np
+import pytest
 from gmxtopology import Topology
 
+import bff.workflows.build.main as build_main
+from bff.io.logs import Logger
 from bff.workflows.build.box import load_residue_template
-from bff.workflows.build.main import write_reference_system
+from bff.workflows.build.main import (
+    equilibrate,
+    write_coordinates,
+    write_reference_system,
+)
 
 
 def _write_two_waters(tmp_path: Path, *, virtual_site: bool) -> tuple[Path, Path]:
@@ -122,3 +130,68 @@ def test_load_residue_template_accepts_common_water_residue_alias() -> None:
 
     assert template.positions.shape == (3, 3)
     assert template.real_mask.tolist() == [True, True, True]
+
+
+def test_build_averages_the_npt_box_and_rescales_the_last_frame(
+    tmp_path: Path, monkeypatch
+) -> None:
+    topology, coordinates = _write_two_waters(tmp_path, virtual_site=False)
+    template = mda.Universe(topology, coordinates, topology_format="ITP")
+    water = np.array([[0.0, 0.0, 0.0], [0.9572, 0.0, 0.0], [-0.24, 0.927, 0.0]])
+    edges = [19.0, 20.0, 21.0, 22.0, 23.0]  # angstrom; the first is discarded
+
+    def fake_run_md(deffnm, **kwargs):
+        if not str(deffnm).endswith("-npt"):
+            return
+        with mda.Writer(str(deffnm) + ".xtc", n_atoms=6) as writer:
+            for edge in edges:
+                # Water 2 is split across the boundary, as GROMACS writes it.
+                positions = np.vstack(
+                    [water + 0.25 * edge, water + [edge - 0.3, 0.5 * edge, 0.5 * edge]]
+                )
+                template.atoms.positions = np.mod(positions, edge)
+                template.dimensions = [edge, edge, edge, 90.0, 90.0, 90.0]
+                writer.write(template.atoms)
+
+    monkeypatch.setattr(
+        build_main, "create_box", lambda *args, **kwargs: (None, Topology(topology))
+    )
+    monkeypatch.setattr(build_main, "run_md", fake_run_md)
+    system = SimpleNamespace(
+        topology_path=topology,
+        templates={},
+        box=None,
+        mdp_em_path=tmp_path / "em.mdp",
+        mdp_npt_path=tmp_path / "npt.mdp",
+        nsteps_npt=100,
+    )
+
+    state = equilibrate(
+        system,
+        label="topology-000",
+        equilibration_dir=tmp_path,
+        gmx_cmd="gmx",
+        fn_gmx_log=tmp_path / "gromacs.log",
+        logger=Logger("build", verbose=False),
+    )
+
+    assert state.box.tolist() == pytest.approx([21.5, 21.5, 21.5, 90.0, 90.0, 90.0])
+
+    last = state.universe.trajectory[-1]
+    molecules_last = [
+        molecule.positions.copy() for molecule in state.universe.atoms.split("molecule")
+    ]
+    assert last.dimensions[0] == pytest.approx(23.0)
+    fn_coord = tmp_path / "coordinates.gro"
+    write_coordinates(state, fn_coord)
+
+    written = mda.Universe(topology, fn_coord, topology_format="ITP")
+    assert written.dimensions.tolist() == pytest.approx(state.box.tolist(), abs=1e-3)
+    scale = 21.5 / 23.0
+    for before, molecule in zip(molecules_last, written.atoms.split("molecule")):
+        after = molecule.positions
+        # The molecule moves with the box but keeps its geometry (gro: 0.01 A).
+        masses = molecule.masses[:, None]
+        com_before = (before * masses).sum(axis=0) / masses.sum()
+        assert molecule.center_of_mass() == pytest.approx(scale * com_before, abs=0.02)
+        assert after - after[0] == pytest.approx(before - before[0], abs=0.02)
