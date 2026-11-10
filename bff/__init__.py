@@ -6,7 +6,7 @@ from importlib import import_module
 from pathlib import Path
 from typing import Any
 
-__version__ = "0.5.1"
+__version__ = "0.5.2"
 
 _INTERNAL_MODULES = {
     "bayes",

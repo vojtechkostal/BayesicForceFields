@@ -1,5 +1,17 @@
 # Migration
 
+## From 0.5.1 to 0.5.2
+
+1. Systems built with `nsteps.npt > 0` by an earlier version have the box of
+   the constructed system (`systems.box` or the guessed box), not the NpT
+   average, and their coordinates do not match that box. Rerun `bff build`
+   and the stages after it if the density matters for your QoIs. Systems
+   built with `nsteps.npt: 0` are unchanged.
+2. `plot_corner` sizes its figure and fonts from the number of columns. Pass
+   `figsize=1.5` for the old panel size. The parameter names are now the
+   bottom-row axis labels only; code that read them from the diagonal titles
+   reads `axes[-1, j].get_xlabel()` instead.
+
 ## From 0.5.0 to 0.5.1
 
 1. `validate` and `sample-parameters` reject a `define <DIRECTIVE>` parameter

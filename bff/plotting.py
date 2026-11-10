@@ -27,6 +27,19 @@ def _wrap_label(text: str, max_per_line: int = 3) -> str:
     )
 
 
+MARGINAL_ROW_HEIGHT = 2.0  # inches per row of marginal panels
+
+
+def _font_sizes(panel_inches: float) -> dict[str, float]:
+    """Font sizes in pt proportional to the panel size, clipped to 7-13 pt."""
+    base = float(np.clip(5.0 * panel_inches, 7.0, 13.0))
+    return {
+        "label": base,
+        "tick": 0.85 * base,
+        "annotation": 0.8 * base,
+    }
+
+
 def _axis_labels(kind: str) -> tuple[str, str]:
     if kind == "charge":
         return "Atom", "Charge [e]"
@@ -92,7 +105,7 @@ def _marginal_figure(
     fig = plt.figure(
         figsize=(
             sum(section_widths) + section_gap * (len(panel_sections) - 1),
-            2 * max_section_rows,
+            MARGINAL_ROW_HEIGHT * max_section_rows,
         )
     )
     outer = fig.add_gridspec(
@@ -166,7 +179,7 @@ def _place_top_legends(
     fig: Any,
     legend_groups: Sequence[tuple[Sequence[Any], int]],
     *,
-    fontsize: float = 15,
+    fontsize: float,
 ) -> list[Any]:
     """Stack figure legends above the panels and reserve their rendered space."""
     width, original_height = fig.get_size_inches()
@@ -318,6 +331,7 @@ def _style_panel(
     plot_metadata: Mapping[str, Mapping[str, str]],
     x_limits: tuple[float, float],
     y_limits: tuple[float, float],
+    fonts: Mapping[str, float],
 ) -> None:
     ax.set_xlim(*x_limits)
     ax.set_ylim(*y_limits)
@@ -327,14 +341,17 @@ def _style_panel(
         ax.set_xticks(range(len(indices)))
         ax.set_xticklabels(
             [_wrap_label(tick_labels[i]) for i in indices],
+            # Anchored at their right end, rotated labels of neighbouring
+            # ticks run parallel instead of into each other.
             rotation=30,
-            ha="center",
-            fontsize=15,
+            ha="right",
+            rotation_mode="anchor",
+            fontsize=fonts["tick"],
         )
     xlabel, ylabel = _marginal_axis_labels(kind, indices, names, plot_metadata)
-    ax.set_xlabel(xlabel, fontsize=15)
-    ax.set_ylabel(ylabel, fontsize=15)
-    ax.tick_params(direction="in", width=1.2, labelsize=15)
+    ax.set_xlabel(xlabel, fontsize=fonts["label"])
+    ax.set_ylabel(ylabel, fontsize=fonts["label"])
+    ax.tick_params(direction="in", width=1.2, labelsize=fonts["tick"])
     for spine in ax.spines.values():
         spine.set_linewidth(1.2)
 
@@ -381,6 +398,7 @@ def plot_marginals(
     plot_metadata = _plot_metadata(plot_metadata)
     tick_labels = _marginal_tick_labels(names, plot_metadata)
     fig, panel_axes = _marginal_figure(_marginal_panel_sections(names))
+    fonts = _font_sizes(MARGINAL_ROW_HEIGHT)
 
     posterior_width, prior_width = 1.2, 0.7
     for ax, kind, indices in panel_axes:
@@ -439,7 +457,7 @@ def plot_marginals(
                 _format_range_value(mode, lower, upper, kind),
                 color="tab:red",
                 fontweight="bold",
-                fontsize=12,
+                fontsize=fonts["annotation"],
                 ha="center",
                 va="top",
                 zorder=4,
@@ -453,6 +471,7 @@ def plot_marginals(
             plot_metadata,
             (-prior_width - 0.25, len(indices) - 1 + posterior_width + 0.25),
             (y_min - y_pad, y_max + y_pad),
+            fonts,
         )
 
     handles_by_label = {}
@@ -464,7 +483,7 @@ def plot_marginals(
         if label in handles_by_label
     ]
     handles = [handles_by_label[label] for label in labels]
-    _place_top_legends(fig, [(handles, len(labels))])
+    _place_top_legends(fig, [(handles, len(labels))], fontsize=fonts["label"])
     _align_marginal_ylabels(fig, panel_axes)
     return fig
 
@@ -518,6 +537,7 @@ def plot_qoi_marginals(
         for i, qoi in enumerate(qoi_names)
     }
     fig, panel_axes = _marginal_figure(_marginal_panel_sections(names))
+    fonts = _font_sizes(MARGINAL_ROW_HEIGHT)
     profile_width, prior_width = 1.2, 0.7
 
     for ax, kind, indices in panel_axes:
@@ -565,6 +585,7 @@ def plot_qoi_marginals(
             plot_metadata,
             (-prior_width - 0.25, len(indices) - 1 + profile_width + 0.25),
             (y_min - y_pad, y_max + y_pad),
+            fonts,
         )
 
     summary_handles = [
@@ -577,9 +598,22 @@ def plot_qoi_marginals(
     _place_top_legends(
         fig,
         [(summary_handles, len(summary_handles)), (qoi_handles, len(qoi_handles))],
+        fontsize=fonts["label"],
     )
     _align_marginal_ylabels(fig, panel_axes)
     return fig
+
+
+def _set_inner_ticks(axis: Any, limits: tuple[float, float]) -> None:
+    """Up to four ticks, none within 10 % of the axis ends.
+
+    Corner panels touch; a label at the edge of one panel would run into the
+    label at the facing edge of its neighbour.
+    """
+    low, high = limits
+    ticks = MaxNLocator(nbins=4).tick_values(low, high)
+    margin = 0.1 * (high - low)
+    axis.set_ticks(ticks[(ticks >= low + margin) & (ticks <= high - margin)])
 
 
 def plot_corner(
@@ -587,7 +621,8 @@ def plot_corner(
     *,
     names: Optional[Sequence[str]] = None,
     quantiles: Sequence[float] = (0.16, 0.5, 0.84),
-    figsize: float = 1.5,
+    figsize: Optional[float] = None,
+    fontsize: Optional[float] = None,
     cmap: Any = "Reds",
     levels: int = 5,
     scatter_alpha: float = 0.15,
@@ -595,9 +630,13 @@ def plot_corner(
 ):
     """Corner plot of posterior samples (default: every parameter and noise).
 
-    The diagonal shows each marginal with its median and 16/84 % quantiles;
-    ``names`` selects and orders columns of ``results.names``. Returns the
-    figure.
+    The diagonal shows each marginal; with three ``quantiles`` its title is
+    the median and the distances to the outer quantiles (default 16/84 %).
+    ``names`` selects and orders columns of ``results.names``. ``figsize`` is
+    the panel size in inches (default: a figure about 7 in wide, panels
+    1.3-2.5 in) and ``fontsize`` the axis-label size in pt (default:
+    proportional to the panel size); tick labels are slightly smaller.
+    Returns the figure.
     """
     _check_max_samples(max_samples)
     names = list(results.names if names is None else names)
@@ -611,6 +650,10 @@ def plot_corner(
     samples = samples[:, columns]
     n_dim = len(names)
     labels = [_wrap_label(name) for name in names]
+    panel = float(np.clip(7.0 / n_dim, 1.3, 2.5)) if figsize is None else figsize
+    fonts = _font_sizes(panel)
+    if fontsize is not None:
+        fonts = {key: size * fontsize / fonts["label"] for key, size in fonts.items()}
 
     base_cmap = plt.get_cmap(cmap)
     colors = base_cmap(np.linspace(0, 1, max(levels, 2)))
@@ -619,7 +662,7 @@ def plot_corner(
     fig, axes = plt.subplots(
         n_dim,
         n_dim,
-        figsize=(figsize * n_dim, figsize * n_dim),
+        figsize=(panel * n_dim, panel * n_dim),
         gridspec_kw={"wspace": 0.05, "hspace": 0.05},
         squeeze=False,
     )
@@ -644,10 +687,9 @@ def plot_corner(
                     if len(q_values) == 3:
                         median = q_values[1]
                         ax.set_title(
-                            f"{labels[i]}\n{median:.3f}\n"
-                            f"(+{q_values[2] - median:.3f} / "
-                            f"-{median - q_values[0]:.3f})",
-                            fontsize=15,
+                            f"${median:.3f}^{{+{q_values[2] - median:.3f}}}"
+                            f"_{{-{median - q_values[0]:.3f}}}$",
+                            fontsize=fonts["label"],
                         )
                 ax.set_xlim(*limits[i])
                 ax.set_yticks([])
@@ -680,17 +722,25 @@ def plot_corner(
                 ax.set_xlim(*limits[j])
                 ax.set_ylim(*limits[i])
 
-            ax.xaxis.set_major_locator(MaxNLocator(nbins=4))
-            ax.yaxis.set_major_locator(MaxNLocator(nbins=4))
-            ax.tick_params(direction="in", top=True, right=True, labelsize=15)
+            _set_inner_ticks(ax.xaxis, ax.get_xlim())
+            if i != j:
+                _set_inner_ticks(ax.yaxis, ax.get_ylim())
+            ax.tick_params(
+                direction="in", top=True, right=True, labelsize=fonts["tick"]
+            )
             if i == n_dim - 1:
-                ax.set_xlabel(labels[j], fontsize=15)
+                # Rotated, the edge labels of neighbouring columns cannot touch.
+                ax.tick_params(axis="x", labelrotation=45)
+                for label in ax.get_xticklabels():
+                    label.set_horizontalalignment("right")
+                    label.set_rotation_mode("anchor")
+                ax.set_xlabel(labels[j], fontsize=fonts["label"])
             else:
-                ax.set_xticklabels([])
+                ax.tick_params(axis="x", labelbottom=False)
             if j == 0 and i > 0:
-                ax.set_ylabel(labels[i], fontsize=15)
+                ax.set_ylabel(labels[i], fontsize=fonts["label"])
             elif i != j:
-                ax.set_yticklabels([])
+                ax.tick_params(axis="y", labelleft=False)
 
     fig.align_labels()
     return fig
