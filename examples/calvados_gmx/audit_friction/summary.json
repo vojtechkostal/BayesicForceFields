@@ -1,0 +1,92 @@
+[
+  {
+    "collision_rate_per_ps": 1.16,
+    "seeds": [
+      2026,
+      2027,
+      2028,
+      2029
+    ],
+    "mean_rg_nm": 1.323252772,
+    "mean_rg_sem_nm": 0.009553832034321655,
+    "run_means_nm": [
+      1.3484,
+      1.3098,
+      1.3224,
+      1.3124
+    ],
+    "frame_sd_nm": 0.2295697921232583,
+    "tau_int_ps": 173.1911601621652,
+    "tau_int_ps_per_seed": [
+      127.6,
+      149.0,
+      265.9,
+      150.3
+    ],
+    "sd_of_10ns_block_means_nm": 0.040369376419125906,
+    "n_10ns_blocks": 20,
+    "sem_50ns_mean_nm": 0.01910766406864331,
+    "sd_of_seed_means_nm": 0.017609238462070888,
+    "production_ns_for_target_sem": 63.166578920436436
+  },
+  {
+    "collision_rate_per_ps": 0.1,
+    "seeds": [
+      2026,
+      2027,
+      2028,
+      2029
+    ],
+    "mean_rg_nm": 1.3199273625,
+    "mean_rg_sem_nm": 0.003264724143641011,
+    "run_means_nm": [
+      1.3219,
+      1.3186,
+      1.3279,
+      1.3113
+    ],
+    "frame_sd_nm": 0.22708239503216357,
+    "tau_int_ps": 20.66931337608621,
+    "tau_int_ps_per_seed": [
+      21.8,
+      21.0,
+      19.2,
+      20.7
+    ],
+    "sd_of_10ns_block_means_nm": 0.014135634286206917,
+    "n_10ns_blocks": 20,
+    "sem_50ns_mean_nm": 0.006529448287282022,
+    "sd_of_seed_means_nm": 0.006907649759700807,
+    "production_ns_for_target_sem": 7.376071788285489
+  },
+  {
+    "collision_rate_per_ps": 0.01,
+    "seeds": [
+      2026,
+      2027,
+      2028,
+      2029
+    ],
+    "mean_rg_nm": 1.3242394995,
+    "mean_rg_sem_nm": 0.002788879979937329,
+    "run_means_nm": [
+      1.3274,
+      1.3308,
+      1.3215,
+      1.3172
+    ],
+    "frame_sd_nm": 0.22811207261856944,
+    "tau_int_ps": 14.947312296231798,
+    "tau_int_ps_per_seed": [
+      14.3,
+      16.0,
+      14.2,
+      15.3
+    ],
+    "sd_of_10ns_block_means_nm": 0.013645294574714804,
+    "n_10ns_blocks": 20,
+    "sem_50ns_mean_nm": 0.005577759959874658,
+    "sd_of_seed_means_nm": 0.006057125062616207,
+    "production_ns_for_target_sem": 5.382596223180094
+  }
+]

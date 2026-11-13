@@ -24,6 +24,12 @@ per-point mean Rg, y_ref the experimental value.
 Run from the repository root:
 
     python -m examples.calvados_gmx.run_campaign2
+
+The cached points in campaign2/ ran at rp.FRICTION_CACHED (1.16 /ps).
+To run the same design at the upstream collision rate into a new folder:
+
+    python -m examples.calvados_gmx.run_campaign2 --friction 0.01 \
+        --out examples/calvados_gmx/campaign2_rate0.01
 """
 
 import csv
@@ -100,9 +106,10 @@ def lambda_by_three(sample, residues):
     return {THREE[one]: value for one, value in values.items()}
 
 
-def run_sample(index, lam_by_three, residues):
-    """One 50 ns trajectory; caches to campaign2/hst_<index>/."""
-    out_dir = OUT / f"hst_{index:03d}"
+def run_sample(index, lam_by_three, residues, friction=rp.FRICTION_CACHED,
+               out=OUT):
+    """One 50 ns trajectory; caches to <out>/hst_<index>/ (campaign2/ by default)."""
+    out_dir = out / f"hst_{index:03d}"
     out_dir.mkdir(parents=True, exist_ok=True)
     rg_file = out_dir / "rg.txt"
     if rg_file.is_file():
@@ -128,7 +135,7 @@ def run_sample(index, lam_by_three, residues):
 
     started = time.time()
     integrator = mm.LangevinMiddleIntegrator(
-        rp.TEMP * unit.kelvin, 1.16, rp.DT * 0.5
+        rp.TEMP * unit.kelvin, friction, rp.DT * 0.5
     )
     integrator.setRandomNumberSeed(SEED + index)
     platforms = [
@@ -175,11 +182,20 @@ def run_sample(index, lam_by_three, residues):
 
 
 def main():
-    OUT.mkdir(parents=True, exist_ok=True)
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--friction", type=float, default=rp.FRICTION_CACHED,
+                        help="Langevin collision rate, 1/ps (upstream: 0.01)")
+    parser.add_argument("--out", type=Path, default=OUT,
+                        help="output folder (default: campaign2/)")
+    args = parser.parse_args()
+    out = args.out.resolve()
+    out.mkdir(parents=True, exist_ok=True)
     residues = [one for one in sorted(set(HST5)) if one not in FIXED]
     names = parameter_names(residues)
     points = sobol_points(residues, N_SAMPLES)
-    np.savetxt(OUT / "sobol_points.txt", points, fmt="%.6f")
+    np.savetxt(out / "sobol_points.txt", points, fmt="%.6f")
     print(
         f"design: {N_SAMPLES} Sobol points in {len(residues)}-D box "
         f"(free residues {''.join(residues)})",
@@ -191,7 +207,7 @@ def main():
     manifest = []
     for index in range(N_SAMPLES):
         lam = lambda_by_three(points[index], residues)
-        rg, seconds = run_sample(index, lam, residues)
+        rg, seconds = run_sample(index, lam, residues, args.friction, out)
         means[index] = rg.mean()
         stds[index] = rg.std()
         manifest.append(
@@ -207,7 +223,7 @@ def main():
             + (f"({seconds:.0f} s)" if seconds else "(cached)"),
             flush=True,
         )
-    pd.DataFrame(manifest).to_csv(OUT / "manifest.csv", index=False)
+    pd.DataFrame(manifest).to_csv(out / "manifest.csv", index=False)
 
     from bff.qoi.dataset import QoIDataset
 
@@ -231,14 +247,15 @@ def main():
             "production_ps": PROD_PS,
             "sobol_seed": SEED,
             "engine": "openmm",
+            "collision_rate_per_ps": args.friction,
             "experimental_rg_nm": rc.EXPERIMENTAL_RG,
             "experimental_rg_err_nm": rc.EXPERIMENTAL_ERR,
             "frame_std_nm": stds.tolist(),
             "qoi": "mass-weighted Rg, frame mean over 50 ns",
         },
     )
-    dataset.write(str(OUT / "rg_hst5_bounded.pt"))
-    print(f"QoI dataset: {OUT / 'rg_hst5_bounded.pt'}")
+    dataset.write(str(out / "rg_hst5_bounded.pt"))
+    print(f"QoI dataset: {out / 'rg_hst5_bounded.pt'}")
     print(
         f"Rg over the box: min {np.nanmin(means):.3f}, "
         f"max {np.nanmax(means):.3f}, "

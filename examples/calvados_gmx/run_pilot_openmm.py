@@ -15,8 +15,12 @@ one readable place:
   energy-shifted to zero at 4.0 nm
 - harmonic bonds k = 8033 kJ/mol/nm^2, r0 = 0.38 nm; only bonded pairs
   are excluded from nonbonded; no angles or dihedrals
-- Langevin dynamics, dt = 0.01 ps; upstream gamma = MW/100 ps^-1 varies
-  per residue (0.57-1.63 here); we use the global 1.16 ps^-1 (ADAPT)
+- Langevin dynamics, dt = 0.01 ps, collision rate FRICTION = 0.01 ps^-1.
+  Upstream sets the drag coefficient gamma = MW/100 (HOOMD set_gamma),
+  i.e. a collision rate gamma/MW = 0.01 ps^-1 for every residue; the
+  CALVADOS package's OpenMM default (friction_coeff) is 0.01 as well.
+  Studies cached so far ran at FRICTION_CACHED = 1.16 ps^-1 (MW/100 read
+  as a rate); see compare_friction_campaigns.
 
 Residue numbers come from the checksummed upstream residues.csv via
 build_pilot.py, which also keeps the GROMACS-format artifacts
@@ -68,6 +72,11 @@ SEED = 2026
 EQUIL_STEPS = 10_000          # upstream: 10000 steps at dt 0.005
 PROD_STEPS = 110_000          # 1.1 ns pilot at dt 0.01
 REPORT_INTERVAL = 100         # steps between trajectory frames
+FRICTION = 0.01               # ps^-1, upstream collision rate (gamma/MW)
+FRICTION_CACHED = 1.16        # ps^-1, rate of the outputs cached so far
+                              # (campaign, campaign2, shotgun, longrun,
+                              # pilot_a1): kept there so each cache stays
+                              # one consistent dataset
 
 # The whole pair physics, evaluated by OpenMM per pair. OpenMM takes one
 # flat expression, so the algebra is assembled from named pieces: sigma_ij
@@ -281,7 +290,7 @@ def main():
     write_pdb(OUT / "hst5.pdb", records, positions, box)
 
     integrator = mm.LangevinMiddleIntegrator(
-        TEMP * unit.kelvin, 1.16, DT * 0.5
+        TEMP * unit.kelvin, FRICTION, DT * 0.5
     )
     integrator.setRandomNumberSeed(SEED)
     topology = build_topology(records, sequence)

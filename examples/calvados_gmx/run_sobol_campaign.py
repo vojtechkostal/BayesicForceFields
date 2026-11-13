@@ -15,7 +15,8 @@ already exists, so the campaign resumes after interruption.
 
 Numbers shared with the pilot: same potential, conditions (293 K, pH 7.5,
 I = 0.15 M), Hst5 sequence with X/Z terminal beads, global Langevin
-friction 1.16 1/ps (ADAPT as before).
+friction rp.FRICTION_CACHED (1.16 1/ps; the upstream rate is
+rp.FRICTION = 0.01 1/ps, see run_pilot_openmm).
 
 Run from the repository root:
 
@@ -103,7 +104,7 @@ def run_sample(index, lam_by_three):
 
     started = time.time()
     integrator = mm.LangevinMiddleIntegrator(
-        rp.TEMP * unit.kelvin, 1.16, rp.DT * 0.5
+        rp.TEMP * unit.kelvin, rp.FRICTION_CACHED, rp.DT * 0.5
     )
     integrator.setRandomNumberSeed(SEED + index)
     platforms = [

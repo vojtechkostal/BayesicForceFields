@@ -130,7 +130,7 @@ def run_local_sample(out_dir, lam_by_three, index):
 
     started = time.time()
     integrator = mm.LangevinMiddleIntegrator(
-        rp.TEMP * unit.kelvin, 1.16, rp.DT * 0.5
+        rp.TEMP * unit.kelvin, rp.FRICTION_CACHED, rp.DT * 0.5
     )
     integrator.setRandomNumberSeed(SEED + index)
     platforms = [

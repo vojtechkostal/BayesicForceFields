@@ -181,7 +181,7 @@ def main():
         topology = rp.build_topology(records, sequence)
 
         integrator = mm.LangevinMiddleIntegrator(
-            TEMP * unit.kelvin, 1.16, rp.DT * 0.5
+            TEMP * unit.kelvin, rp.FRICTION_CACHED, rp.DT * 0.5
         )
         integrator.setRandomNumberSeed(SEED)
         platforms = [
