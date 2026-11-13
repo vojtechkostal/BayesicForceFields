@@ -73,7 +73,7 @@ def run_one(column, seed):
     topology = rp.build_topology(records, sequence)
 
     integrator = mm.LangevinMiddleIntegrator(
-        rp.TEMP * unit.kelvin, 1.16, rp.DT * 0.5
+        rp.TEMP * unit.kelvin, rp.FRICTION_CACHED, rp.DT * 0.5
     )
     integrator.setRandomNumberSeed(seed)
     platform_name = "OpenCL" if "OpenCL" in [
