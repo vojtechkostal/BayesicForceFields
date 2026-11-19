@@ -90,27 +90,82 @@ def test_array_option_limits_running_tasks(limit, array) -> None:
     assert slurm.array_option(10, limit) == array
 
 
-def test_run_tasks_submits_chunks_with_global_offsets(tmp_path, monkeypatch) -> None:
-    submitted, waited = [], []
-    monkeypatch.setattr(
-        slurm,
-        "submit",
-        lambda script, *, array, offset: submitted.append((array, offset)) or 7,
+class _FakeQueue:
+    """Arrays whose tasks finish ``per_poll`` at a time, one squeue call per poll."""
+
+    def __init__(self, per_poll: int) -> None:
+        self.per_poll, self.size, self.finished, self.submitted = per_poll, {}, {}, []
+        self.max_in_queue = 0
+
+    def submit(self, script, *, array, offset):
+        job_id = 100 + len(self.submitted)
+        size = int(array.split("-")[1]) + 1
+        self.submitted.append((array, offset))
+        self.size[job_id], self.finished[job_id] = size, 0
+        in_queue = sum(self.size[j] - self.finished[j] for j in self.size)
+        self.max_in_queue = max(self.max_in_queue, in_queue)
+        return job_id
+
+    def counts(self, job_id, n_tasks):
+        assert n_tasks == self.size[job_id]
+        self.finished[job_id] = min(n_tasks, self.finished[job_id] + self.per_poll)
+        left = n_tasks - self.finished[job_id]
+        return {"pending": 0, "running": left, "finished": self.finished[job_id]}
+
+
+def _fake_queue(monkeypatch, per_poll: int) -> _FakeQueue:
+    queue = _FakeQueue(per_poll)
+    monkeypatch.setattr(slurm, "submit", queue.submit)
+    monkeypatch.setattr(slurm, "array_task_counts", queue.counts)
+    monkeypatch.setattr(slurm.time, "sleep", lambda seconds: None)
+    return queue
+
+
+def test_run_tasks_refills_freed_slots_without_waiting_for_the_array(
+    tmp_path, monkeypatch
+) -> None:
+    queue = _fake_queue(monkeypatch, per_poll=30)
+    config = slurm.SlurmConfig(max_parallel_jobs=100, max_array_size=1000)
+
+    ids = slurm.run_tasks(
+        tmp_path / "run.sh", 250, config=config, logger=Logger("t", verbose=False)
     )
-    monkeypatch.setattr(
-        slurm,
-        "wait_for_array",
-        lambda job_id, n, **kwargs: waited.append((n, kwargs["done_before"])),
-    )
-    config = slurm.SlurmConfig(max_parallel_jobs=50, max_array_size=1000)
+
+    # 100 at once; 30 finish per array and poll; freed slots refilled at once.
+    assert queue.submitted[:3] == [("0-99", 0), ("0-29", 100), ("0-59", 130)]
+    assert queue.max_in_queue == 100
+    assert sum(int(a.split("-")[1]) + 1 for a, _ in queue.submitted) == 250
+    offsets = [offset for _, offset in queue.submitted]
+    assert offsets == sorted(offsets) and len(ids) == 250
+    assert ids[0] == "100_0" and ids[100] == "101_0" and ids[129] == "101_29"
+
+
+def test_run_tasks_splits_at_max_array_size(tmp_path, monkeypatch) -> None:
+    queue = _fake_queue(monkeypatch, per_poll=10**6)
+    config = slurm.SlurmConfig(max_parallel_jobs=-1, max_array_size=1000)
 
     ids = slurm.run_tasks(
         tmp_path / "run.sh", 2500, config=config, logger=Logger("t", verbose=False)
     )
 
-    assert submitted == [("0-999%50", 0), ("0-999%50", 1000), ("0-499%50", 2000)]
-    assert waited == [(1000, 0), (1000, 1000), (500, 2000)]
-    assert ids[1999] == "7_999" and len(ids) == 2500
+    assert queue.submitted == [("0-999", 0), ("0-999", 1000), ("0-499", 2000)]
+    assert ids[1999] == "101_999" and len(ids) == 2500
+
+
+def test_run_tasks_waits_out_a_failing_squeue(tmp_path, monkeypatch) -> None:
+    queue = _fake_queue(monkeypatch, per_poll=10)
+    failures = [None]
+    counts = queue.counts
+    monkeypatch.setattr(
+        slurm, "array_task_counts", lambda j, n: failures.pop() if failures else counts(j, n)
+    )
+    config = slurm.SlurmConfig(max_parallel_jobs=10, max_array_size=1000)
+
+    ids = slurm.run_tasks(
+        tmp_path / "run.sh", 20, config=config, logger=Logger("t", verbose=False)
+    )
+
+    assert queue.submitted == [("0-9", 0), ("0-9", 10)] and len(ids) == 20
 
 
 def _squeue(monkeypatch, returncode: int, stdout: str = "", stderr: str = "") -> None:

@@ -531,11 +531,17 @@ def test_slurm_campaign_runs_samples_as_job_arrays(
         return 100 + len(submitted)
 
     monkeypatch.setattr(run_module.slurm, "submit", fake_submit)
-    monkeypatch.setattr(run_module.slurm, "wait_for_array", lambda *a, **k: None)
+    monkeypatch.setattr(
+        run_module.slurm,
+        "array_task_counts",
+        lambda job_id, n: {"pending": 0, "running": 0, "finished": n},
+    )
+    monkeypatch.setattr(run_module.slurm.time, "sleep", lambda seconds: None)
 
     run_campaign(config, **_empty_draw(12))
 
-    assert submitted == [("0-4%2", 0), ("0-4%2", 5), ("0-1%2", 10)]
+    # At most max_parallel_jobs = 2 tasks in the queue: arrays of 2.
+    assert submitted == [("0-1", offset) for offset in range(0, 12, 2)]
     script = (config.campaign_dir / "run.sh").read_text()
     assert "#SBATCH --time=01:00:00" in script
     assert f"#SBATCH --output={config.campaign_dir}/slurm/%A_%a.out" in script
@@ -547,8 +553,8 @@ def test_slurm_campaign_runs_samples_as_job_arrays(
     assert script.rstrip().endswith('campaign.yaml "$SAMPLE_ID"')
     assert (config.campaign_dir / "campaign.yaml").is_file()
     manifest = yaml.safe_load((config.campaign_dir / "samples.yaml").read_text())
-    assert manifest["samples"]["03"]["job_id"] == "101_3"
-    assert manifest["samples"]["11"]["job_id"] == "103_1"
+    assert manifest["samples"]["03"]["job_id"] == "102_1"  # tasks 2-3: job 102
+    assert manifest["samples"]["11"]["job_id"] == "106_1"  # tasks 10-11: job 106
 
 
 def test_slurm_campaign_resubmits_samples_stopped_by_the_time_limit(

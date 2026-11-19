@@ -2,8 +2,8 @@
 
 One script runs every task; ``$TASK_ID`` (0..n_tasks-1) selects the work.
 Tasks are submitted in arrays of at most ``max_array_size`` tasks (Slurm's
-``MaxArraySize`` and per-user submit limits), one array after another, each
-running at most ``max_parallel_jobs`` tasks at a time.
+``MaxArraySize``), rolling: a new array whenever finished tasks free slots, with
+at most ``max_parallel_jobs`` tasks queued or running in all arrays together.
 """
 
 from __future__ import annotations
@@ -138,18 +138,63 @@ def run_tasks(
     *,
     config: SlurmConfig,
     logger: Logger,
+    poll_interval: float = 60.0,
 ) -> list[str]:
-    """Run tasks 0..n_tasks-1 and return each task's ``<job>_<index>`` ID."""
+    """Run tasks 0..n_tasks-1 and return each task's ``<job>_<index>`` ID.
+
+    Rolling submission: at most ``max_parallel_jobs`` tasks (``-1``: at most
+    ``max_array_size``) are queued or running at any time. Whenever finished
+    tasks free enough slots, the next tasks are submitted as a new array of at
+    most ``max_array_size`` tasks, so the slots are refilled without waiting
+    for a whole array to finish. Chunks are at least a tenth of the limit
+    (the last one may be smaller), to keep the number of arrays small.
+    """
+    limit = (
+        config.max_array_size
+        if config.max_parallel_jobs == -1
+        else config.max_parallel_jobs
+    )
+    min_chunk = max(1, min(limit, config.max_array_size) // 10)
+    width = len(str(n_tasks))
     task_ids: list[str] = []
-    for offset in range(0, n_tasks, config.max_array_size):
-        size = min(config.max_array_size, n_tasks - offset)
-        job_id = submit(
-            fn_script, array=array_option(size, config.max_parallel_jobs), offset=offset
+    active: dict[int, int] = {}  # job id -> tasks of arrays still in the queue
+    done = 0  # tasks of arrays that have left the queue
+    offset = 0  # next task to submit
+    while True:
+        counts = {job_id: array_task_counts(job_id, size) for job_id, size in active.items()}
+        if any(count is None for count in counts.values()):
+            time.sleep(poll_interval)  # transient squeue error: never guess
+            continue
+        for job_id, count in counts.items():
+            if count["finished"] == active[job_id]:
+                done += active.pop(job_id)
+        in_queue = sum(c["pending"] + c["running"] for j, c in counts.items() if j in active)
+        finished = done + sum(c["finished"] for j, c in counts.items() if j in active)
+        while offset < n_tasks:
+            size = min(limit - in_queue, config.max_array_size, n_tasks - offset)
+            if size <= 0 or (size < min_chunk and size < n_tasks - offset):
+                break
+            job_id = submit(fn_script, array=f"0-{size - 1}", offset=offset)
+            logger.kv("Slurm job array", f"{job_id}: tasks {offset}-{offset + size - 1}")
+            task_ids += [f"{job_id}_{index}" for index in range(size)]
+            active[job_id] = size
+            in_queue += size
+            offset += size
+        pending = sum(c["pending"] for j, c in counts.items() if j in active)
+        running = sum(c["running"] for j, c in counts.items() if j in active)
+        complete = offset == n_tasks and not active
+        logger.progress_status(
+            f"Slurm: queued {pending:>{width}d} | "
+            f"running {running:>{width}d} | "
+            f"finished {finished:>{width}d}/{n_tasks}",
+            finished,
+            n_tasks,
+            overwrite=not complete,
+            write_file=complete,
         )
-        logger.kv("Slurm job array", f"{job_id}: tasks {offset}-{offset + size - 1}")
-        task_ids += [f"{job_id}_{index}" for index in range(size)]
-        wait_for_array(job_id, size, logger=logger, done_before=offset, total=n_tasks)
-    return task_ids
+        if complete:
+            return task_ids
+        time.sleep(poll_interval)
 
 
 def array_task_counts(job_id: int, n_tasks: int) -> dict[str, int] | None:
