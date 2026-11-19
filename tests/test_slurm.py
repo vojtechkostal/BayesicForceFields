@@ -24,7 +24,12 @@ def test_slurm_config_rejects_array_and_validates_limits() -> None:
     )
     assert config.max_parallel_jobs == -1
     assert config.setup == ("ml gmx",)
-    with pytest.raises(ValueError, match="array is set by BFF"):
+    assert config.submit_pause == 0.0
+    # The array chunk size of BFF <= 0.5.2 is accepted and ignored.
+    assert _load_slurm({"sbatch": {}, "max_array_size": 1000}).max_parallel_jobs == 1
+    with pytest.raises(ValueError, match="submit_pause must be"):
+        _load_slurm({"sbatch": {}, "submit_pause": -1})
+    with pytest.raises(ValueError, match="array is not supported"):
         _load_slurm({"sbatch": {"array": "0-3"}})
     with pytest.raises(ValueError, match=r"max_parallel_jobs must be .* or -1"):
         _load_slurm({"sbatch": {}, "max_parallel_jobs": 0})
@@ -37,7 +42,7 @@ def test_slurm_config_rejects_array_and_validates_limits() -> None:
         _load_slurm({"sbatch": {"time": 14400}})
 
 
-def test_task_script_maps_array_index_to_global_task(tmp_path: Path) -> None:
+def test_task_script_takes_the_task_as_first_argument(tmp_path: Path) -> None:
     config = slurm.SlurmConfig(
         sbatch={"job_name": "user", "cpus_per_task": 4},
         setup=("module load gromacs",),
@@ -47,7 +52,7 @@ def test_task_script_maps_array_index_to_global_task(tmp_path: Path) -> None:
         tmp_path / "run.sh",
         config=config,
         sbatch={"job_name": "bff"},
-        commands=["echo $TASK_ID"],
+        commands=["echo $TASK"],
     ).read_text()
     lines = script.splitlines()
     assert lines[0] == "#!/bin/bash"
@@ -56,13 +61,13 @@ def test_task_script_maps_array_index_to_global_task(tmp_path: Path) -> None:
     assert not any("--array" in line for line in lines)
     assert lines[-8:] == [
         "set -eo pipefail",
-        "TASK_ID=$((SLURM_ARRAY_TASK_ID + ${BFF_TASK_OFFSET:-0}))",
+        'TASK="$1"',
         "teardown() {",
         "    echo done",
         "}",
         "trap teardown EXIT",
         "module load gromacs",
-        "echo $TASK_ID",
+        "echo $TASK",
     ]
 
 
@@ -73,8 +78,8 @@ def test_task_script_runs_teardown_after_a_failing_task(tmp_path: Path) -> None:
     )
 
     result = subprocess.run(
-        ["bash", str(script)],
-        env={"SLURM_ARRAY_TASK_ID": "0", "PATH": os.environ["PATH"]},
+        ["bash", str(script), "0"],
+        env={"PATH": os.environ["PATH"]},
         capture_output=True,
         text=True,
         check=False,
@@ -85,87 +90,100 @@ def test_task_script_runs_teardown_after_a_failing_task(tmp_path: Path) -> None:
     assert (tmp_path / "torn-down").is_file()
 
 
-@pytest.mark.parametrize(("limit", "array"), [(3, "0-9%3"), (-1, "0-9")])
-def test_array_option_limits_running_tasks(limit, array) -> None:
-    assert slurm.array_option(10, limit) == array
-
-
 class _FakeQueue:
-    """Arrays whose tasks finish ``per_poll`` at a time, one squeue call per poll."""
+    """Plain jobs; ``per_poll`` of the oldest queued jobs finish at every squeue."""
 
-    def __init__(self, per_poll: int) -> None:
-        self.per_poll, self.size, self.finished, self.submitted = per_poll, {}, {}, []
+    def __init__(self, per_poll: int, running: int = 10**9) -> None:
+        self.per_poll, self.running = per_poll, running
+        self.queue: list[int] = []
+        self.submitted: list[tuple[int, str]] = []
         self.max_in_queue = 0
 
-    def submit(self, script, *, array, offset):
+    def submit(self, script, task):
         job_id = 100 + len(self.submitted)
-        size = int(array.split("-")[1]) + 1
-        self.submitted.append((array, offset))
-        self.size[job_id], self.finished[job_id] = size, 0
-        in_queue = sum(self.size[j] - self.finished[j] for j in self.size)
-        self.max_in_queue = max(self.max_in_queue, in_queue)
+        self.submitted.append((job_id, task))
+        self.queue.append(job_id)
+        self.max_in_queue = max(self.max_in_queue, len(self.queue))
         return job_id
 
-    def counts(self, job_id, n_tasks):
-        assert n_tasks == self.size[job_id]
-        self.finished[job_id] = min(n_tasks, self.finished[job_id] + self.per_poll)
-        left = n_tasks - self.finished[job_id]
-        return {"pending": 0, "running": left, "finished": self.finished[job_id]}
+    def squeue(self):
+        del self.queue[: self.per_poll]
+        states = {j: "R" if i < self.running else "PD" for i, j in enumerate(self.queue)}
+        return states | {9999: "R"}  # another job of the user
 
 
-def _fake_queue(monkeypatch, per_poll: int) -> _FakeQueue:
-    queue = _FakeQueue(per_poll)
+def _fake_queue(monkeypatch, per_poll: int, running: int = 10**9) -> _FakeQueue:
+    queue = _FakeQueue(per_poll, running)
     monkeypatch.setattr(slurm, "submit", queue.submit)
-    monkeypatch.setattr(slurm, "array_task_counts", queue.counts)
+    monkeypatch.setattr(slurm, "queued_jobs", queue.squeue)
     monkeypatch.setattr(slurm.time, "sleep", lambda seconds: None)
     return queue
 
 
-def test_run_tasks_refills_freed_slots_without_waiting_for_the_array(
+def test_run_tasks_refills_every_freed_slot(tmp_path, monkeypatch, capsys) -> None:
+    queue = _fake_queue(monkeypatch, per_poll=3, running=4)
+    config = slurm.SlurmConfig(max_parallel_jobs=10)
+    tasks = [f"s{i}" for i in range(25)]
+
+    ids = slurm.run_tasks(
+        tmp_path / "run.sh", tasks, config=config, logger=Logger("t", color=False)
+    )
+
+    assert [task for _, task in queue.submitted] == tasks
+    assert queue.max_in_queue == 10
+    assert ids == [str(job_id) for job_id, _ in queue.submitted]
+    out = capsys.readouterr().out
+    assert "pending 10 | running  0 | finished  0/25" in out  # just submitted
+    assert "pending  6 | running  4 | finished  3/25" in out  # 3 done, refilled
+    assert "finished 25/25" in out
+
+
+def test_run_tasks_without_limit_submits_everything_at_once(
     tmp_path, monkeypatch
 ) -> None:
-    queue = _fake_queue(monkeypatch, per_poll=30)
-    config = slurm.SlurmConfig(max_parallel_jobs=100, max_array_size=1000)
-
-    ids = slurm.run_tasks(
-        tmp_path / "run.sh", 250, config=config, logger=Logger("t", verbose=False)
-    )
-
-    # 100 at once; 30 finish per array and poll; freed slots refilled at once.
-    assert queue.submitted[:3] == [("0-99", 0), ("0-29", 100), ("0-59", 130)]
-    assert queue.max_in_queue == 100
-    assert sum(int(a.split("-")[1]) + 1 for a, _ in queue.submitted) == 250
-    offsets = [offset for _, offset in queue.submitted]
-    assert offsets == sorted(offsets) and len(ids) == 250
-    assert ids[0] == "100_0" and ids[100] == "101_0" and ids[129] == "101_29"
-
-
-def test_run_tasks_splits_at_max_array_size(tmp_path, monkeypatch) -> None:
     queue = _fake_queue(monkeypatch, per_poll=10**6)
-    config = slurm.SlurmConfig(max_parallel_jobs=-1, max_array_size=1000)
+    config = slurm.SlurmConfig(max_parallel_jobs=-1)
 
     ids = slurm.run_tasks(
-        tmp_path / "run.sh", 2500, config=config, logger=Logger("t", verbose=False)
+        tmp_path / "run.sh", ["a", "b", "c"], config=config, logger=Logger("t", verbose=False)
     )
 
-    assert queue.submitted == [("0-999", 0), ("0-999", 1000), ("0-499", 2000)]
-    assert ids[1999] == "101_999" and len(ids) == 2500
+    assert queue.max_in_queue == 3 and ids == ["100", "101", "102"]
+
+
+def test_run_tasks_pauses_between_submissions_only_when_asked(
+    tmp_path, monkeypatch
+) -> None:
+    queue = _fake_queue(monkeypatch, per_poll=10**6)
+    sleeps = []
+    monkeypatch.setattr(slurm.time, "sleep", sleeps.append)
+    slurm.run_tasks(
+        tmp_path / "run.sh", ["a", "b", "c"],
+        config=slurm.SlurmConfig(max_parallel_jobs=-1, submit_pause=0.5),
+        logger=Logger("t", verbose=False), poll_interval=60,
+    )
+    assert sleeps == [0.5, 0.5, 60]
+    sleeps.clear()
+    slurm.run_tasks(
+        tmp_path / "run.sh", ["a", "b", "c"], config=slurm.SlurmConfig(max_parallel_jobs=-1),
+        logger=Logger("t", verbose=False), poll_interval=60,
+    )
+    assert sleeps == [60] and len(queue.submitted) == 6
 
 
 def test_run_tasks_waits_out_a_failing_squeue(tmp_path, monkeypatch) -> None:
     queue = _fake_queue(monkeypatch, per_poll=10)
     failures = [None]
-    counts = queue.counts
     monkeypatch.setattr(
-        slurm, "array_task_counts", lambda j, n: failures.pop() if failures else counts(j, n)
+        slurm, "queued_jobs", lambda: failures.pop() if failures else queue.squeue()
     )
-    config = slurm.SlurmConfig(max_parallel_jobs=10, max_array_size=1000)
 
     ids = slurm.run_tasks(
-        tmp_path / "run.sh", 20, config=config, logger=Logger("t", verbose=False)
+        tmp_path / "run.sh", [str(i) for i in range(20)],
+        config=slurm.SlurmConfig(max_parallel_jobs=10), logger=Logger("t", verbose=False),
     )
 
-    assert queue.submitted == [("0-9", 0), ("0-9", 10)] and len(ids) == 20
+    assert len(ids) == 20 and queue.max_in_queue == 10
 
 
 def _squeue(monkeypatch, returncode: int, stdout: str = "", stderr: str = "") -> None:
@@ -178,45 +196,22 @@ def _squeue(monkeypatch, returncode: int, stdout: str = "", stderr: str = "") ->
     )
 
 
-def test_array_task_counts_parse_squeue(monkeypatch) -> None:
-    _squeue(monkeypatch, 0, "PD\nR\nCG\n")
-    assert slurm.array_task_counts(7, 5) == {"pending": 1, "running": 2, "finished": 2}
-
-
-def test_job_that_left_the_queue_is_finished(monkeypatch) -> None:
-    _squeue(monkeypatch, 1, stderr="slurm_load_jobs error: Invalid job id specified")
-    assert slurm.array_task_counts(7, 5)["finished"] == 5
+def test_queued_jobs_parse_squeue(monkeypatch) -> None:
+    _squeue(monkeypatch, 0, "11 PD\n12 R\n13_4 R\n")
+    assert slurm.queued_jobs() == {11: "PD", 12: "R"}
 
 
 def test_transient_squeue_failure_is_never_read_as_finished(monkeypatch) -> None:
-    _squeue(monkeypatch, 1, stderr="Socket timed out on send/recv operation")
-    assert slurm.array_task_counts(7, 5) is None
+    _squeue(monkeypatch, 1, stderr="slurm_load_jobs error: timeout")
+    assert slurm.queued_jobs() is None
 
 
 def test_submit_returns_the_job_id(tmp_path: Path, monkeypatch) -> None:
     _squeue(monkeypatch, 0, "4242;cluster\n")
-    assert slurm.submit(tmp_path / "run.sh", array="0-3") == 4242
+    assert slurm.submit(tmp_path / "run.sh", "s1") == 4242
     _squeue(monkeypatch, 1, stderr="invalid partition")
     with pytest.raises(RuntimeError, match="invalid partition"):
-        slurm.submit(tmp_path / "run.sh", array="0-3")
-
-
-def test_wait_for_array_polls_until_every_task_finished(monkeypatch, capsys) -> None:
-    states = iter(
-        [
-            None,
-            {"pending": 1, "running": 1, "finished": 0},
-            {"pending": 0, "running": 0, "finished": 2},
-        ]
-    )
-    monkeypatch.setattr(slurm, "array_task_counts", lambda job_id, n: next(states))
-    sleeps = []
-    monkeypatch.setattr(slurm.time, "sleep", sleeps.append)
-
-    slurm.wait_for_array(9, 2, logger=Logger("test", color=False), poll_interval=1)
-
-    assert sleeps == [1, 1]
-    assert "finished 2/2" in capsys.readouterr().out
+        slurm.submit(tmp_path / "run.sh", "s1")
 
 
 def test_bff_command_imports_this_checkout() -> None:

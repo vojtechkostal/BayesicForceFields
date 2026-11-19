@@ -116,25 +116,26 @@ campaigns.
 ## Slurm
 
 With `job_scheduler: slurm`, all samples run from one script, `run.sh`, as
-Slurm job arrays. Each array task runs one sample; its output goes to
-`samples/<sample_id>/run.out`, and Slurm's own messages (for example time-limit
-cancellations) go to `slurm/<job>_<task>.out`.
+plain Slurm jobs, one per sample (`sbatch run.sh <sample_id>`); its output goes
+to `samples/<sample_id>/run.out`, and Slurm's own messages (for example
+time-limit cancellations) go to `slurm/<job>.out`.
 
 ```yaml
 slurm:
-  max_parallel_jobs: 200   # tasks running at once (array %limit); -1 = no limit
-  max_array_size: 1000     # tasks per submitted array, default 1000
+  max_parallel_jobs: 200   # jobs queued or running at once; -1 = no limit
+  submit_pause: 0          # seconds between sbatch calls, default 0
   sbatch: {time: "00:40:00", mem: 1G, cpus_per_task: 1}
   setup: [module load gromacs]
   teardown: []
 ```
 
-Campaigns larger than `max_array_size` are submitted as consecutive arrays;
-the next array is submitted once the previous one has finished. Keep
-`max_array_size` below the cluster's `MaxArraySize` and per-user submit limit.
-`sbatch` must not set `array`. Array task `i` runs the sample on line `i + 1`
-of `tasks.txt`. With `dispatch: false`, BFF stages the campaign and prints the
-`sbatch --array=...` command for manual submission.
+BFF keeps at most `max_parallel_jobs` jobs of the campaign queued or running:
+it checks the queue once a minute (one `squeue --me`) and submits a new job for
+every slot freed since, so no slot waits for other samples to finish. Set it
+below the cluster's limit of queued jobs per user. `sbatch` must not set
+`array`. `tasks.txt` lists the samples to run. With `dispatch: false`, BFF
+stages the campaign and prints a loop of `sbatch run.sh <sample_id>` for
+manual submission.
 
 ### Scratch directory
 
@@ -158,7 +159,7 @@ When `slurm.sbatch.time` is set, every production run gets `mdrun -maxh` with
 90% of that limit minus the time the sample has already used, so GROMACS stops
 cleanly and writes a checkpoint before Slurm would cancel the task. Such a
 sample is reported as `incomplete`. With `max_restarts: N`, BFF resubmits the
-incomplete samples, as a new throttled job array, up to `N` times:
+incomplete samples, again at most `max_parallel_jobs` at once, up to `N` times:
 
 ```yaml
 max_restarts: 3

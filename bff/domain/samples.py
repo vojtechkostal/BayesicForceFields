@@ -10,7 +10,7 @@ Layout (paths relative to the campaign directory)::
       <sample_id>:
         params: [...]
         status: staged | completed | incomplete | failed
-        job_id: 123_4                    # Slurm only
+        job_id: 1234                     # Slurm only
         outputs:
           <system_id>:
             topology: samples/<sample_id>/<system_id>/topology.top

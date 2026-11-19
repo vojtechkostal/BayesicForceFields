@@ -171,14 +171,17 @@ def load_simulation_systems(
 def load_slurm_config(config: ConfigSection) -> SlurmConfig:
     slurm = config.section(
         "slurm",
-        allowed=("max_parallel_jobs", "max_array_size", "sbatch", "setup", "teardown"),
+        # max_array_size: arrays of BFF <= 0.5.2, accepted and ignored
+        allowed=(
+            "max_parallel_jobs", "submit_pause", "max_array_size", "sbatch", "setup", "teardown"
+        ),
         required=("sbatch",),
     )
     sbatch = slurm.mapping("sbatch")
     if "array" in sbatch:
         raise ValueError(
-            "slurm.sbatch.array is set by BFF; use slurm.max_parallel_jobs to "
-            "limit concurrently running tasks."
+            "slurm.sbatch.array is not supported: BFF submits one job per task; "
+            "use slurm.max_parallel_jobs to limit the jobs in the queue."
         )
     if "time" in sbatch and not isinstance(sbatch["time"], str):
         # YAML reads an unquoted 4:00:00 as the base-60 number 14400.
@@ -190,7 +193,7 @@ def load_slurm_config(config: ConfigSection) -> SlurmConfig:
         max_parallel_jobs=slurm.integer(
             "max_parallel_jobs", 1, minimum=1, special=(-1,)
         ),
-        max_array_size=slurm.integer("max_array_size", 1000, minimum=1),
+        submit_pause=slurm.number("submit_pause", 0.0, minimum=0.0),
         sbatch=sbatch,
         setup=slurm.strings("setup", ()),
         teardown=slurm.strings("teardown", ()),

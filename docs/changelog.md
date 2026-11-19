@@ -5,6 +5,20 @@ The public reproduction snapshot for the published study is archived as
 Use that tag for exact reproduction of the paper results. The current workflow
 release is `0.5.2`.
 
+## Unreleased
+
+### Changed
+
+- Slurm campaigns run as plain jobs, one per sample (`sbatch run.sh
+  <sample_id>`), instead of job arrays. At most `slurm.max_parallel_jobs` jobs
+  are queued or running; BFF checks the queue once a minute (one
+  `squeue --me`) and submits a new job for every freed slot. Before, the next
+  array started only when the previous one had finished, so the tail of every
+  array left slots empty, and arrays were limited by the cluster's
+  `MaxArraySize`. `slurm.max_array_size` is accepted and ignored; new
+  `slurm.submit_pause` (seconds between `sbatch` calls, default 0). Slurm
+  output is `slurm/<job>.out`; `samples.yaml` records plain job IDs.
+
 ## `0.5.2` - 2026-11-10
 
 ### Fixed

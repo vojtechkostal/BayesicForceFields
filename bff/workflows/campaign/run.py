@@ -8,7 +8,8 @@ Layout of a campaign directory::
     systems/<system_id>/             staged inputs shared by all samples
     samples/<sample_id>/             run.out and gmx.log of the sample's job
     samples/<sample_id>/<system_id>/ the sample's topology and MD outputs
-    run.sh, tasks.txt, slurm/        Slurm job script, task list, and output
+    run.sh, tasks.txt, slurm/        Slurm job script (``sbatch run.sh <sample_id>``),
+                                     pending samples, and Slurm output
 
 Each sample runs as ``bff md campaign.yaml <sample_id>``.
 """
@@ -447,9 +448,9 @@ def run_campaign(
         slurm.write_task_script(
             fn_script,
             config=config.slurm,
-            sbatch={"output": campaign_dir / "slurm" / "%A_%a.out"},
+            sbatch={"output": campaign_dir / "slurm" / "%j.out"},
             commands=[
-                f'SAMPLE_ID=$(sed -n "$((TASK_ID + 1))p" {shlex.quote(str(fn_tasks))})',
+                'SAMPLE_ID="$TASK"',
                 f'SAMPLE_DIR={shlex.quote(str(campaign_dir / "samples"))}/"$SAMPLE_ID"',
                 'mkdir -p "$SAMPLE_DIR"',
                 'exec >>"$SAMPLE_DIR/run.out" 2>&1',
@@ -474,8 +475,9 @@ def run_campaign(
                         system_dir / "topology.top",
                     )
             if config.job_scheduler == "slurm":
-                array = slurm.array_option(len(pending), config.slurm.max_parallel_jobs)
-                logger.info(f"Submit with: sbatch --array={array} {fn_script}")
+                logger.info(
+                    f"Submit with: for s in $(cat {fn_tasks}); do sbatch {fn_script} $s; done"
+                )
         elif config.job_scheduler == "local":
             _forget_results(campaign_dir, pending)
             _run_local(
@@ -495,7 +497,7 @@ def run_campaign(
                     fn_tasks.write_text("".join(f"{sid}\n" for sid in pending))
                 _forget_results(campaign_dir, pending)
                 task_ids = slurm.run_tasks(
-                    fn_script, len(pending), config=config.slurm, logger=logger
+                    fn_script, pending, config=config.slurm, logger=logger
                 )
                 for sample_id, task_id in zip(pending, task_ids):
                     samples[sample_id]["job_id"] = task_id

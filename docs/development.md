@@ -42,7 +42,7 @@ bff/
 ├── mcmc/                   Metropolis-Hastings sampler, proposals, checkpoints
 ├── io/                     MDP, Colvars, PLUMED, YAML, logs
 ├── gromacs.py              grompp/mdrun with an optional bias
-├── slurm.py                job arrays and queue polling
+├── slurm.py                one job per task and queue polling
 ├── topology.py             force-field parameter edits on GROMACS topologies
 └── plotting.py
 scripts/label_structures.py standalone CP2K labeling; must not import bff

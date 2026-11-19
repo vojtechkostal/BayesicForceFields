@@ -29,7 +29,7 @@ table. The [conventions](#conventions) below apply to every stage.
   `max_restarts`, `resume`, `overwrite`.
 - [`systems[]`](sample-parameters.md#systems): which built systems to simulate,
   and for how many steps.
-- [`slurm`](sample-parameters.md#slurm-options): job arrays, `sbatch` options,
+- [`slurm`](sample-parameters.md#slurm-options): jobs per sample, `sbatch` options,
   setup and teardown lines; see also
   [restarts after the time limit](sample-parameters.md#time-limits-and-restarts).
 

@@ -5,7 +5,7 @@
 | `campaign_dir` | path | *required* | Output directory of the campaign; created if missing. An existing campaign in it must be resumed or overwritten; see [Rerunning a campaign](#rerunning-a-campaign). |
 | `log` | path | `<campaign_dir>/<stage>.log` | Workflow log file. |
 | `gmx_cmd` | string | *required* | GROMACS executable, for example `gmx` or `gmx_mpi`. |
-| `job_scheduler` | `local` or `slurm` | *required* | Run samples on this machine (`local.max_parallel_jobs` at once) or as Slurm job arrays. |
+| `job_scheduler` | `local` or `slurm` | *required* | Run samples on this machine (`local.max_parallel_jobs` at once) or as Slurm jobs, one per sample. |
 | `source` | path | none | `bff build` project directory. With it, `systems[]` lists only IDs and lengths, and each `systems/<system_id>/` must contain `topology.top`, `production.gro`, `index.ndx`, `em.mdp`, `production.mdp`, and any `bias.*.dat`; the build trajectory is not needed. Without it, every system gives explicit `inputs`. |
 | `systems` | list | *required* | Systems simulated for every sample; see [systems](#systems). |
 | `dispatch` | boolean | `true` | Run the jobs after staging them. With `false`, stage only (and print the `sbatch` command on Slurm). |
@@ -37,9 +37,10 @@
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
-| `slurm.sbatch` | mapping | *required* | `sbatch` options written as `#SBATCH --<key>=<value>` (underscores become dashes). Must not set `array`. Quote `time` (`"04:00:00"`): YAML reads an unquoted `4:00:00` as a number. |
-| `slurm.max_parallel_jobs` | integer >= 1 or -1 | `1` | Array tasks running at once (`%` limit); `-1` for no limit. |
-| `slurm.max_array_size` | integer >= 1 | `1000` | Tasks per submitted array; keep below the cluster's `MaxArraySize`. |
+| `slurm.sbatch` | mapping | *required* | `sbatch` options written as `#SBATCH --<key>=<value>` (underscores become dashes). Must not set `array`: BFF submits one job per sample. Quote `time` (`"04:00:00"`): YAML reads an unquoted `4:00:00` as a number. |
+| `slurm.max_parallel_jobs` | integer >= 1 or -1 | `1` | Jobs of the campaign queued or running at once; freed slots are refilled at every poll (60 s). `-1` for no limit. |
+| `slurm.submit_pause` | number >= 0 | `0` | Seconds between consecutive `sbatch` calls. |
+| `slurm.max_array_size` | integer | - | Accepted and ignored (job arrays of BFF <= 0.5.2). |
 | `slurm.setup` | list of strings | `[]` | Shell lines run before each task, such as `module load gromacs`. |
 | `slurm.teardown` | list of strings | `[]` | Shell lines run after each task, also when it failed. |
 

@@ -1,9 +1,10 @@
-"""Run many BFF jobs as Slurm job arrays and follow their progress.
+"""Run many BFF jobs as plain Slurm jobs and follow their progress.
 
-One script runs every task; ``$TASK_ID`` (0..n_tasks-1) selects the work.
-Tasks are submitted in arrays of at most ``max_array_size`` tasks (Slurm's
-``MaxArraySize``), rolling: a new array whenever finished tasks free slots, with
-at most ``max_parallel_jobs`` tasks queued or running in all arrays together.
+One script runs every task; each job gets its task argument (for a campaign:
+the sample ID) as ``$1``. One job per task, rolling: at most
+``max_parallel_jobs`` of these jobs are queued or running at a time, and freed
+slots are refilled at every poll (one ``squeue --me`` call). No job arrays:
+no ``MaxArraySize`` limit, and an idle slot never waits for other tasks.
 """
 
 from __future__ import annotations
@@ -19,15 +20,20 @@ from typing import Any
 from .io.logs import Logger
 
 PENDING_STATES = {"PD", "CF", "CONFIGURING"}
+POLL_INTERVAL = 60.0  # s between squeue calls
 
 
 @dataclass(frozen=True)
 class SlurmConfig:
-    """Job-array limits, extra ``sbatch`` options, and shell lines run before
-    (``setup``) and after (``teardown``, also when the job fails) each job."""
+    """Job limits, extra ``sbatch`` options, and shell lines run before
+    (``setup``) and after (``teardown``, also when the job fails) each job.
+
+    ``max_parallel_jobs``: jobs queued or running at once (-1: no limit).
+    ``submit_pause``: seconds between consecutive ``sbatch`` calls.
+    """
 
     max_parallel_jobs: int = 1
-    max_array_size: int = 1000
+    submit_pause: float = 0.0
     sbatch: dict[str, Any] | None = None
     setup: tuple[str, ...] = ()
     teardown: tuple[str, ...] = ()
@@ -89,7 +95,7 @@ def write_task_script(
     lines += [
         "",
         "set -eo pipefail",
-        "TASK_ID=$((SLURM_ARRAY_TASK_ID + ${BFF_TASK_OFFSET:-0}))",
+        'TASK="$1"',
     ]
     if config.teardown:
         # An EXIT trap also runs after a failing command, which `set -e` ends.
@@ -101,29 +107,17 @@ def write_task_script(
     return fn_script
 
 
-def array_option(n_tasks: int, max_parallel_jobs: int) -> str:
-    """Value of ``sbatch --array`` for tasks 0..n_tasks-1."""
-    limit = "" if max_parallel_jobs == -1 else f"%{max_parallel_jobs}"
-    return f"0-{n_tasks - 1}{limit}"
-
-
-def submit(fn_script: Path, *, array: str, offset: int = 0) -> int:
-    """Submit one job array of ``fn_script`` and return its job ID."""
+def submit(fn_script: Path, task: str) -> int:
+    """Submit one job of ``fn_script`` with argument ``task``; return its job ID."""
     result = subprocess.run(
-        [
-            "sbatch",
-            "--parsable",
-            f"--array={array}",
-            f"--export=ALL,BFF_TASK_OFFSET={offset}",
-            str(fn_script),
-        ],
+        ["sbatch", "--parsable", str(fn_script), task],
         capture_output=True,
         text=True,
         check=False,
     )
     if result.returncode != 0:
         message = result.stderr.strip() or result.stdout.strip() or "unknown error"
-        raise RuntimeError(f"Slurm submission of {fn_script} failed: {message}")
+        raise RuntimeError(f"Slurm submission of {fn_script} {task} failed: {message}")
     try:
         return int(result.stdout.strip().split(";")[0])
     except ValueError as exc:
@@ -132,59 +126,65 @@ def submit(fn_script: Path, *, array: str, offset: int = 0) -> int:
         ) from exc
 
 
+def queued_jobs() -> dict[int, str] | None:
+    """State code of every job of the user in the queue, by job ID.
+
+    Returns ``None`` when ``squeue`` fails, so a transient scheduler error is
+    never mistaken for jobs that have finished.
+    """
+    result = subprocess.run(
+        ["squeue", "--me", "--noheader", "--format", "%i %t"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    jobs = {}
+    for line in result.stdout.splitlines():
+        job_id, _, state = line.strip().partition(" ")
+        if job_id.isdigit():  # array tasks (123_4) of other work are not ours
+            jobs[int(job_id)] = state.strip()
+    return jobs
+
+
 def run_tasks(
     fn_script: Path,
-    n_tasks: int,
+    tasks: list[str],
     *,
     config: SlurmConfig,
     logger: Logger,
-    poll_interval: float = 60.0,
+    poll_interval: float = POLL_INTERVAL,
 ) -> list[str]:
-    """Run tasks 0..n_tasks-1 and return each task's ``<job>_<index>`` ID.
+    """Run one job per task (``sbatch fn_script <task>``); return the job IDs.
 
-    Rolling submission: at most ``max_parallel_jobs`` tasks (``-1``: at most
-    ``max_array_size``) are queued or running at any time. Whenever finished
-    tasks free enough slots, the next tasks are submitted as a new array of at
-    most ``max_array_size`` tasks, so the slots are refilled without waiting
-    for a whole array to finish. Chunks are at least a tenth of the limit
-    (the last one may be smaller), to keep the number of arrays small.
+    At most ``max_parallel_jobs`` of these jobs are queued or running; at
+    every poll, as many new jobs are submitted as slots are free. Returns
+    when every job has left the queue.
     """
-    limit = (
-        config.max_array_size
-        if config.max_parallel_jobs == -1
-        else config.max_parallel_jobs
-    )
-    min_chunk = max(1, min(limit, config.max_array_size) // 10)
+    n_tasks = len(tasks)
+    limit = n_tasks if config.max_parallel_jobs == -1 else config.max_parallel_jobs
     width = len(str(n_tasks))
-    task_ids: list[str] = []
-    active: dict[int, int] = {}  # job id -> tasks of arrays still in the queue
-    done = 0  # tasks of arrays that have left the queue
-    offset = 0  # next task to submit
+    job_ids: list[str] = []
+    active: set[int] = set()
     while True:
-        counts = {job_id: array_task_counts(job_id, size) for job_id, size in active.items()}
-        if any(count is None for count in counts.values()):
+        queue = queued_jobs() if active else {}
+        if queue is None:
             time.sleep(poll_interval)  # transient squeue error: never guess
             continue
-        for job_id, count in counts.items():
-            if count["finished"] == active[job_id]:
-                done += active.pop(job_id)
-        in_queue = sum(c["pending"] + c["running"] for j, c in counts.items() if j in active)
-        finished = done + sum(c["finished"] for j, c in counts.items() if j in active)
-        while offset < n_tasks:
-            size = min(limit - in_queue, config.max_array_size, n_tasks - offset)
-            if size <= 0 or (size < min_chunk and size < n_tasks - offset):
-                break
-            job_id = submit(fn_script, array=f"0-{size - 1}", offset=offset)
-            logger.kv("Slurm job array", f"{job_id}: tasks {offset}-{offset + size - 1}")
-            task_ids += [f"{job_id}_{index}" for index in range(size)]
-            active[job_id] = size
-            in_queue += size
-            offset += size
-        pending = sum(c["pending"] for j, c in counts.items() if j in active)
-        running = sum(c["running"] for j, c in counts.items() if j in active)
-        complete = offset == n_tasks and not active
+        active &= set(queue)
+        while len(job_ids) < n_tasks and len(active) < limit:
+            if job_ids and config.submit_pause > 0:
+                time.sleep(config.submit_pause)
+            job_id = submit(fn_script, tasks[len(job_ids)])
+            job_ids.append(str(job_id))
+            active.add(job_id)
+        # Jobs submitted in this poll are not in the queue snapshot: pending.
+        running = sum(queue.get(j, "PD") not in PENDING_STATES for j in active)
+        finished = len(job_ids) - len(active)
+        complete = finished == n_tasks
         logger.progress_status(
-            f"Slurm: queued {pending:>{width}d} | "
+            f"Slurm: pending {len(active) - running:>{width}d} | "
             f"running {running:>{width}d} | "
             f"finished {finished:>{width}d}/{n_tasks}",
             finished,
@@ -193,61 +193,5 @@ def run_tasks(
             write_file=complete,
         )
         if complete:
-            return task_ids
-        time.sleep(poll_interval)
-
-
-def array_task_counts(job_id: int, n_tasks: int) -> dict[str, int] | None:
-    """Count pending, running, and finished tasks of a job array.
-
-    Returns ``None`` when ``squeue`` fails for a reason other than the job
-    having left the queue, so a transient scheduler error is never mistaken
-    for completion.
-    """
-    result = subprocess.run(
-        ["squeue", "-j", str(job_id), "-r", "--noheader", "--format", "%t"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0 and "invalid job id" not in result.stderr.lower():
-        return None
-    states = result.stdout.split() if result.returncode == 0 else []
-    pending = sum(state in PENDING_STATES for state in states)
-    running = len(states) - pending
-    return {
-        "pending": pending,
-        "running": running,
-        "finished": max(n_tasks - len(states), 0),
-    }
-
-
-def wait_for_array(
-    job_id: int,
-    n_tasks: int,
-    *,
-    logger: Logger,
-    done_before: int = 0,
-    total: int | None = None,
-    poll_interval: float = 10.0,
-) -> None:
-    """Block until every task of the job array has left the queue."""
-    total = n_tasks if total is None else total
-    width = len(str(total))
-    while True:
-        counts = array_task_counts(job_id, n_tasks)
-        if counts is not None:
-            done = counts["finished"] == n_tasks
-            finished = done_before + counts["finished"]
-            logger.progress_status(
-                f"Slurm job {job_id}: pending {counts['pending']:>{width}d} | "
-                f"running {counts['running']:>{width}d} | "
-                f"finished {finished:>{width}d}/{total}",
-                finished,
-                total,
-                overwrite=not done,
-                write_file=done,
-            )
-            if done:
-                return
+            return job_ids
         time.sleep(poll_interval)

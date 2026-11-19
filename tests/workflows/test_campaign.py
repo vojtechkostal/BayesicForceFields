@@ -514,47 +514,40 @@ def test_job_that_writes_no_result_is_failed_not_a_stale_earlier_result(
     assert samples["samples"]["0"]["status"] == "failed"
 
 
-def test_slurm_campaign_runs_samples_as_job_arrays(
+def test_slurm_campaign_runs_one_job_per_sample(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = _campaign(
         tmp_path,
         job_scheduler="slurm",
-        slurm=SlurmConfig(
-            max_parallel_jobs=2, max_array_size=5, sbatch={"time": "01:00:00"}
-        ),
+        slurm=SlurmConfig(max_parallel_jobs=2, sbatch={"time": "01:00:00"}),
     )
     submitted = []
 
-    def fake_submit(script, *, array, offset):
-        submitted.append((array, offset))
+    def fake_submit(script, task):
+        submitted.append(task)
         return 100 + len(submitted)
 
     monkeypatch.setattr(run_module.slurm, "submit", fake_submit)
-    monkeypatch.setattr(
-        run_module.slurm,
-        "array_task_counts",
-        lambda job_id, n: {"pending": 0, "running": 0, "finished": n},
-    )
+    monkeypatch.setattr(run_module.slurm, "queued_jobs", lambda: {})
     monkeypatch.setattr(run_module.slurm.time, "sleep", lambda seconds: None)
 
     run_campaign(config, **_empty_draw(12))
 
-    # At most max_parallel_jobs = 2 tasks in the queue: arrays of 2.
-    assert submitted == [("0-1", offset) for offset in range(0, 12, 2)]
+    assert submitted == [f"{index:02d}" for index in range(12)]
     script = (config.campaign_dir / "run.sh").read_text()
     assert "#SBATCH --time=01:00:00" in script
-    assert f"#SBATCH --output={config.campaign_dir}/slurm/%A_%a.out" in script
-    assert "TASK_ID=$((SLURM_ARRAY_TASK_ID + ${BFF_TASK_OFFSET:-0}))" in script
-    assert 'SAMPLE_ID=$(sed -n "$((TASK_ID + 1))p"' in script
+    assert f"#SBATCH --output={config.campaign_dir}/slurm/%j.out" in script
+    assert 'TASK="$1"' in script and 'SAMPLE_ID="$TASK"' in script
+    assert "SLURM_ARRAY" not in script
     assert 'exec >>"$SAMPLE_DIR/run.out" 2>&1' in script
     tasks = (config.campaign_dir / "tasks.txt").read_text().split()
     assert tasks == [f"{index:02d}" for index in range(12)]
     assert script.rstrip().endswith('campaign.yaml "$SAMPLE_ID"')
     assert (config.campaign_dir / "campaign.yaml").is_file()
     manifest = yaml.safe_load((config.campaign_dir / "samples.yaml").read_text())
-    assert manifest["samples"]["03"]["job_id"] == "102_1"  # tasks 2-3: job 102
-    assert manifest["samples"]["11"]["job_id"] == "106_1"  # tasks 10-11: job 106
+    assert manifest["samples"]["03"]["job_id"] == "104"
+    assert manifest["samples"]["11"]["job_id"] == "112"
 
 
 def test_slurm_campaign_resubmits_samples_stopped_by_the_time_limit(
@@ -568,9 +561,10 @@ def test_slurm_campaign_resubmits_samples_stopped_by_the_time_limit(
     )
     rounds = []
 
-    def fake_run_tasks(script, n_tasks, *, config, logger):
+    def fake_run_tasks(script, pending, *, config, logger):
         tasks = (script.parent / "tasks.txt").read_text().split()
-        assert len(tasks) == n_tasks
+        assert tasks == pending
+        n_tasks = len(tasks)
         rounds.append(tasks)
         for sample_id in tasks:
             status = (
@@ -580,7 +574,7 @@ def test_slurm_campaign_resubmits_samples_stopped_by_the_time_limit(
                 script.parent / "samples" / sample_id / "result.yaml",
                 yaml.safe_dump({"status": status, "outputs": {}}),
             )
-        return [f"{len(rounds)}_{index}" for index in range(n_tasks)]
+        return [f"{len(rounds)}{index}" for index in range(n_tasks)]
 
     monkeypatch.setattr(run_module.slurm, "run_tasks", fake_run_tasks)
     run_campaign(config, **_empty_draw(4))
@@ -591,7 +585,7 @@ def test_slurm_campaign_resubmits_samples_stopped_by_the_time_limit(
     manifest = yaml.safe_load((config.campaign_dir / "samples.yaml").read_text())
     assert manifest["samples"]["2"] == {
         "params": [],
-        "job_id": "3_0",
+        "job_id": "30",
         "status": "completed",
     }
 
